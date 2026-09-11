@@ -4,7 +4,7 @@ import {
   UserPlus, Mail, Phone, Loader2, Trash2, 
   Briefcase, Truck, X, Lock, Unlock, EyeOff 
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import {  AnimatePresence } from 'framer-motion';
 
 const StaffManagement = () => {
   const [staff, setStaff] = useState([]);
@@ -46,7 +46,7 @@ const StaffManagement = () => {
       // Calls your new PATCH /staff/:id/toggle route
       await API.patch(`/admin/staff/${id}/toggle`);
       fetchStaff(); // Refresh to see UI changes
-    } catch (err) {
+    } catch {
       alert("Failed to update status");
     }
   };
@@ -85,7 +85,7 @@ const StaffManagement = () => {
 
       {/* Staff Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {staff.map((member, index) => (
+        {staff.map((member) => (
           <motion.div 
             key={member.id}
             initial={{ opacity: 0, y: 20 }}

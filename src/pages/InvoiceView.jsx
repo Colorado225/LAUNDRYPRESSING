@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import API from '../api/axios';
 import { Loader2, Download, Printer, CheckCircle2 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import html2pdf from 'html2pdf.js';
 
 const InvoiceView = () => {

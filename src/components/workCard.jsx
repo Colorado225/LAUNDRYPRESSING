@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { Clock, ClipboardList, AlertCircle, Play, CheckCircle } from 'lucide-react';
 
 const WorkCard = ({ order, onStatusUpdate }) => {

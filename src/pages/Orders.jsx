@@ -5,7 +5,7 @@ import {
   FileDown, MoreVertical, CreditCard, ChevronRight,
   Receipt as ReceiptIcon 
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { useReactToPrint } from 'react-to-print';
 
 // Components

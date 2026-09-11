@@ -10,7 +10,7 @@ import {
   Truck,
   AlertCircle
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 
 const TrackOrder = () => {
   const [code, setCode] = useState('');

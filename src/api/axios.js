@@ -24,7 +24,10 @@ API.interceptors.response.use(
   },
   (error) => {
     // 1. Extract the message from the backend error or use a fallback
-    const message = error.response?.data?.message || "A network error occurred";
+    const message = error.response?.data?.message ||
+      (error.code === 'ERR_NETWORK'
+        ? 'Network error: check that the backend is running and the API URL is correct.'
+        : 'A network error occurred');
 
     // 2. Handle specific status codes
     if (error.response?.status === 401) {

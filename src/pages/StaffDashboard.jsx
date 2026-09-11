@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import WorkCard from '../components/workCard'; 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence} from 'framer-motion';
 import { LogOut, User, RefreshCw, LayoutDashboard, CheckCircle2, Timer, Package } from 'lucide-react';
 
 const StaffDashboard = () => {

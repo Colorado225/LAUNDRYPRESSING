@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { X, Plus, Minus, Receipt, Loader2, Search, ShoppingBag, ClipboardList } from 'lucide-react';
 import API from '../api/axios';
 
@@ -84,7 +84,7 @@ const BillingModal = ({ order, onClose, onUpdate }) => {
       });
       onUpdate();
       onClose();
-    } catch (error) {
+    } catch {
       alert("Billing failed.");
     } finally {
       setLoading(false);

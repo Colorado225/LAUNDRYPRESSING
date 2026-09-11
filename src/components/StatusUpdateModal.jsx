@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { X, CheckCircle, Truck, Droplets, Info, Loader2, Edit3, UserCheck, AlertCircle } from 'lucide-react';
 import API from '../api/axios';
 

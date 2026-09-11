@@ -4,12 +4,29 @@ import useInView from '../hooks/useInView'
 import { formatNaira } from '../utils/helpers'
 import API from '../../api/axios'
 
+const FALLBACK_SERVICES = [
+  { id: 'wash-fold', name: 'Wash & Fold', price: 1500, category: { id: 'laundry', name: 'Laundry' } },
+  { id: 'dry-cleaning', name: 'Dry Cleaning', price: 3000, category: { id: 'dry-cleaning', name: 'Dry Cleaning' } },
+  { id: 'native-wear-care', name: 'Native Wear Care', price: 2500, category: { id: 'special-care', name: 'Special Care' } },
+  { id: 'steam-press', name: 'Steam & Press', price: 2000, category: { id: 'pressing', name: 'Pressing' } },
+  { id: 'stain-removal', name: 'Stain Removal', price: 1000, category: { id: 'special-care', name: 'Special Care' } },
+  { id: 'household-items', name: 'Household Items', price: 4000, category: { id: 'household', name: 'Household' } }
+]
+
+const FALLBACK_CATEGORIES = [
+  { id: 'laundry', label: 'Laundry' },
+  { id: 'dry-cleaning', label: 'Dry Cleaning' },
+  { id: 'special-care', label: 'Special Care' },
+  { id: 'pressing', label: 'Pressing' },
+  { id: 'household', label: 'Household' }
+]
+
 const PricingSection = React.memo(() => {
   const [cat, setCat] = useState('all')
   const [showAll, setShowAll] = useState(false) // Toggle state for expansion
   const [ref, inView] = useInView()
-  const [services, setServices] = useState([])
-  const [categories, setCategories] = useState([])
+  const [services, setServices] = useState(FALLBACK_SERVICES)
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES)
   const [loading, setLoading] = useState(true)
 
   // 1. Fetch data from backend
@@ -19,22 +36,26 @@ const PricingSection = React.memo(() => {
         setLoading(true)
         const servicesRes = await API.get('/services/public')
         const servicesData = Array.isArray(servicesRes.data) ? servicesRes.data : []
-        setServices(servicesData)
+        setServices(servicesData.length ? servicesData : FALLBACK_SERVICES)
 
         // Fetch categories or extract from services
         const categoriesRes = await API.get('/categories')
           .catch(() => API.get('/categories/public'))
           .catch(() => {
             const uniqueCats = [...new Set(servicesData.map(s => s.category).filter(Boolean))]
-            return { data: uniqueCats.map(cat => ({ id: cat.id, name: cat.name })) }
+            return { data: uniqueCats.map(cat => ({ id: cat.id || cat.name, name: cat.name })) }
           })
-        
-        setCategories(categoriesRes.data?.map(c => ({
-          id: c.id,
-          label: c.name
-        })) || [])
+
+        const mappedCategories = categoriesRes.data?.map(c => ({
+          id: c.id || c.name,
+          label: c.name || c.label || c
+        })) || FALLBACK_CATEGORIES
+
+        setCategories(mappedCategories.length ? mappedCategories : FALLBACK_CATEGORIES)
       } catch (err) {
         console.error('Failed to fetch pricing data:', err)
+        setServices(FALLBACK_SERVICES)
+        setCategories(FALLBACK_CATEGORIES)
       } finally {
         setLoading(false)
       }
@@ -101,7 +122,7 @@ const PricingSection = React.memo(() => {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-mufti-blue-500" />
             </div>
           ) : displayedServices.length > 0 ? (
-            displayedServices.map((item, i) => (
+            displayedServices.map((item) => (
               <div
                 key={item.id}
                 className="group flex items-center justify-between rounded-xl border border-white/40 bg-white/80 p-4 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-mufti-blue-200/50 hover:bg-white/90"

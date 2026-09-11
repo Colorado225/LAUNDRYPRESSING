@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Shirt, Lock, Mail, Loader2, Eye, EyeOff } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const Login = () => {
@@ -62,7 +62,7 @@ const Login = () => {
         }
       }, 1500); // 1.5 seconds delay gives enough time to read the toast
       
-    } catch (error) {
+    } catch {
       // Axios Interceptor handles the toast error, so we just clear our loading one
       toast.dismiss(loginLoadingToast);
       console.error("Login attempt failed");
