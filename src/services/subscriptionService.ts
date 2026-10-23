@@ -22,6 +22,13 @@ export const SUBSCRIPTION_STATE_LABELS: Record<SubscriptionState, string> = {
 /** États pendant lesquels le pressing peut encore écrire. */
 const ETATS_INSCRIPTIBLES: SubscriptionState[] = ['trial', 'active', 'grace']
 
+/** Date locale du jour (`AAAA-MM-JJ`), sans décalage de fuseau. */
+export function todayIso(maintenant: Date = new Date()): string {
+  const mois = `${maintenant.getMonth() + 1}`.padStart(2, '0')
+  const jour = `${maintenant.getDate()}`.padStart(2, '0')
+  return `${maintenant.getFullYear()}-${mois}-${jour}`
+}
+
 /** Nombre de jours calendaires entre deux dates `AAAA-MM-JJ` (jamais négatif). */
 export function daysBetween(from: string, to: string): number {
   const debut = Date.parse(`${from.slice(0, 10)}T00:00:00Z`)

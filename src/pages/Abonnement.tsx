@@ -12,6 +12,7 @@ import {
   formatPlan,
   isReadOnly,
   subscriptionNotice,
+  todayIso,
   type PlanChoice,
 } from '@/services/subscriptionService'
 
@@ -73,7 +74,7 @@ export default function Abonnement() {
     )
   }
 
-  const notice = subscriptionNotice(snapshot, new Date().toISOString().slice(0, 10))
+  const notice = subscriptionNotice(snapshot, todayIso())
 
   return (
     <div className="space-y-5">

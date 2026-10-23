@@ -6,6 +6,7 @@ import {
   formatPlan,
   isReadOnly,
   subscriptionNotice,
+  todayIso,
 } from '@/services/subscriptionService'
 import { SUPPORT_STATUS_LABELS } from '@/services/platformService'
 import type { SubscriptionSnapshot } from '@/types/database'
@@ -38,6 +39,11 @@ function abonnement(patch: Partial<SubscriptionSnapshot> = {}): SubscriptionSnap
 }
 
 describe('dates d’abonnement', () => {
+  it('produit la date locale du jour, complétée à deux chiffres', () => {
+    expect(todayIso(new Date(2026, 0, 5))).toBe('2026-01-05')
+    expect(todayIso(new Date(2026, 9, 23))).toBe('2026-10-23')
+  })
+
   it('compte les jours calendaires entre deux dates', () => {
     expect(daysBetween('2026-10-23', '2026-11-20')).toBe(28)
     expect(daysBetween('2026-10-23', '2026-10-23')).toBe(0)

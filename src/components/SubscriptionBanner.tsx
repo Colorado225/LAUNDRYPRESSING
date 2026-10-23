@@ -1,17 +1,9 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Info, Lock } from 'lucide-react'
 import { useSubscriptionStore } from '@/lib/subscriptionContext'
-import { subscriptionNotice } from '@/services/subscriptionService'
+import { subscriptionNotice, todayIso } from '@/services/subscriptionService'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
-
-/** Date du jour au format `AAAA-MM-JJ`, en heure locale. */
-function aujourdHui(): string {
-  const maintenant = new Date()
-  const mois = `${maintenant.getMonth() + 1}`.padStart(2, '0')
-  const jour = `${maintenant.getDate()}`.padStart(2, '0')
-  return `${maintenant.getFullYear()}-${mois}-${jour}`
-}
 
 /**
  * Bandeau d'abonnement (palier 4).
@@ -24,7 +16,7 @@ function aujourdHui(): string {
 export default function SubscriptionBanner() {
   const snapshot = useSubscriptionStore((state) => state.snapshot)
   const role = useTenantStore((state) => state.role)
-  const notice = subscriptionNotice(snapshot, aujourdHui())
+  const notice = subscriptionNotice(snapshot, todayIso())
 
   if (!notice) return null
 
