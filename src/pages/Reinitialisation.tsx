@@ -65,8 +65,18 @@ export default function Reinitialisation() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-brand-navy px-4 py-8">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+    <div className="auth-backdrop relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-8">
+      {/* Même fond que la page de connexion : deux halos flous, figés si
+          l'utilisateur a demandé moins d'animation (voir `index.css`). */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="auth-glow absolute -left-24 -top-28 size-[32rem] rounded-full bg-brand-teal/35 blur-3xl" />
+        <div
+          className="auth-glow absolute -bottom-32 -right-20 size-[28rem] rounded-full bg-brand-amber/20 blur-3xl"
+          style={{ animationDelay: '-6s' }}
+        />
+      </div>
+
+      <div className="auth-rise relative w-full max-w-md rounded-[1.75rem] bg-white/95 p-6 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.9)] ring-1 ring-white/40 backdrop-blur-2xl sm:p-8">
         <h1 className="flex items-center gap-2 text-xl font-bold text-brand-navy">
           <KeyRound size={22} aria-hidden /> Nouveau mot de passe
         </h1>
