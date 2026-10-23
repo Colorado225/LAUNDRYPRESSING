@@ -6,6 +6,52 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.1.1] — 2026-10-23
+
+Installation automatisée : après avoir rempli `.env`, `npm run setup` laisse
+l'application pleinement fonctionnelle sans aucune manipulation dans le tableau
+de bord Supabase.
+
+### Ajouté
+
+- **`scripts/setup.mjs`** — enchaîne la liaison du projet, `db push`
+  (`001_init.sql` puis `002_payments.sql`), le déploiement des deux Edge
+  Functions, l'envoi des secrets CinetPay, la création du pressing et du compte
+  propriétaire (`app_metadata.tenant_id` + `tenant_users`), puis un contrôle
+  final (`orders` doit répondre `42501`, webhook en ligne). Idempotent :
+  relancer ne crée ni doublon de pressing ni second compte.
+- **`scripts/lib/config.mjs`** — analyse du `.env` sans `dotenv` (commentaires,
+  guillemets, `export`, aucun `$` interpolé), validation en deux niveaux :
+  erreurs bloquantes (URL, clés, compte à moitié renseigné) et avertissements
+  pour les fonctions dégradées (paiement sans identifiants CinetPay).
+- **Options** — `--check`, `--dry-run`, `--skip-db`, `--skip-functions`,
+  `--skip-account`, `--help`. Les commandes affichées masquent le mot de passe
+  de la base.
+- **Repli Docker** — si le démon Docker est absent, le déploiement bascule sur
+  l'empaquetage côté Supabase (`--use-api`), au lieu d'échouer.
+- **43 tests** sur les scripts : analyse du `.env`, validation, et contrat du
+  provisionnement rejoué contre un serveur HTTP simulé (création puis relance).
+
+### Modifié
+
+- **`.env.example`** — documente les cinq valeurs indispensables
+  (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`,
+  `SUPABASE_SERVICE_ROLE_KEY`, plus les deux variables publiques), les
+  identifiants du compte initial et `APP_URL`, avec la provenance de chaque
+  valeur dans le tableau de bord.
+- **`src/lib/env.ts` / écran de connexion** — trois états distincts : `ok`,
+  `demo` (aucune variable) et `incomplete` (une seule des deux). Une
+  configuration partielle affiche désormais la variable manquante au lieu de
+  basculer silencieusement en mode démonstration.
+- **README** — installation en une commande, tableau du déroulé de
+  `npm run setup`, procédure manuelle conservée en dépannage.
+
+### Tests
+
+108 tests Vitest (7 fichiers), dont 43 pour les scripts d'installation.
+
+---
+
 ## [0.1.0-mvp] — 2026-10-23
 
 Première version complète du MVP : quatre modules, conformément au périmètre

@@ -51,66 +51,101 @@ Contraintes respectées : pas de Firebase, pas de Redux, **aucune librairie UI l
 - npm ≥ 10
 - Un projet Supabase (Cloud) **ou** la CLI Supabase pour un environnement local
 
-### 3.1 Installation
+### 3.1 Installation en une commande
 
 ```bash
 git clone https://github.com/Colorado225/LAUNDRYPRESSING.git
 cd LAUNDRYPRESSING
 npm install
-```
-
-### 3.2 Variables d'environnement
-
-```bash
 cp .env.example .env
+# → renseigner les valeurs dans .env (voir ci-dessous)
+npm run setup
 ```
 
-Renseigner ensuite dans `.env` :
+`npm run setup` fait tout le reste : schéma SQL, RLS, Edge Functions, secrets
+CinetPay, pressing et compte propriétaire. Aucune manipulation dans le tableau
+de bord Supabase n'est nécessaire au-delà de la création du projet.
+
+> ⚠️ **Le script a besoin d'un accès réseau à Supabase** et télécharge la CLI au
+> premier lancement via `npx` (aucun paquet n'est ajouté au projet). Il est
+> idempotent : on peut le relancer sans créer de doublon.
+
+### 3.2 Remplir le fichier `.env`
+
+Cinq valeurs sont indispensables :
 
 ```env
-VITE_SUPABASE_URL=https://<votre-projet>.supabase.co
-VITE_SUPABASE_ANON_KEY=<clé anon publique>
+VITE_SUPABASE_URL=https://<ref>.supabase.co        # Project Settings → API
+VITE_SUPABASE_ANON_KEY=<clé anon>                  # Project Settings → API
+SUPABASE_ACCESS_TOKEN=sbp_…                        # Account → Access Tokens
+SUPABASE_DB_PASSWORD=<mot de passe base>           # Project Settings → Database
+SUPABASE_SERVICE_ROLE_KEY=<clé service_role>       # Project Settings → API
 ```
+
+Fortement recommandées :
+
+```env
+APP_URL=https://mon-pressing.vercel.app   # URL publique, sans barre finale
+SEED_OWNER_EMAIL=patron@pressing.ci       # compte créé par npm run setup
+SEED_OWNER_PASSWORD=<mot de passe ≥ 6 car.>
+SEED_TENANT_NAME=Pressing Cocody
+```
+
+Facultatives : `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`
+(sans elles l'application fonctionne, mais le bouton « Payer par Mobile Money »
+reste inopérant).
 
 > ⚠️ **Toute variable préfixée `VITE_` est embarquée dans le bundle et donc publique.**
-> Les secrets (clé API CinetPay, `service_role`, secret webhook) se configurent
-> **côté Supabase**, jamais dans `.env` côté front : voir `.env.example` § 2.
+> Les autres — y compris `SUPABASE_SERVICE_ROLE_KEY` et `CINETPAY_SECRET_KEY` —
+> ne servent qu'à `npm run setup`, qui les pousse dans les secrets des Edge
+> Functions. Ne préfixez jamais un secret par `VITE_` : le script refuse de
+> démarrer si c'est le cas.
 
-### 3.3 Base de données Supabase
-
-**Option A — projet Cloud (recommandé pour ce MVP)**
-
-1. Créer un projet sur [supabase.com](https://supabase.com).
-2. Ouvrir **SQL Editor**, coller le contenu de `supabase/migrations/001_init.sql`, exécuter.
-3. Exécuter ensuite `supabase/migrations/002_payments.sql` (table `payment_transactions`
-   du module Mobile Money). L'ordre est impératif : la migration 002 référence `orders`.
-4. (Optionnel) Exécuter `supabase/seed.sql` pour deux pressings de démonstration.
-
-**Option B — Supabase local**
+Contrôler la configuration avant d'installer :
 
 ```bash
-supabase start
-supabase db push
-psql "$(supabase status -o env | grep DB_URL | cut -d= -f2-)" -f supabase/seed.sql
+npm run setup:check    # valide le .env et s'arrête
+npm run setup:dry      # affiche les commandes sans rien exécuter
 ```
 
-### 3.4 Provisionner un utilisateur
+### 3.3 Ce que fait `npm run setup`
 
-Un utilisateur n'a accès à rien tant qu'il n'est pas rattaché à un pressing.
-Après avoir créé le compte dans **Authentication > Users** :
+| Étape | Action | Idempotence |
+|-------|--------|-------------|
+| 1 | `supabase link` sur le projet | sans effet si déjà lié |
+| 2 | `supabase db push` : `001_init.sql` puis `002_payments.sql` | migration déjà appliquée ignorée |
+| 3 | Déploiement de `cinetpay-init` (JWT requis) et `cinetpay-webhook` (public) | redéploie la même version |
+| 4 | Secrets `CINETPAY_*` et `APP_URL` côté Edge Functions | écrasés par les valeurs du `.env` |
+| 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` | pressing retrouvé par son nom, compte réutilisé |
+| 6 | Contrôle : `orders` doit répondre `42501` en anonyme, webhook en ligne | lecture seule |
+
+Options : `--skip-db`, `--skip-functions`, `--skip-account`, `--check`,
+`--dry-run`, `--help`.
+
+Remarque sur l'étape 3 : si Docker n'est pas installé, le script bascule
+automatiquement sur l'empaquetage côté Supabase (`--use-api`), ce qui évite
+l'erreur « Docker daemon not running » de la CLI.
+
+### 3.4 Installation manuelle (dépannage)
+
+Si `npm run setup` ne peut pas s'exécuter (pas de jeton personnel, réseau
+restreint), voici l'équivalent :
+
+1. Ouvrir **SQL Editor** et exécuter `supabase/migrations/001_init.sql`, puis
+   `002_payments.sql` (l'ordre est impératif : la 002 référence `orders`).
+2. (Optionnel) Exécuter `supabase/seed.sql` pour deux pressings de démonstration.
+3. Créer le compte dans **Authentication > Users**.
+4. Renseigner le pressing et le rattachement :
 
 ```sql
--- 1. Créer le pressing
 insert into public.tenants (name, phone)
 values ('Pressing Cocody', '+225 07 00 00 00 01')
 returning id;
 
--- 2. Rattacher l'utilisateur (remplacer les deux UUID)
 insert into public.tenant_users (user_id, tenant_id, role)
 values ('<user-uuid>', '<tenant-uuid>', 'owner');
 -- role ∈ ('owner', 'receptionist', 'artisan')
 
--- 3. (Recommandé) Poser les claims dans le JWT
 update auth.users
 set raw_app_meta_data =
   coalesce(raw_app_meta_data, '{}'::jsonb)
@@ -118,9 +153,9 @@ set raw_app_meta_data =
 where id = '<user-uuid>';
 ```
 
-Sans l'étape 3, la fonction `current_tenant_id()` retombe automatiquement sur la table
-`tenant_users` (voir commentaire dans la migration). L'étape 3 est la voie officielle,
-la seconde n'existe que pour ne pas bloquer le développement.
+Sans la dernière instruction, `current_tenant_id()` retombe sur `tenant_users` :
+l'application fonctionne, mais la RLS passe par une sous-requête à chaque
+lecture.
 
 ### 3.5 Lancer l'application
 
@@ -130,20 +165,27 @@ npm run dev
 
 Ouvrir <http://localhost:5173>.
 
-Au premier lancement, l'application affiche l'**écran de connexion**.
+- **Supabase configuré** : se connecter avec `SEED_OWNER_EMAIL` /
+  `SEED_OWNER_PASSWORD`. Le pressing est déduit de `tenant_users` — aucun UUID
+  n'est saisi.
+- **Configuration partielle** (une seule des deux variables `VITE_SUPABASE_*`) :
+  l'écran de connexion signale la variable manquante et la commande
+  `npm run setup:check`. On ne bascule **pas** en démonstration, pour éviter de
+  croire à une panne du serveur.
+- **Aucune configuration** : mode démonstration, l'écran demande l'identifiant
+  du pressing (`11111111-1111-4111-8111-111111111111` par défaut, ou
+  `VITE_DEMO_TENANT_ID`). Aucun mot de passe n'est vérifié : inutilisable en
+  production.
 
-- **Supabase configuré** : se connecter avec l'e-mail et le mot de passe du compte
-  créé en §3.4. Le pressing est déduit de `tenant_users` — aucun UUID n'est saisi.
-- **Supabase non configuré** : l'écran bascule en **mode démonstration** et demande
-  l'identifiant du pressing. Utilisez celui de `supabase/seed.sql` :
+### 3.6 Mettre le front en ligne
 
-```text
-11111111-1111-4111-8111-111111111111
-```
-
-ou définissez `VITE_DEMO_TENANT_ID` dans `.env` pour le pré-remplir. Ce mode
-permet de tester l'offline-first sans backend, mais **ne vérifie aucun mot de
-passe** : il est inutilisable en production.
+1. Déployer sur Vercel/Netlify avec `npm run build`, sortie `dist`.
+2. Reporter l'URL publique dans `APP_URL`, puis relancer `npm run setup`
+   (les redirections de paiement et `return_url` sont mises à jour).
+3. Vérifier que `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` sont bien
+   définies dans les variables d'environnement de l'hébergeur — le build les
+   incorpore.
+4. Rejouer `supabase/tests/isolation.sql` dans le SQL Editor (§6).
 
 ---
 
@@ -156,7 +198,10 @@ passe** : il est inutilisable en production.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (58 tests) |
+| `npm test` | Suite Vitest complète (108 tests, dont les scripts d'installation) |
+| `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
+| `npm run setup:check` | Valide le `.env` puis s'arrête |
+| `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -218,11 +263,17 @@ pas en `npm run dev`).
 │   ├── sync/syncEngine.ts        # envoi des commandes en attente
 │   ├── test/                     # tests Vitest + amorçage (jamais dans le bundle)
 │   │   ├── setup.ts              # fake-indexeddb, environnement React
+│   │   ├── env.test.ts           # états de configuration (ok / démo / incomplet)
 │   │   ├── qrService.test.ts
 │   │   ├── syncEngine.test.ts
 │   │   ├── tenantIsolation.test.ts
 │   │   └── useCreateOrder.test.tsx
 │   └── types/database.ts         # types alignés sur le schéma SQL
+├── scripts/
+│   ├── setup.mjs                 # installation complète depuis .env (npm run setup)
+│   ├── setup.test.mjs            # contrat du provisionnement (serveur HTTP simulé)
+│   ├── config.test.mjs           # lecture et validation du .env
+│   └── lib/config.mjs            # analyse du .env, validation (logique pure)
 ├── supabase/
 │   ├── config.toml               # verify_jwt de chaque Edge Function
 │   ├── functions/
@@ -502,6 +553,18 @@ avec un bouton de actualisation manuelle.
 
 ### Configuration
 
+Renseigner les trois valeurs dans `.env`, puis lancer `npm run setup` : les
+secrets sont poussés côté Supabase et les deux fonctions déployées
+automatiquement (§3.3).
+
+```env
+CINETPAY_API_KEY=...
+CINETPAY_SITE_ID=...
+CINETPAY_SECRET_KEY=...
+```
+
+L'équivalent manuel, si nécessaire :
+
 ```bash
 # Secrets des Edge Functions (jamais dans le bundle Vite)
 supabase secrets set \
@@ -515,8 +578,11 @@ supabase functions deploy cinetpay-init
 supabase functions deploy cinetpay-webhook --no-verify-jwt
 ```
 
-`SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` sont injectées
-automatiquement par Supabase — ne pas les définir manuellement.
+`CINETPAY_NOTIFY_URL` est déduite de l'URL du projet
+(`https://<ref>.supabase.co/functions/v1/cinetpay-webhook`) et n'a donc pas à
+être saisie. `SUPABASE_URL`, `SUPABASE_ANON_KEY` et
+`SUPABASE_SERVICE_ROLE_KEY` sont injectées automatiquement par Supabase — ne pas
+les définir manuellement.
 
 ### Limites de cette phase
 
