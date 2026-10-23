@@ -28,8 +28,8 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette et de base | 5 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`) |
-| Fichiers de tests | 18 (12 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
-| Tests automatisés | 283 |
+| Fichiers de tests | 19 (13 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
+| Tests automatisés | 286 |
 | Contrôles SQL exécutés | 123 (isolations, rôles, paliers 1 à 4) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |

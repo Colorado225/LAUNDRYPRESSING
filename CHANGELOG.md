@@ -18,7 +18,8 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
   par statut (annulations comprises), activité par jour de la semaine, top 5 des
   prestations et **export CSV** de la série.
 - **`src/lib/reporting.ts`** : calculs purs et testés (bornes de période,
-  séries sans trou de jour, variations, CSV). 23 tests.
+  séries sans trou de jour, variations, CSV). 23 tests, plus 3 tests de
+  montage de la page (rendu réel, refus d'accès au réceptionniste, écran vide).
 - **`npm run db:etat` / `db:push` / `db:verifier`** (`scripts/db.mjs`) :
   inventaire en lecture seule, application des migrations puis rejeu des
   **123 contrôles SQL** sur une base PostgreSQL gérée (Neon ou autre), sans
@@ -43,7 +44,8 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ### Vérifié
 
-- 283 tests sur 16 fichiers, `tsc --noEmit`, ESLint et build de production.
+- 286 tests sur 17 fichiers, `tsc --noEmit`, ESLint et build de production
+  (dont 3 tests de montage de l'écran Rapports).
 - `db:push` → `db:etat` → `db:verifier` de bout en bout sur PostgreSQL 16.2 :
   20 tables, 66 politiques, 0 table sans RLS, **123 contrôles** réussis.
 
