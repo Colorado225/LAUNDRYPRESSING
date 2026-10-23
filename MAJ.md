@@ -569,7 +569,8 @@ Supabase dans cet environnement.
 | 23/10/2026 | MVP | Pagination serveur par curseur des dépenses (`listExpensesPage`), total du mois côté serveur, 17 tests | `e91a112` |
 | 23/10/2026 | MVP | Écran 12 enrichi : pressing modifiable, équipe, sécurité du compte, export et purge des données locales, 32 tests | `aba9c29` |
 | 23/10/2026 | MVP | Facture A4 (`/commandes/:id/facture`) : numéro déterministe, lignes regroupées, acomptes, montant en lettres, 42 tests | `f1fda36` |
-| 23/10/2026 | MVP | Page connexion/inscription en deux panneaux, `create_tenant_for_user` (migration 008), 29 tests + 11 contrôles SQL | à venir |
+| 23/10/2026 | MVP | Inscription libre : `create_tenant_for_user` (migration 008), 29 tests + 11 contrôles SQL | `313cffc` |
+| 23/10/2026 | MVP | Refonte visuelle de la page d'authentification (verre dépoli, halos animés, panneau photo) | `7b84d06` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.
