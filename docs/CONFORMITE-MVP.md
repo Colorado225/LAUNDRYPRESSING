@@ -28,7 +28,7 @@ reste à faire.
 | 7 | Catalogue | `/catalogue` | `/catalogue` | `src/pages/Catalogue.tsx` | ✅ livré, mis en cache IndexedDB |
 | 8 | Paiement / Caisse | `/payment/:orderId` | panneaux dans la fiche + `/caisse` + `/commandes/:orderId/recu` | `src/components/PaymentButton.tsx`, `CashPanel.tsx`, `src/pages/Caisse.tsx`, `Receipt.tsx` | ✅ livré |
 | 9 | Clients | `/clients` | `/clients` | `src/pages/Clients.tsx` | ✅ livré |
-| 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3), voir §4 |
+| 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3) ; dépenses **paginées côté serveur** |
 | 11 | Rapports et statistiques | — | `/rapports` | `src/pages/Rapports.tsx`, `src/lib/reporting.ts` | ✅ **livré** (courbes 7/30/90 j, comparaison de périodes, export CSV) |
 | 12 | Profil et paramètres | — | `/parametres` | `src/pages/Parametres.tsx` | ✅ **livré** (page basique, lecture seule) |
 

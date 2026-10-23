@@ -295,8 +295,15 @@ Onglet **Dépenses** (propriétaire uniquement) : libellé, catégorie (fournitu
 loyer, salaires, eau et électricité, transport, autre), montant, date,
 fournisseur facultatif et note.
 
-Le total du mois s'affiche en haut de l'écran et alimente le tableau de bord. Un
-autre rôle ne voit ni l'écran ni les montants : la base refuse la lecture.
+Le total du mois s'affiche en haut de l'écran ; il est calculé par le serveur,
+donc il reste juste même si le registre est long. Un autre rôle ne voit ni
+l'écran ni les montants : la base refuse la lecture.
+
+La liste affiche les **25 dépenses les plus récentes**. Le bouton **Charger les
+dépenses plus anciennes** ajoute la page suivante sans recharger l'écran ; il
+disparaît quand le registre est épuisé. La pagination suit la dernière ligne
+affichée, pas un numéro de page : une dépense ajoutée pendant la consultation
+n'apparaît jamais deux fois.
 
 ### 5.8 Suivre l'abonnement
 

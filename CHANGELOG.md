@@ -6,6 +6,45 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.6.1] — 2026-10-23
+
+Pagination serveur des dépenses — la première liste qui ne tient pas dans Dexie.
+
+### Ajouté
+
+- **`listExpensesPage`** (`expenseService.ts`) : page de 25 dépenses triée par
+  `created_at` **puis** `id` décroissants, avec **curseur** et indicateur de
+  suite. La requête demande une ligne de plus que la page : elle sait s'il
+  existe une suite sans `count(*)`.
+- **`decouperPageCurseur` et `filtreCurseur`** (`src/lib/pagination.ts`) :
+  découpe d'une page reçue du serveur et construction du filtre
+  `created_at.lt.V, and(created_at.eq.V, id.lt.I)`.
+- **Bouton « Charger les dépenses plus anciennes »** sur `/depenses` : la page
+  suivante s'ajoute à la liste, sans rechargement ni perte de position. Le
+  nombre de dépenses affichées est indiqué, ainsi que la fin du registre.
+
+### Corrigé
+
+- **Total du mois des dépenses** : il était calculé sur les 60 lignes chargées
+  (plafond silencieux). Il vient désormais d'une agrégation serveur, donc il
+  reste juste au-delà de ce plafond — et affiche « Hors ligne » plutôt que zéro
+  quand la lecture échoue.
+
+### Décidé
+
+- **Curseur, pas `offset`.** Une dépense saisie entre deux pages décalerait
+  toutes les suivantes : doublon en bas de page 1, ligne manquante en page 2.
+  Le curseur repart de la dernière ligne réellement vue.
+- **Tri total (`created_at`, `id`).** L'horodatage seul n'est pas unique ; un
+  tri partiel rendrait la pagination instable.
+- **La pagination locale ne change pas** pour les commandes : elles sont déjà
+  toutes dans Dexie pour le hors ligne, et `paginate` reste la bonne réponse.
+
+### Vérifié
+
+- 302 tests sur 18 fichiers (dont 8 sur la requête réellement construite), 123
+  contrôles SQL, `tsc --noEmit`, ESLint, build de production.
+
 ## [0.6.0] — 2026-10-23
 
 Écran 11 de la maquette (rapports) et branchement d'une base PostgreSQL gérée.

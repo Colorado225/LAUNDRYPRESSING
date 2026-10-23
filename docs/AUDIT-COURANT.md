@@ -28,8 +28,8 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette et de base | 5 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`) |
-| Fichiers de tests | 19 (13 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
-| Tests automatisés | 286 |
+| Fichiers de tests | 20 (14 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
+| Tests automatisés | 302 |
 | Contrôles SQL exécutés | 123 (isolations, rôles, paliers 1 à 4) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
@@ -129,7 +129,7 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `scripts/lib/config.mjs` | lecture et validation pure du `.env` (`APP_ENV` inclus) |
 | `scripts/sql-verify.sh` | rejoue migrations et tests SQL sur un PostgreSQL jetable |
 | `scripts/recette.mjs` | 7 contrôles **en lecture seule** sur un projet déployé (`npm run recette`) |
-| `src/lib/pagination.ts` | découpe de page pure, bornée, testée ; utilisée par la liste des commandes |
+| `src/lib/pagination.ts` | découpe locale (commandes) **et** curseur serveur (dépenses), testés |
 | `src/lib/reporting.ts` | calculs purs des rapports : bornes de période, séries, variations, export CSV |
 | `scripts/db.mjs` | `db:etat` / `db:push` / `db:verifier` sur une base PostgreSQL gérée (Neon) — voir `docs/NEON.md` |
 | `.github/workflows/ci.yml` | job application (`npm ci`, types, style, tests, build) + job SQL réel |

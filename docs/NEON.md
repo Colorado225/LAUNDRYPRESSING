@@ -78,18 +78,27 @@ base managée), pas pour faire tourner le pressing.
 
 ---
 
-## 4. Le jour où l'application devra lire du serveur
+## 4. Pagination des listes alimentées par le serveur
 
-Deux listes sont aujourd'hui entièrement locales (Dexie) : les commandes et les
-clients. Une pagination serveur n'aurait donc rien à paginer. Le jour où un
-écran lira directement la base :
+Les commandes et les clients restent entièrement locaux (Dexie) : leur
+pagination est une découpe d'affichage, sans réseau (`paginate`).
 
-- la lecture passera par une **fonction SQL** (`rpc`) ou une vue filtrée par
-  `current_tenant_id()`, jamais par un accès direct ;
-- la pagination devra être **clé + curseur** (`created_at`, `id`), pas `offset` :
-  une commande insérée pendant la consultation décalerait toutes les pages
-  suivantes ;
-- `src/lib/pagination.ts` reste la découpe d'affichage ; seule la source change.
+La liste des **dépenses**, elle, vient du serveur et grandit chaque semaine :
+elle est paginée **par curseur** (`decouperPageCurseur`, `filtreCurseur` dans
+`src/lib/pagination.ts`, `listExpensesPage` dans `expenseService.ts`).
+
+- Le tri est **total** : `created_at` décroissant puis `id` décroissant. Un tri
+  sur l'horodatage seul n'est pas stable quand deux dépenses partagent la même
+  seconde.
+- La requête demande `limite + 1` lignes : la ligne supplémentaire indique
+  seulement s'il existe une suite, sans `count(*)` à chaque page.
+- Le filtre envoyé est
+  `created_at.lt.V, and(created_at.eq.V, id.lt.I)`, c'est-à-dire « strictement
+  après la dernière ligne vue ». Aucun `offset` : une dépense saisie entre deux
+  pages ne provoque ni doublon ni trou.
+
+Le jour où les commandes passeront au serveur, la même mécanique s'appliquera :
+seule la source change, les helpers restent.
 
 ---
 

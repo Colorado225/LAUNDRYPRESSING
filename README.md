@@ -211,7 +211,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (286 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
+| `npm test` | Suite Vitest complète (302 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
@@ -263,7 +263,7 @@ pas en `npm run dev`).
 │   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
 │   │   ├── tenantContext.ts      # pressing courant (Zustand + persistance)
 │   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
-│   │   ├── pagination.ts         # découpe en pages (liste des commandes)
+│   │   ├── pagination.ts         # pages locales + curseur serveur (dépenses)
 │   │   ├── reporting.ts          # calculs purs des rapports (écran 11)
 │   │   ├── permissions.ts        # matrice des capacités par rôle
 │   │   └── ids.ts                # UUID côté client + code QR
@@ -277,7 +277,7 @@ pas en `npm run dev`).
 │   │   ├── Atelier.tsx           # scan QR → changement de statut
 │   │   ├── Clients.tsx           # fiche client + historique (palier 3)
 │   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
-│   │   ├── Depenses.tsx          # dépenses du propriétaire (palier 3)
+│   │   ├── Depenses.tsx          # dépenses paginées côté serveur (palier 3)
 │   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
 │   │   ├── Rapports.tsx          # courbes 7/30/90 j + export CSV (écran 11)
 │   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
