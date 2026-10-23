@@ -27,6 +27,12 @@ import {
   markIssueError,
   markIssueSynced,
 } from '@/db/issueRepository'
+import {
+  countPendingNotifications,
+  getPendingNotifications,
+  markNotificationError,
+  markNotificationSynced,
+} from '@/db/notificationRepository'
 
 /**
  * Moteur de synchronisation offline-first.
@@ -54,7 +60,10 @@ import {
  *  7. Les **réclamations** (vêtements abîmés) sont transmises après les
  *     commandes. Elles sont immuables : un refus définitif les sort de la file
  *     au lieu de les renvoyer indéfiniment.
- *  8. Une **lecture** légère rapatrie l'état des commandes modifiées ailleurs
+ *  8. Les **clients prévenus** (WhatsApp ou appel) sont transmis après les
+ *     commandes, dans le même esprit que les réclamations : lignes immuables,
+ *     ajout uniquement, doublon d'identifiant = envoi déjà réussi.
+ *  9. Une **lecture** légère rapatrie l'état des commandes modifiées ailleurs
  *     (paiement Mobile Money, changement de statut sur une autre tablette).
  *     Elle ne touche JAMAIS une commande ayant du travail local en attente.
  */
@@ -78,6 +87,8 @@ export interface SyncResult {
   conflicts: number
   /** Encaissements au comptoir transmis avec succès. */
   cashSucceeded: number
+  /** Clients prévenus transmis avec succès. */
+  notificationsSucceeded: number
   /** Réclamations transmises avec succès. */
   issuesSucceeded: number
   /** Commandes dont l'état a été rafraîchi depuis le serveur. */
@@ -94,6 +105,7 @@ const EMPTY_RESULT: SyncResult = {
   conflicts: 0,
   cashSucceeded: 0,
   issuesSucceeded: 0,
+  notificationsSucceeded: 0,
   pulled: 0,
   skipped: true,
   lastError: null,
@@ -298,6 +310,60 @@ async function pushOrderIssues(
   return { succeeded, lastError }
 }
 
+/**
+ * Transmet les clients prévenus.
+ *
+ * Même contrat que les réclamations : ajout seul, identifiant généré sur la
+ * tablette, doublon = envoi déjà réussi. Un refus définitif (rôle, abonnement
+ * échu) sort la ligne de la file : elle reste consultable localement avec son
+ * motif, sans bloquer les suivantes.
+ */
+async function pushNotifications(
+  tenantId: string,
+): Promise<{ succeeded: number; lastError: string | null }> {
+  const enAttente = await getPendingNotifications(tenantId)
+  if (enAttente.length === 0) return { succeeded: 0, lastError: null }
+
+  const supabase = getSupabaseClient()
+  let succeeded = 0
+  let lastError: string | null = null
+
+  for (const notification of enAttente) {
+    const { error } = await supabase.from('notifications').insert({
+      id: notification.id,
+      tenant_id: tenantId,
+      order_id: notification.orderId,
+      channel: notification.channel,
+      reason: notification.reason,
+      customer_name: notification.customerName,
+      customer_phone: notification.customerPhone,
+      message: notification.message,
+      created_at: notification.createdAt,
+    })
+
+    if (error) {
+      const code = 'code' in error ? String(error.code ?? '') : ''
+      const definitive =
+        error.message.includes('duplicate key') ||
+        ['23505', '23503', '23514', '22023', '42501'].includes(code)
+      lastError = toFrenchSyncError(error)
+
+      if (error.message.includes('duplicate key')) {
+        await markNotificationSynced(notification.id)
+        succeeded += 1
+      } else {
+        await markNotificationError(notification.id, lastError, definitive)
+      }
+      continue
+    }
+
+    await markNotificationSynced(notification.id)
+    succeeded += 1
+  }
+
+  return { succeeded, lastError }
+}
+
 /** Rafraîchit l'état des commandes modifiées sur un autre appareil. */
 async function pullOrders(tenantId: string): Promise<number> {
   const supabase = getSupabaseClient()
@@ -359,8 +425,14 @@ async function runSync(): Promise<SyncResult> {
   const pendingOrders = await getPendingOrders(tenantId)
   const pendingCash = await getPendingCashPayments(tenantId)
   const pendingIssues = await getPendingOrderIssues(tenantId)
+  const pendingNotifications = await getPendingNotifications(tenantId)
 
-  if (pendingOrders.length === 0 && pendingCash.length === 0 && pendingIssues.length === 0) {
+  if (
+    pendingOrders.length === 0 &&
+    pendingCash.length === 0 &&
+    pendingIssues.length === 0 &&
+    pendingNotifications.length === 0
+  ) {
     // Rien à envoyer, mais d'autres appareils ont peut-être écrit : on relit.
     const pulled = await pullOrders(tenantId).catch(() => 0)
     useSyncStore.getState().finishSync({ pendingCount: 0, lastError: null })
@@ -437,14 +509,23 @@ async function runSync(): Promise<SyncResult> {
 
   if (issues.lastError) lastError = issues.lastError
 
-  // 5. Lecture des modifications faites ailleurs.
+  // 5. Clients prévenus : après les commandes, qu'ils référencent.
+  const notifications = await pushNotifications(tenantId).catch((error: unknown) => ({
+    succeeded: 0,
+    lastError: toFrenchSyncError(error),
+  }))
+
+  if (notifications.lastError) lastError = notifications.lastError
+
+  // 6. Lecture des modifications faites ailleurs.
   const pulled = await pullOrders(tenantId).catch(() => 0)
 
   const remaining = await countPendingOrders(tenantId)
   const cashSummary = await summariseCash(tenantId)
   const remainingIssues = await countPendingIssues(tenantId)
+  const remainingNotifications = await countPendingNotifications(tenantId)
   useSyncStore.getState().finishSync({
-    pendingCount: remaining + cashSummary.pending + remainingIssues,
+    pendingCount: remaining + cashSummary.pending + remainingIssues + remainingNotifications,
     lastError,
   })
 
@@ -455,6 +536,7 @@ async function runSync(): Promise<SyncResult> {
     conflicts,
     cashSucceeded: cash.succeeded,
     issuesSucceeded: issues.succeeded,
+    notificationsSucceeded: notifications.succeeded,
     pulled,
     skipped: false,
     lastError,

@@ -16,6 +16,7 @@ import {
   type LocalOrder,
   type LocalOrderIssue,
   type LocalOrderItem,
+  type LocalNotification,
   type LocalRefund,
 } from './localDb'
 
@@ -161,4 +162,34 @@ export function useUpdateOrderDueDate() {
   return useCallback(async (orderId: string, dueDate: string | null) => {
     return updateOrderDueDateLocal(orderId, dueDate)
   }, [])
+}
+
+/** Clients prévenus pour une commande, les plus récents d'abord. */
+export function useOrderNotifications(orderId: string | undefined): LocalNotification[] {
+  return (
+    useLiveQuery(async () => {
+      if (!orderId) return []
+      const lignes = await db.notifications.where('orderId').equals(orderId).toArray()
+      return lignes.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    }, [orderId]) ?? []
+  )
+}
+
+/**
+ * Tout le journal du pressing, le plus récent d'abord.
+ *
+ * Volontairement borné : au-delà de quelques milliers de lignes, un journal
+ * complet n'a plus d'intérêt au comptoir. C'est la date du dernier contact par
+ * commande qui décide qui reste à prévenir — pas la liste entière.
+ */
+export function useRecentNotifications(limit = 200): LocalNotification[] {
+  const tenantId = useTenantStore((state) => state.tenantId)
+
+  return (
+    useLiveQuery(async () => {
+      if (!tenantId) return []
+      const lignes = await db.notifications.where('tenantId').equals(tenantId).toArray()
+      return lignes.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit)
+    }, [tenantId, limit]) ?? []
+  )
 }

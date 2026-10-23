@@ -119,6 +119,26 @@ export type OrderIssueRow = {
   created_at: string
 }
 
+/**
+ * Client prévenu (table `notifications`, migration 010).
+ *
+ * Ligne immuable : elle atteste qu'un message a été présenté au comptoir et
+ * envoyé, elle ne se réécrit pas. Une nouvelle situation crée une nouvelle
+ * ligne, ce qui garde l'historique des sollicitations.
+ */
+export type NotificationRow = {
+  id: string
+  tenant_id: string
+  order_id: string | null
+  channel: 'whatsapp' | 'appel' | 'sms'
+  reason: 'pret' | 'retard' | 'relance'
+  customer_name: string
+  customer_phone: string
+  message: string
+  sent_by: string | null
+  created_at: string
+}
+
 /** Remboursement (table `payment_refunds`, migration 005). */
 export type PaymentRefundRow = {
   id: string
@@ -577,6 +597,16 @@ export interface Database {
           'id' | 'category' | 'spent_on' | 'supplier_id' | 'note' | 'created_by' | 'created_at'
         >
         Update: Partial<Omit<ExpenseRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      notifications: {
+        Row: NotificationRow
+        Insert: InsertOf<
+          NotificationRow,
+          'id' | 'order_id' | 'sent_by' | 'created_at'
+        >
+        // Aucune mise à jour : le journal des sollicitations est immuable.
+        Update: never
         Relationships: []
       }
       plans: {

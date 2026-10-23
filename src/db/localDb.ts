@@ -159,6 +159,33 @@ export interface LocalRefund {
 }
 
 /**
+ * Client prévenu (WhatsApp ou appel), journalisé localement.
+ *
+ * L'envoi lui-même n'est pas technique : c'est un lien `wa.me` ouvert depuis la
+ * tablette du comptoir. Cette ligne garde la trace de **qui** a été prévenu,
+ * **quand** et **par quel motif**, ce qui permet de ne pas relancer deux fois
+ * le même client et de savoir, en cas de contestation, ce qui lui a été dit.
+ *
+ * Comme une réclamation, la ligne est immuable : on ne la modifie pas, on en
+ * écrit une nouvelle si la situation change.
+ */
+export interface LocalNotification {
+  id: string
+  tenantId: string
+  /** Commande concernée, `null` pour un message hors commande. */
+  orderId: string | null
+  channel: 'whatsapp' | 'appel'
+  reason: 'pret' | 'retard' | 'relance'
+  customerName: string
+  customerPhone: string
+  /** Texte exact qui a été présenté au comptoir (et envoyé, pour WhatsApp). */
+  message: string
+  createdAt: string
+  synced: SyncFlag
+  lastError: string | null
+}
+
+/**
  * Paiement Mobile Money en attente d'envoi (utilisé en Phase 4).
  * Le store existe dès la Phase 2 pour éviter une migration de schéma Dexie.
  */
@@ -185,6 +212,7 @@ export class PressingDatabase extends Dexie {
   cashPayments!: Table<LocalCashPayment, string>
   orderIssues!: Table<LocalOrderIssue, string>
   refunds!: Table<LocalRefund, string>
+  notifications!: Table<LocalNotification, string>
 
   constructor() {
     super('pressing-pro')
@@ -285,6 +313,13 @@ export class PressingDatabase extends Dexie {
             if (item.priceReason === undefined) item.priceReason = null
           })
       })
+
+    // v6 (prévenir le client) : journal des clients prévenus. Aucun champ
+    // ajouté aux commandes — le statut et l'échéance suffisent à décider qui
+    // reste à prévenir ; c'est la date de la dernière notification qui tranche.
+    this.version(6).stores({
+      notifications: 'id, tenantId, orderId, createdAt, synced, [tenantId+synced], [orderId+createdAt]',
+    })
   }
 }
 
@@ -296,7 +331,16 @@ export async function clearLocalData(): Promise<void> {
   // Dexie n'est plus typée.
   await db.transaction(
     'rw',
-    [db.orders, db.orderItems, db.pendingPayments, db.catalogEntries, db.cashPayments, db.orderIssues, db.refunds],
+    [
+      db.orders,
+      db.orderItems,
+      db.pendingPayments,
+      db.catalogEntries,
+      db.cashPayments,
+      db.orderIssues,
+      db.refunds,
+      db.notifications,
+    ],
     async () => {
       await Promise.all([
         db.orders.clear(),
@@ -306,6 +350,7 @@ export async function clearLocalData(): Promise<void> {
         db.cashPayments.clear(),
         db.orderIssues.clear(),
         db.refunds.clear(),
+        db.notifications.clear(),
       ])
     },
   )

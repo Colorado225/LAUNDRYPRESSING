@@ -51,6 +51,7 @@ export const FICHIERS_SCHEMA = [
   'supabase/migrations/007_palier4.sql',
   'supabase/migrations/008_inscription.sql',
   'supabase/migrations/009_audit.sql',
+  'supabase/migrations/010_notifications.sql',
   'supabase/seed.sql',
 ]
 
@@ -65,6 +66,7 @@ export const FICHIERS_TESTS = [
   'supabase/tests/roles.sql',
   'supabase/tests/inscription.sql',
   'supabase/tests/audit.sql',
+  'supabase/tests/notifications.sql',
   'supabase/tests/recette_reelle.sql',
 ]
 
