@@ -92,12 +92,25 @@ export default function Login({ onAuthenticated, notice = null }: LoginProps) {
       </div>
 
       <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-6xl items-center">
-        <div className="auth-rise grid w-full overflow-hidden rounded-[2rem] bg-white/10 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.9)] ring-1 ring-white/15 backdrop-blur-2xl lg:grid-cols-[minmax(0,29rem)_1fr]">
+        {/* La hauteur est bornée à l'écran : sur un portable de 768 px de haut,
+            le formulaire d'inscription défile DANS la carte au lieu de pousser
+            la page. Le défilement interne est cantonné (`overscroll-contain`)
+            pour ne pas entraîner la page derrière. */}
+        <div className="auth-rise grid max-h-[calc(100dvh-3rem)] w-full overflow-hidden rounded-[2rem] lg:max-h-none bg-white/10 shadow-[0_30px_80px_-30px_rgba(2,6,23,0.9)] ring-1 ring-white/15 backdrop-blur-2xl lg:grid-cols-[minmax(0,29rem)_1fr]">
           {/* ------------------------------------------------ Formulaire */}
-          <section className="relative flex flex-col justify-center bg-white/92 px-5 py-8 backdrop-blur-xl sm:px-9 sm:py-10 lg:bg-white/95">
+          <section className="relative flex min-h-0 flex-col overflow-y-auto overscroll-contain bg-white/92 px-5 py-7 backdrop-blur-xl sm:px-9 sm:py-9 lg:bg-white/95">
+            {/* Liseré d'accent : deux pixels de couleur, la seule fantaisie de
+                l'écran. Il marque le haut de la zone de saisie sans peser. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-brand-teal/0 via-brand-teal/70 to-brand-amber/60"
+            />
             <EnteteMobile />
 
-            <div className="mt-6 lg:mt-0">
+            {/* `my-auto` plutôt que `justify-center` sur la section : dans un
+                conteneur qui défile, le centrage flex rogne le haut du contenu
+                quand il devient plus haut que la carte. */}
+            <div className="my-auto mt-6 lg:mt-0">
               {notice && (
                 <p
                   role="status"
@@ -115,22 +128,26 @@ export default function Login({ onAuthenticated, notice = null }: LoginProps) {
                 <div>
                   <Onglets value={onglet} onChange={setOnglet} />
 
-                  {onglet === 'connexion' ? (
-                    <CredentialsForm
-                      onAuthenticated={onAuthenticated}
-                      onCreerCompte={() => setOnglet('inscription')}
-                    />
-                  ) : (
-                    <SignupForm
-                      onAuthenticated={onAuthenticated}
-                      onSeConnecter={() => setOnglet('connexion')}
-                    />
-                  )}
+                  {/* La clé force le remontage : c'est ce qui rejoue
+                      l'animation d'entrée à chaque changement d'onglet. */}
+                  <div key={onglet} className="auth-panel">
+                    {onglet === 'connexion' ? (
+                      <CredentialsForm
+                        onAuthenticated={onAuthenticated}
+                        onCreerCompte={() => setOnglet('inscription')}
+                      />
+                    ) : (
+                      <SignupForm
+                        onAuthenticated={onAuthenticated}
+                        onSeConnecter={() => setOnglet('connexion')}
+                      />
+                    )}
+                  </div>
                 </div>
               )}
             </div>
 
-            <p className="mt-6 text-center text-xs leading-relaxed text-slate-500">
+            <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-500">
               Connexion sécurisée Supabase. Les commandes restent consultables hors ligne sur cet
               appareil.
             </p>
@@ -190,7 +207,7 @@ function BrandPanel() {
         src={photoPressing}
         alt=""
         aria-hidden
-        className="absolute inset-0 size-full scale-105 object-cover"
+        className="auth-zoom absolute inset-0 size-full object-cover"
         loading="eager"
         decoding="async"
       />
