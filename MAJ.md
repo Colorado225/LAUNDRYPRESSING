@@ -561,6 +561,7 @@ Supabase dans cet environnement.
 | 23/10/2026 | 4 | Documentation du palier 4, CHANGELOG 0.5.0 (222 tests, 123 contrôles SQL) puis date locale de l'abonnement | `eae4fc2` |
 | 23/10/2026 | MVP | `docs/CONFORMITE-MVP.md` : correspondance des douze écrans, réinitialisation du mot de passe, arguments de connexion, historique des scans | `ef19e27` |
 | 23/10/2026 | MVP | Barre latérale en bureau, page Paramètres, CHANGELOG 0.5.1 | `8063ffb` |
+| 23/10/2026 | MVP | Commande en trois étapes, étape de règlement, cinq dernières commandes sur le tableau de bord (227 tests) | à compléter |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

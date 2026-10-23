@@ -6,6 +6,33 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.5.2] — 2026-10-23
+
+Deux écrans de la maquette complétés : le formulaire de commande en étapes et
+les cinq dernières commandes sur le tableau de bord.
+
+### Ajouté
+
+- **Création de commande en trois étapes** (`/commandes/nouvelle`) :
+  **Client → Vêtements → Paiement**. Chaque étape est validée séparément
+  (téléphone, prix, motif de tarif dérogatoire) et ramène l'utilisateur sur le
+  champ fautif ; les étapes franchies restent visibles dans un fil d'étapes.
+- **Étape de règlement** : « régler plus tard » ou « encaisser des espèces
+  maintenant ». Dans le second cas, la fiche s'ouvre avec le panneau
+  d'encaissement déplié et le montant pré-rempli (`?regler=1`).
+- **Cinq dernières commandes** sur le tableau de bord : référence, client,
+  statut, montant, date, avec lien vers la fiche et vers la liste complète.
+  L'ordre suit la **date de création** : une ancienne commande dont le statut
+  change ne remonte pas en tête.
+- 5 tests supplémentaires sur `recentOrders` (227 au total).
+
+### Décisions
+
+- **Aucun argent ne circule à l'étape 3.** Un encaissement a besoin d'une
+  commande existante (clé étrangère côté serveur, reçu imprimable, idempotence
+  de la file de synchronisation) : le formulaire ne fait donc que préparer
+  l'ouverture du panneau de caisse.
+
 ## [0.5.1] — 2026-10-23
 
 Passe de **conformité MVP** : comparaison des douze écrans de la maquette avec

@@ -49,17 +49,29 @@ haut de l'écran.
 
 ### 3.1 Prendre une commande
 
+La prise de commande se fait en **trois étapes**, affichées en haut de l'écran.
+Le bouton **Précédent** permet de revenir corriger une étape déjà validée.
+
 1. Onglet **Commandes** → bouton **Nouvelle commande**
    (ou appui long sur l'icône de l'application → **Nouvelle commande**).
-2. Renseigner le **nom** et le **téléphone** du client.
-3. Ajouter chaque vêtement (bouton **Ajouter**) :
+2. **Étape 1 — Client** : **nom**, **téléphone** et, si on l'a promis, la
+   **date de livraison**. Puis **Suivant**.
+3. **Étape 2 — Vêtements** : ajouter chaque pièce (bouton **Ajouter**) :
    - choisir l'**article** et la **prestation** au catalogue : le prix se remplit
      tout seul ;
    - préciser le **tissu** si utile (Bazin, Wax, laine…),
    - les **instructions** particulières (ex. « Empèsage fort »),
    - un **prix différent** du catalogue est possible, mais il exige un **motif**
      d'au moins 10 caractères (tarif dérogatoire).
-4. Vérifier le **total** affiché en bas, puis **Enregistrer**.
+4. **Étape 3 — Paiement** : vérifier le **récapitulatif** (client, vêtements,
+   total) et choisir :
+   - **Régler plus tard** : la commande est enregistrée, le solde reste dû ;
+   - **Encaisser des espèces maintenant** : la fiche s'ouvre avec le panneau
+     d'encaissement déplié, montant pré-rempli.
+
+   Le **Mobile Money** se déclenche ensuite depuis la fiche de la commande :
+   CinetPay exige une référence de commande déjà enregistrée.
+5. Appuyer sur **Enregistrer la commande**.
 
 Le **téléphone** suffit à retrouver le client : les commandes passées avec le
 même numéro — avec ou sans indicatif `+225` — sont regroupées dans son

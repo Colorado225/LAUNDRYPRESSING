@@ -20,10 +20,10 @@ reste à faire.
 | # | Écran demandé | Route demandée | Route livrée | Fichier | État |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Connexion | `/login` | `/` (écran affiché sans session) + `/reinitialisation` | `src/pages/Login.tsx`, `Reinitialisation.tsx`, `src/components/AuthGate.tsx` | ✅ **complet** (réinitialisation, arguments de vente) |
-| 2 | Tableau de bord | `/dashboard` | `/tableau-de-bord` | `src/pages/TableauDeBord.tsx` | ✅ livré, au-delà du MVP demandé |
+| 2 | Tableau de bord | `/dashboard` | `/tableau-de-bord` | `src/pages/TableauDeBord.tsx` | ✅ **complet** (KPIs + 5 dernières commandes) |
 | 3 | Liste des commandes | `/orders` | `/commandes` | `src/pages/Orders.tsx` | ✅ livré (recherche, onglets dont « En retard ») |
 | 4 | Détail d'une commande | `/orders/:id` | `/commandes/:orderId` | `src/pages/OrderDetail.tsx` | ✅ livré (timeline, statut, reçu) |
-| 5 | Création d'une commande | `/orders/new` | `/commandes/nouvelle` | `src/pages/OrderForm.tsx` | ⚠️ livré **en une page**, pas en trois étapes |
+| 5 | Création d'une commande | `/orders/new` | `/commandes/nouvelle` | `src/pages/OrderForm.tsx` | ✅ **trois étapes** (Client → Vêtements → Paiement) |
 | 6 | Scan QR / Atelier | `/atelier` | `/atelier` | `src/pages/Atelier.tsx` | ✅ livré, **complété** (historique des derniers scans) |
 | 7 | Catalogue | `/catalogue` | `/catalogue` | `src/pages/Catalogue.tsx` | ✅ livré, mis en cache IndexedDB |
 | 8 | Paiement / Caisse | `/payment/:orderId` | panneaux dans la fiche + `/caisse` + `/commandes/:orderId/recu` | `src/components/PaymentButton.tsx`, `CashPanel.tsx`, `src/pages/Caisse.tsx`, `Receipt.tsx` | ✅ livré |
@@ -64,11 +64,11 @@ déjà livré · ❌ manquant.
   et de la semaine, Mobile Money, panier moyen, reste à encaisser, série de sept
   jours, répartition par statut, top des prestations, alertes de stock, dépenses
   du mois.
+- **Livré le 23/10 :** tableau des **cinq dernières commandes** (référence,
+  client, statut, montant, date) avec lien vers la fiche et vers la liste.
 - **Lecture :** tout est calculé depuis Dexie (`useLocalOrders`,
   `useAllCashPayments`), la page fonctionne donc hors ligne ; les compléments
   serveur s'affichent « hors ligne » plutôt que `0`.
-- **Écart :** pas de tableau des « 5 dernières commandes » — la liste complète
-  est à un onglet. À ajouter seulement si l'usage le réclame.
 
 ### 3. Liste des commandes — `/commandes`
 
@@ -86,17 +86,18 @@ déjà livré · ❌ manquant.
 - **Hors ligne :** le changement de statut écrit dans Dexie et marque la
   commande « à synchroniser » ; la synchronisation part au retour du réseau.
 
-### 5. Création d'une commande — `/commandes/nouvelle` ⚠️
+### 5. Création d'une commande — `/commandes/nouvelle`
 
-- **Livré :** formulaire complet en une page — client (nom, téléphone),
-  articles avec quantités, prestations du catalogue, prix, spécificités locales
-  (« empesage », « broderie fragile »), total calculé, génération du `qr_code`,
-  enregistrement Dexie + synchronisation si en ligne.
-- **Manquant :** le découpage en **trois étapes** (Client → Articles → Paiement).
-- **Réserve :** sur une tablette de comptoir, un formulaire long défile mal. Un
-  stepper de trois étapes est un vrai gain — mais il touche le chemin critique
-  de la prise de commande, il doit donc être fait à part, avec les tests de
-  création de commande rejoués.
+- **Livré :** **trois étapes** — Client → Vêtements → Paiement — avec fil
+  d'étapes, bouton *Précédent*, validation par étape (téléphone à 10 chiffres,
+  prix supérieur à zéro, motif obligatoire en cas de tarif dérogatoire), total
+  rappelé en permanence dans le pied de page.
+- **Étape Paiement :** récapitulatif complet puis choix entre « régler plus
+  tard » et « encaisser des espèces maintenant » — dans ce cas la fiche s'ouvre
+  avec le panneau de caisse déplié (`?regler=1`). Le Mobile Money reste déclenché
+  depuis la fiche : CinetPay exige une commande déjà enregistrée.
+- **Inchangé :** génération du `qr_code`, enregistrement Dexie puis
+  synchronisation au retour du réseau.
 
 ### 6. Scan QR / Atelier — `/atelier`
 
@@ -152,9 +153,9 @@ déjà livré · ❌ manquant.
 | Priorité | Élément | État |
 | --- | --- | --- |
 | ~~1~~ | Page **Paramètres** (écran 12) | ✅ **fait** — `/parametres` : pressing, compte, synchronisation, hors ligne. |
-| 1 | Formulaire de commande en **trois étapes** (écran 5) | À faire. Touche le chemin critique : rejouer les tests de création. |
-| 2 | Tableau des **5 dernières commandes** (écran 2) | À faire. Confort : le tableau de bord montre déjà les indicateurs. |
-| 3 | Pagination de la liste (écran 3) | Nécessaire au-delà de quelques centaines de commandes ; consigné en dette. |
+| ~~2~~ | Formulaire de commande en **trois étapes** (écran 5) | ✅ **fait** — validation par étape, étape Paiement avec règlement différé ou caisse immédiate. |
+| ~~3~~ | Tableau des **5 dernières commandes** (écran 2) | ✅ **fait** — `recentOrders`, ordonné par date de création. |
+| 1 | Pagination de la liste (écran 3) | Nécessaire au-delà de quelques centaines de commandes ; consigné en dette. |
 
 ### Mise en page
 
@@ -189,6 +190,6 @@ C'est une décision de mise sur le marché, pas de code.
 
 - `npm run typecheck` — 0 erreur
 - `npm run lint` — 0 avertissement
-- `npm test` — **222 tests**, 12 fichiers
+- `npm test` — **227 tests**, 12 fichiers
 - `npm run sql:verify` — **123 contrôles** sur PostgreSQL 16.2
 - `npm run build` — PWA, 81 fichiers précachés
