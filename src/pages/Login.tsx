@@ -10,8 +10,11 @@ import {
   Lock,
   LogIn,
   Mail,
+  ShieldCheck,
   Shirt,
+  Timer,
   WifiOff,
+  Zap,
 } from 'lucide-react'
 import {
   DEMO_TENANT_ID,
@@ -19,7 +22,7 @@ import {
   supabaseConfigState,
 } from '@/lib/env'
 import { useTenantStore } from '@/lib/tenantContext'
-import { AuthError, signInWithPassword } from '@/services/authService'
+import { AuthError, requestPasswordReset, signInWithPassword } from '@/services/authService'
 
 /**
  * Écran de connexion (phase 5).
@@ -53,7 +56,8 @@ export default function Login({ onAuthenticated, notice = null }: LoginProps) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-navy px-4 py-8">
-      <div className="w-full max-w-md">
+      <div className="grid w-full max-w-4xl items-center gap-8 lg:grid-cols-[1fr_minmax(0,26rem)]">
+      <div className="w-full">
         <header className="mb-6 flex items-center gap-3">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-brand-teal/15 text-brand-teal">
             <Shirt size={26} aria-hidden />
@@ -85,7 +89,59 @@ export default function Login({ onAuthenticated, notice = null }: LoginProps) {
           appareil.
         </p>
       </div>
+
+        <SalesArguments />
+      </div>
     </div>
+  )
+}
+
+/**
+ * Arguments de vente affichés à côté du formulaire (grands écrans seulement).
+ *
+ * Sur une tablette en atelier, la colonne disparaît : le formulaire garde toute
+ * la largeur, ce qui reste l'usage principal.
+ */
+function SalesArguments() {
+  const atouts = [
+    {
+      icon: Zap,
+      titre: 'Rapide',
+      texte: 'Commande enregistrée en moins d’une minute, même sans réseau.',
+    },
+    {
+      icon: ShieldCheck,
+      titre: 'Sécurisé',
+      texte: 'Chaque pressing ne voit que ses données, garanties par la base.',
+    },
+    {
+      icon: Timer,
+      titre: 'Fiable',
+      texte: 'Aucune commande perdue : tout reste sur la tablette puis se synchronise.',
+    },
+  ]
+
+  return (
+    <aside className="hidden lg:block">
+      <h2 className="text-2xl font-bold leading-snug text-white">
+        Le pressing sous contrôle,
+        <br />
+        du comptoir à l’atelier.
+      </h2>
+      <ul className="mt-6 space-y-4">
+        {atouts.map(({ icon: Icone, titre, texte }) => (
+          <li key={titre} className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-brand-teal">
+              <Icone size={20} aria-hidden />
+            </span>
+            <div>
+              <p className="font-semibold text-white">{titre}</p>
+              <p className="text-sm leading-relaxed text-slate-300">{texte}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </aside>
   )
 }
 
@@ -99,6 +155,9 @@ function CredentialsForm({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [visible, setVisible] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Panneau « mot de passe oublié » : un simple remplacement du formulaire
+  // évite une page de plus sur une tablette où chaque écran coûte un geste.
+  const [resetOpen, setResetOpen] = useState(false)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -225,11 +284,126 @@ function CredentialsForm({ onAuthenticated }: { onAuthenticated: () => void }) {
         </button>
       </form>
 
-      <p className="mt-4 text-xs leading-relaxed text-slate-500">
-        Mot de passe oublié ? Contactez le propriétaire du pressing : la réinitialisation par
-        e-mail n’est pas encore automatisée dans cette version.
-      </p>
+      {resetOpen ? (
+        <ResetPanel email={email} onClose={() => setResetOpen(false)} />
+      ) : (
+        <p className="mt-4 text-center text-xs leading-relaxed text-slate-500">
+          Mot de passe oublié ?{' '}
+          <button
+            type="button"
+            onClick={() => setResetOpen(true)}
+            className="font-semibold text-brand-teal underline underline-offset-2"
+          >
+            Recevoir un lien de réinitialisation
+          </button>
+        </p>
+      )}
     </>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mot de passe oublié                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Demande d'un lien de réinitialisation.
+ *
+ * Le message de confirmation est neutre (« si un compte existe… ») : il ne
+ * permet pas de savoir si une adresse est enregistrée. Le lien reçu ouvre
+ * `/reinitialisation`, qui écrit le nouveau mot de passe.
+ */
+function ResetPanel({ email, onClose }: { email: string; onClose: () => void }) {
+  const [adresse, setAdresse] = useState(email)
+  const [envoi, setEnvoi] = useState(false)
+  const [envoye, setEnvoye] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
+
+  const envoyer = async (event: FormEvent) => {
+    event.preventDefault()
+    setErreur(null)
+
+    if (!adresse.trim()) {
+      setErreur('Indiquez l’adresse e-mail de votre compte.')
+      return
+    }
+
+    setEnvoi(true)
+    try {
+      await requestPasswordReset(adresse)
+      setEnvoye(true)
+    } catch (caught) {
+      setErreur(
+        caught instanceof AuthError
+          ? caught.message
+          : 'Envoi impossible. Vérifiez votre connexion et réessayez.',
+      )
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  if (envoye) {
+    return (
+      <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">
+        <p className="font-semibold">Lien envoyé.</p>
+        <p className="mt-1 leading-relaxed">
+          Si un compte existe pour {adresse.trim()}, un e-mail contenant un lien de
+          réinitialisation vient d’être envoyé. Pensez à regarder les indésirables.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-2 min-h-10 font-semibold text-emerald-900 underline underline-offset-2"
+        >
+          Revenir à la connexion
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={(event) => void envoyer(event)} className="mt-4 space-y-2" noValidate>
+      <label htmlFor="reset-email" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Adresse e-mail du compte
+      </label>
+      <input
+        id="reset-email"
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        value={adresse}
+        onChange={(event) => setAdresse(event.target.value)}
+        disabled={envoi}
+        className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal disabled:bg-slate-50"
+      />
+
+      {erreur && (
+        <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-50 p-3 text-sm text-rose-800">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden />
+          {erreur}
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={envoi}
+          className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white disabled:opacity-60"
+        >
+          {envoi ? <Loader2 className="animate-spin" size={16} aria-hidden /> : null}
+          Envoyer le lien
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={envoi}
+          className="min-h-12 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"
+        >
+          Annuler
+        </button>
+      </div>
+    </form>
   )
 }
 

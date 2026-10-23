@@ -163,6 +163,54 @@ export async function signOut(): Promise<void> {
   useTenantStore.getState().clear()
 }
 
+/**
+ * Envoie un lien de réinitialisation (palier « MVP » : parcours de connexion).
+ *
+ * Le lien renvoie sur `/reinitialisation` ; supabase-js y ouvre une session de
+ * récupération à partir du fragment d'URL (`detectSessionInUrl`). Aucun mot de
+ * passe n'est choisi ici : le service ne fait que demander l'e-mail.
+ *
+ * Le message de retour est **volontairement neutre** : révéler qu'une adresse
+ * est inconnue permettrait d'énumérer les comptes du pressing.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  if (!navigator.onLine) {
+    throw new AuthError(
+      'offline',
+      'L’envoi du lien nécessite internet. Demandez au propriétaire de réinitialiser votre mot de passe.',
+    )
+  }
+
+  const supabase = getSupabaseClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${window.location.origin}/reinitialisation`,
+  })
+
+  if (error) {
+    throw new AuthError('reset_failed', translateAuthError(error.message, error.status))
+  }
+}
+
+/**
+ * Définit un nouveau mot de passe pour la session courante.
+ *
+ * Utilisé par l'écran `/reinitialisation`, ouvert depuis le lien reçu par
+ * e-mail : la session de récupération existe déjà, il ne reste qu'à écrire le
+ * mot de passe.
+ */
+export async function updatePassword(password: string): Promise<void> {
+  if (password.length < 6) {
+    throw new AuthError('weak_password', 'Le mot de passe doit contenir au moins 6 caractères.')
+  }
+
+  const supabase = getSupabaseClient()
+  const { error } = await supabase.auth.updateUser({ password })
+
+  if (error) {
+    throw new AuthError('update_failed', translateAuthError(error.message, error.status))
+  }
+}
+
 /** Libellés français des erreurs Supabase Auth les plus fréquentes. */
 export function translateAuthError(message: string, status?: number): string {
   const normalized = message.toLowerCase()

@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  History,
   Keyboard,
   Loader2,
   QrCode,
@@ -33,6 +34,16 @@ import type { OrderStatus } from '@/types/database'
  * de statut est écrit localement puis synchronisé (phase 2).
  */
 
+/** Ligne de l'historique des derniers scans de la session. */
+interface ScanEntry {
+  code: string
+  /** Heure du scan, déjà formatée pour l'affichage. */
+  at: string
+  /** Nom du client, ou `null` quand le code n'a rien donné. */
+  client: string | null
+  status: string
+}
+
 type ScanOutcome =
   | { kind: 'idle' }
   | { kind: 'found'; data: LocalOrderWithItems }
@@ -47,6 +58,10 @@ export default function Atelier() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [outcome, setOutcome] = useState<ScanOutcome>({ kind: 'idle' })
   const [manualCode, setManualCode] = useState('')
+  // Historique de session : il n'est pas persisté (l'atelier enchaîne les
+  // scans, la tablette redémarre, l'écran « Commandes en atelier » reste la
+  // vue durable). Il sert à rattraper un scan raté sans re-scanner.
+  const [historique, setHistorique] = useState<ScanEntry[]>([])
 
   const workshopOrders = useLiveQuery(async () => {
     if (!tenantId) return []
@@ -71,6 +86,10 @@ export default function Atelier() {
 
         if (found === null) {
           setOutcome({ kind: 'not-found', code: trimmed })
+          setHistorique((entrees) => [
+            { code: trimmed, at: formatDateTimeFr(new Date().toISOString()), client: null, status: 'Introuvable' },
+            ...entrees,
+          ].slice(0, 5))
           return
         }
         if ('foreignTenantId' in found) {
@@ -79,6 +98,15 @@ export default function Atelier() {
         }
 
         setOutcome({ kind: 'found', data: found })
+        setHistorique((entrees) => [
+          {
+            code: trimmed,
+            at: formatDateTimeFr(new Date().toISOString()),
+            client: found.order.customerName,
+            status: ORDER_STATUSES[found.order.status].label,
+          },
+          ...entrees,
+        ].slice(0, 5))
         setManualCode('')
       } catch (error) {
         setOutcome({ kind: 'not-found', code: trimmed })
@@ -96,7 +124,16 @@ export default function Atelier() {
       toast.success(`Statut : ${ORDER_STATUSES[status].label}`, { icon: '✅' })
       // Rafraîchit la fiche affichée à partir de la base locale
       const refreshed = await getOrderWithItems(orderId)
-      if (refreshed) setOutcome({ kind: 'found', data: refreshed })
+      if (refreshed) {
+        setOutcome({ kind: 'found', data: refreshed })
+        setHistorique((entrees) =>
+          entrees.map((entree) =>
+            entree.client === refreshed.order.customerName
+              ? { ...entree, status: ORDER_STATUSES[status].label }
+              : entree,
+          ),
+        )
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Mise à jour impossible')
     }
@@ -161,6 +198,36 @@ export default function Atelier() {
         onStatusChange={changeStatus}
         onDismiss={() => setOutcome({ kind: 'idle' })}
       />
+
+      {/* Derniers scans de la session */}
+      {historique.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <History size={16} aria-hidden /> Derniers scans
+          </h2>
+          <ul className="mt-2 divide-y divide-slate-100">
+            {historique.map((entree, index) => (
+              <li
+                key={`${entree.code}-${index}`}
+                className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-slate-800">
+                    {entree.client ?? 'Aucune commande'}
+                  </span>
+                  <span className="block font-mono text-xs text-slate-400">{entree.code}</span>
+                </span>
+                <span className="text-right">
+                  <span className="block text-xs font-semibold text-slate-600">
+                    {entree.status}
+                  </span>
+                  <span className="block text-xs text-slate-400">{entree.at}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Commandes en atelier */}
       <section className="space-y-2">
