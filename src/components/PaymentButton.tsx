@@ -10,6 +10,8 @@ import {
   redirectToPayment,
 } from '@/services/paymentService'
 import { formatFcfa } from '@/lib/formatters'
+import { can } from '@/lib/permissions'
+import { useTenantStore } from '@/lib/tenantContext'
 
 /**
  * Bouton « Payer par Mobile Money » (phase 4).
@@ -26,12 +28,18 @@ const OPERATORS = [
 ]
 
 export default function PaymentButton({ order }: { order: LocalOrder }) {
+  const role = useTenantStore((state) => state.role)
   const [submitting, setSubmitting] = useState(false)
+  // Défense en profondeur : l'écran parent masque déjà le bouton, mais un
+  // composant monté directement ne doit pas contourner la matrice.
+  const allowed = can(role, 'payments.initiate')
   const guard = canInitiatePayment()
   const charged = chargeableAmount(order.totalAmount)
   const isRounded = charged !== order.totalAmount
   const alreadyPaid = order.paymentStatus === 'paid'
   const blocked = alreadyPaid || order.status === 'cancelled' || !guard.ok
+
+  if (!allowed) return null
 
   const handlePay = async () => {
     setSubmitting(true)

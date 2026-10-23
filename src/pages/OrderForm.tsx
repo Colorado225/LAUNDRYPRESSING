@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Lock, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder } from '@/db/hooks'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
 import { formatFcfa } from '@/lib/formatters'
+import { can } from '@/lib/permissions'
+import { useTenantStore } from '@/lib/tenantContext'
 
 /**
  * Création de commande — 100 % locale.
@@ -24,12 +26,37 @@ const EMPTY_ITEM: OrderItemInput = {
 export default function OrderForm() {
   const navigate = useNavigate()
   const createOrder = useCreateOrder()
+  const role = useTenantStore((state) => state.role)
+  const canCreate = can(role, 'orders.create')
 
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [items, setItems] = useState<OrderItemInput[]>([{ ...EMPTY_ITEM }])
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+
+  // L'onglet est masqué pour l'artisan, mais une URL saisie à la main ne doit
+  // pas contourner la règle — le serveur la refuserait de toute façon (RLS).
+  if (!canCreate) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center">
+        <Lock className="mx-auto text-slate-400" size={28} aria-hidden />
+        <h1 className="mt-3 text-lg font-bold text-brand-navy">Création réservée au comptoir</h1>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          Votre rôle ne permet pas d’enregistrer une nouvelle commande. Demandez au
+          propriétaire du pressing de modifier votre accès si nécessaire.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate('/commandes')}
+          className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-bold text-white"
+        >
+          <ArrowLeft size={16} aria-hidden />
+          Retour aux commandes
+        </button>
+      </div>
+    )
+  }
 
   const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
 

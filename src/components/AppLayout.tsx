@@ -6,6 +6,7 @@ import OfflineBadge from './OfflineBadge'
 import { TENANT_ROLE_LABELS } from '@/constants/orders'
 import { isSupabaseConfigured } from '@/lib/env'
 import { useTenantStore } from '@/lib/tenantContext'
+import { can } from '@/lib/permissions'
 import { signOut } from '@/services/authService'
 
 /**
@@ -83,10 +84,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <ClipboardList size={18} aria-hidden />
             Commandes
           </NavLink>
-          <NavLink to="/commandes/nouvelle" className={navLinkClass}>
-            <PlusCircle size={18} aria-hidden />
-            Nouvelle commande
-          </NavLink>
+          {can(role, 'orders.create') && (
+            <NavLink to="/commandes/nouvelle" className={navLinkClass}>
+              <PlusCircle size={18} aria-hidden />
+              Nouvelle commande
+            </NavLink>
+          )}
           <NavLink to="/atelier" className={navLinkClass}>
             <ScanLine size={18} aria-hidden />
             Atelier

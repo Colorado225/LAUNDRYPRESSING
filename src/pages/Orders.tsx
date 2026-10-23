@@ -5,6 +5,8 @@ import { useLocalOrders } from '@/db/hooks'
 import { ORDER_STATUSES, ORDER_FLOW } from '@/constants/orders'
 import { formatDateFr, formatFcfa } from '@/lib/formatters'
 import type { OrderStatus } from '@/types/database'
+import { can, canSeeAmounts } from '@/lib/permissions'
+import { useTenantStore } from '@/lib/tenantContext'
 
 /**
  * Liste des commandes — lue dans IndexedDB, jamais sur le réseau.
@@ -12,6 +14,9 @@ import type { OrderStatus } from '@/types/database'
  */
 export default function Orders() {
   const orders = useLocalOrders()
+  const role = useTenantStore((state) => state.role)
+  const seeAmounts = canSeeAmounts(role)
+  const canCreate = can(role, 'orders.create')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
 
@@ -49,13 +54,15 @@ export default function Orders() {
           </p>
         </div>
 
-        <Link
-          to="/commandes/nouvelle"
-          className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white transition-colors hover:bg-brand-teal-dark"
-        >
-          <PlusCircle size={18} aria-hidden />
-          Nouvelle commande
-        </Link>
+        {canCreate && (
+          <Link
+            to="/commandes/nouvelle"
+            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white transition-colors hover:bg-brand-teal-dark"
+          >
+            <PlusCircle size={18} aria-hidden />
+            Nouvelle commande
+          </Link>
+        )}
       </div>
 
       {/* Recherche */}
@@ -125,7 +132,16 @@ export default function Orders() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    {order.synced === 0 && (
+                    {order.syncConflict && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800"
+                        title={order.syncConflict}
+                      >
+                        Conflit
+                      </span>
+                    )}
+
+                    {order.synced === 0 && !order.syncConflict && (
                       <span
                         className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
                         title={
@@ -148,9 +164,11 @@ export default function Orders() {
                       {meta.label}
                     </span>
 
-                    <span className="w-24 text-right font-semibold text-brand-navy">
-                      {formatFcfa(order.totalAmount)}
-                    </span>
+                    {seeAmounts && (
+                      <span className="w-24 text-right font-semibold text-brand-navy">
+                        {formatFcfa(order.totalAmount)}
+                      </span>
+                    )}
                   </div>
                 </Link>
               </li>

@@ -1,0 +1,60 @@
+import type { TenantRole } from '@/types/database'
+
+/**
+ * Matrice d'autorisations (palier 1).
+ *
+ * Une seule source de vérité pour l'interface : les écrans interrogent `can()`
+ * au lieu de comparer des rôles à la main, ce qui évite qu'un nouvel écran
+ * oublie une règle.
+ *
+ * ⚠ Cette matrice ne remplace PAS la sécurité serveur. La RLS limite déjà les
+ *   insertions au propriétaire et au réceptionniste, et un trigger
+ *   (`guard_order_update`, migration 003) empêche un artisan de modifier les
+ *   montants ou les coordonnées. L'interface ne fait que masquer ce qui serait
+ *   refusé de toute façon.
+ *
+ * Décisions produit explicites :
+ *  - l'artisan ne voit PAS les montants (il n'encaisse pas et n'a pas à
+ *    connaître le prix des vêtements qu'il traite) ;
+ *  - seul le propriétaire supprime une commande ou gère le pressing ;
+ *  - le réceptionniste encaisse et crée les commandes, comme le propriétaire.
+ */
+export type Capability =
+  | 'orders.create'
+  | 'orders.updateStatus'
+  | 'orders.editDetails'
+  | 'orders.delete'
+  | 'payments.initiate'
+  | 'amounts.view'
+  | 'tenant.manage'
+
+const MATRIX: Record<TenantRole, readonly Capability[]> = {
+  owner: [
+    'orders.create',
+    'orders.updateStatus',
+    'orders.editDetails',
+    'orders.delete',
+    'payments.initiate',
+    'amounts.view',
+    'tenant.manage',
+  ],
+  receptionist: [
+    'orders.create',
+    'orders.updateStatus',
+    'orders.editDetails',
+    'payments.initiate',
+    'amounts.view',
+  ],
+  artisan: ['orders.updateStatus'],
+}
+
+/** `true` si le rôle courant autorise l'action. */
+export function can(role: TenantRole | null | undefined, capability: Capability): boolean {
+  if (!role) return false
+  return MATRIX[role].includes(capability)
+}
+
+/** Raccourci lisible pour masquer les montants dans les écrans. */
+export function canSeeAmounts(role: TenantRole | null | undefined): boolean {
+  return can(role, 'amounts.view')
+}

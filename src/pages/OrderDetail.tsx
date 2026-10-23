@@ -22,6 +22,8 @@ import {
   getPreviousStatus,
 } from '@/constants/orders'
 import { formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
+import { can, canSeeAmounts } from '@/lib/permissions'
+import ConflictBanner from '@/components/ConflictBanner'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
@@ -32,6 +34,8 @@ export default function OrderDetail() {
   const data = useLocalOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
   const tenantName = useTenantStore((state) => state.tenantName)
+  const role = useTenantStore((state) => state.role)
+  const seeAmounts = canSeeAmounts(role)
 
   if (data === undefined) {
     return (
@@ -96,7 +100,9 @@ export default function OrderDetail() {
         <dl className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-3">
             <dt className="text-xs uppercase tracking-wide text-slate-500">Total</dt>
-            <dd className="text-lg font-bold text-brand-navy">{formatFcfa(order.totalAmount)}</dd>
+            <dd className="text-lg font-bold text-brand-navy">
+              {seeAmounts ? formatFcfa(order.totalAmount) : '—'}
+            </dd>
           </div>
 
           <div className="rounded-xl bg-slate-50 p-3">
@@ -120,6 +126,9 @@ export default function OrderDetail() {
           <span className="font-mono break-all">{order.qrCode}</span>
         </p>
       </section>
+
+      {/* Conflit de synchronisation : arbitrage explicite obligatoire */}
+      <ConflictBanner order={order} />
 
       {/* Synchronisation */}
       <section
@@ -160,14 +169,16 @@ export default function OrderDetail() {
                   {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
                 </p>
               </div>
-              <span className="font-semibold text-brand-navy">{formatFcfa(item.price)}</span>
+              <span className="font-semibold text-brand-navy">
+                {seeAmounts ? formatFcfa(item.price) : '—'}
+              </span>
             </li>
           ))}
         </ul>
       </section>
 
-      {/* Paiement Mobile Money */}
-      <PaymentButton order={order} />
+      {/* Paiement Mobile Money — initiation réservée au comptoir */}
+      {can(role, 'payments.initiate') && <PaymentButton order={order} />}
 
       {/* Étiquette QR — impression 80 mm */}
       <QrCodeDisplay order={order} items={items} tenantName={tenantName} />
