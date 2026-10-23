@@ -126,7 +126,7 @@ npm run setup:dry      # affiche les commandes sans rien exécuter
 | Étape | Action | Idempotence |
 |-------|--------|-------------|
 | 1 | `supabase link` sur le projet | sans effet si déjà lié |
-| 2 | `supabase db push` : migrations `001` à `007` dans l'ordre | migration déjà appliquée ignorée |
+| 2 | `supabase db push` : migrations `001` à `008` dans l'ordre | migration déjà appliquée ignorée |
 | 3 | Déploiement de `cinetpay-init` (JWT requis) et `cinetpay-webhook` (public) | redéploie la même version |
 | 4 | Secrets `CINETPAY_*` et `APP_URL` côté Edge Functions | écrasés par les valeurs du `.env` |
 | 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` (+ `platform_admins` si `PLATFORM_ADMIN=true`) | pressing retrouvé par son nom, compte réutilisé |
@@ -211,7 +211,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (376 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
+| `npm test` | Suite Vitest complète (405 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
@@ -219,7 +219,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
 | `npm run db:etat` | Inventaire **lecture seule** d'une base gérée (`DATABASE_URL`) : tables, RLS, migrations |
 | `npm run db:push` | Applique le socle, les migrations et le jeu de démonstration sur cette base |
-| `npm run db:verifier` | Rejoue les 123 contrôles SQL sur cette base (transaction annulée) |
+| `npm run db:verifier` | Rejoue les 134 contrôles SQL sur cette base (transaction annulée) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -272,7 +272,7 @@ pas en `npm run dev`).
 │   │   ├── permissions.ts        # matrice des capacités par rôle
 │   │   └── ids.ts                # UUID côté client + code QR
 │   ├── pages/
-│   │   ├── Login.tsx             # connexion Supabase Auth (+ mode démonstration)
+│   │   ├── Login.tsx             # connexion, inscription, réinitialisation (mode démo)
 │   │   ├── Offline.tsx           # écran de repli hors ligne
 │   │   ├── Orders.tsx            # liste (recherche + filtres)
 │   │   ├── OrderForm.tsx         # création hors ligne
@@ -325,6 +325,7 @@ pas en `npm run dev`).
 │   │   ├── cinetpay-init/        # initialisation du paiement (JWT requis)
 │   │   └── cinetpay-webhook/     # notification serveur (sans JWT)
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
+│   ├── migrations/008_inscription.sql # inscription libre (pressing + propriétaire)
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
 │   ├── migrations/006_palier3.sql # clients, stock, dépenses, vue des totaux
 │   ├── seed.sql                  # jeu de démonstration (2 pressings)

@@ -19,7 +19,7 @@ reste à faire.
 
 | # | Écran demandé | Route demandée | Route livrée | Fichier | État |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Connexion | `/login` | `/` (écran affiché sans session) + `/reinitialisation` | `src/pages/Login.tsx`, `Reinitialisation.tsx`, `src/components/AuthGate.tsx` | ✅ **complet** (réinitialisation, arguments de vente) |
+| 1 | Connexion | `/login` | `/` (écran affiché sans session) + `/reinitialisation` | `src/pages/Login.tsx`, `Reinitialisation.tsx`, `src/components/AuthGate.tsx` | ✅ **complet** (connexion, **inscription libre**, réinitialisation) |
 | 2 | Tableau de bord | `/dashboard` | `/tableau-de-bord` | `src/pages/TableauDeBord.tsx` | ✅ **complet** (KPIs + 5 dernières commandes) |
 | 3 | Liste des commandes | `/orders` | `/commandes` | `src/pages/Orders.tsx` | ✅ livré (recherche, onglets dont « En retard ») |
 | 4 | Détail d'une commande | `/orders/:id` | `/commandes/:orderId` | `src/pages/OrderDetail.tsx` | ✅ livré (timeline, statut, reçu) |
@@ -44,6 +44,21 @@ déjà livré · ❌ manquant.
 - **Livré :** e-mail + mot de passe via Supabase Auth, mot de passe masqué
   (`Afficher` / `Masquer`), erreurs traduites en français, mode démonstration
   quand Supabase n'est pas configuré, restauration de session hors ligne.
+- **Livré le 23/10 (refonte) :** page d'authentification en deux panneaux —
+  formulaire sur une carte en verre dépoli à gauche, **photo du pressing** à
+  droite avec voile dégradé et trois repères, halos animés en fond — avec deux
+  **onglets** : *Se connecter* et *Créer un compte*. Animations désactivées sous
+  `prefers-reduced-motion` ; sous 1024 px, la photo disparaît au profit du
+  formulaire pleine largeur.
+- **Inscription libre :** nom du pressing, téléphone facultatif, e-mail, mot de
+  passe (8 caractères, une lettre et un chiffre), confirmation et acceptation
+  des conditions. Validation locale complète avant l'envoi, erreurs champ par
+  champ. La création du pressing se fait côté serveur par
+  `create_tenant_for_user` (migration 008) : pressing + rattachement en
+  propriétaire + essai de 14 jours, en une transaction.
+- **Confirmation par e-mail :** si elle est activée sur le projet Supabase,
+  l'écran l'annonce et le pressing est créé à la première connexion confirmée —
+  sans quoi le compte resterait sans pressing, état que la connexion refuse.
 - **Livré le 23/10 :** lien **« Recevoir un lien de réinitialisation »**
   (`resetPasswordForEmail`) et page `/reinitialisation` qui écrit le nouveau mot
   de passe (`updateUser`), plus un encart d'arguments **Rapide / Sécurisé /
@@ -225,5 +240,5 @@ C'est une décision de mise sur le marché, pas de code.
 - `npm run typecheck` — 0 erreur
 - `npm run lint` — 0 avertissement
 - `npm test` — **227 tests**, 12 fichiers
-- `npm run sql:verify` — **123 contrôles** sur PostgreSQL 16.2
+- `npm run sql:verify` — **134 contrôles** sur PostgreSQL 16.2
 - `npm run build` — PWA, 81 fichiers précachés

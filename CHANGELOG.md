@@ -6,6 +6,62 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.9.0] — 2026-10-23
+
+Vraie page d'authentification : connexion **et** inscription libre d'un
+pressing, au lieu d'un écran de connexion unique.
+
+### Ajouté
+
+- **Page en deux panneaux** (`src/pages/Login.tsx`) : formulaire à gauche sur
+  une carte en verre dépoli, photo du pressing à droite avec voile dégradé et
+  trois repères. Deux **onglets** : *Se connecter* / *Créer un compte*.
+- **Fond animé** : deux halos flous qui respirent derrière la carte, une entrée
+  en fondu montant, une pastille flottante. **Toutes les animations sont
+  coupées sous `prefers-reduced-motion`** : le confort passe avant l'effet.
+- **Photo d'illustration** (`src/assets/auth-pressing.jpg`, 200 ko) : intérieur
+  de pressing abidjanais. Servie en `eager` sur le seul panneau bureau ; en
+  dessous de 1024 px, le panneau disparaît et le formulaire occupe la largeur.
+- **Écran de réinitialisation aligné** sur le même fond et la même carte.
+- **Inscription** : nom du pressing, téléphone facultatif, e-mail, mot de passe
+  (8 caractères, une lettre, un chiffre), confirmation, conditions. Validation
+  champ par champ **avant** l'envoi (`src/lib/inscription.ts`), erreurs annoncées
+  aux lecteurs d'écran.
+- **`create_tenant_for_user`** (migration `008_inscription.sql`) : crée le
+  pressing, rattache le compte comme **propriétaire** et ouvre un **essai de
+  14 jours**, en une seule transaction `security definer`.
+- **Reprise d'une inscription interrompue** : si le compte a été créé mais que le
+  pressing ne l'a pas été (coupure réseau entre deux requêtes), le second envoi
+  ne recrée pas de compte — il termine l'opération. La connexion termine aussi
+  une inscription en attente, à partir du nom conservé dans `user_metadata`.
+- **Confirmation par e-mail gérée** : écran dédié, et aucune écriture tant que
+  la session n'est pas ouverte.
+- 29 tests supplémentaires (validation du formulaire, service d'inscription,
+  montage de la page, et **11 contrôles SQL** sur les garde-fous serveur).
+
+### Décidé
+
+- **L'inscription passe par une fonction `security definer`, pas par une
+  politique d'insertion.** Une politique `insert` sur `tenants` puis sur
+  `tenant_users` rouvrirait exactement la faille corrigée en `001`
+  (auto-rattachement comme propriétaire d'un pressing tiers) ; la fonction impose
+  `auth.uid()` et le rôle `owner`, jamais un paramètre.
+- **Un compte ne crée qu'un pressing.** L'ajout à une équipe existante reste le
+  fait du propriétaire ou de l'éditeur ; la fonction refuse un compte déjà
+  rattaché (`23505`), et le test SQL vérifie qu'aucun pressing orphelin ne reste.
+- **Mot de passe à 8 caractères avec lettre et chiffre**, au-delà du minimum
+  Supabase (6). Pas de règle de symbole obligatoire : elle pousse à noter le mot
+  de passe sur un papier collé à la caisse.
+- **Aucune information sur l'existence d'un compte** : Supabase ne révèle pas
+  qu'une adresse est déjà prise, l'écran détecte le cas (identités vides) et
+  renvoie vers la connexion sans confirmer l'existence du compte.
+
+### Vérifié
+
+- 405 tests sur 27 fichiers, **134 contrôles SQL** sur 8 fichiers, `tsc --noEmit`,
+  ESLint, build de production, migration `008` appliquée puis rejouée sur
+  PostgreSQL 16.2.
+
 ## [0.8.0] — 2026-10-23
 
 Facturation A4 — le document que le pressing archive et transmet, à côté du

@@ -24,7 +24,30 @@ Une fois installée, l'application s'ouvre en plein écran, sans barre d'adresse
 
 ---
 
-## 2. Se connecter
+## 2. Se connecter ou ouvrir un compte
+
+L'écran d'accueil propose deux onglets : **Se connecter** (compte existant) et
+**Créer un compte** (nouveau pressing).
+
+### 2.1 Créer un compte (nouveau pressing)
+
+1. Onglet **Créer un compte**.
+2. Renseigner le **nom du pressing**, le **téléphone** (facultatif), l'**adresse
+   e-mail**, un **mot de passe** d'au moins 8 caractères contenant une lettre et
+   un chiffre, puis le confirmer.
+3. Cocher l'acceptation des conditions, puis **Créer mon compte**.
+
+Le compte devient **propriétaire** du pressing, avec un **essai de 14 jours**.
+Aucune carte bancaire n'est demandée à l'inscription.
+
+> Si le projet Supabase exige la confirmation de l'adresse, l'écran l'indique :
+> ouvrir le lien reçu, puis se connecter. Le pressing est créé à cette première
+> connexion.
+
+Un même compte ne peut créer qu'un pressing : pour tenir plusieurs boutiques,
+demander l'ajout depuis le compte existant (console de supervision).
+
+### 2.2 Se connecter
 
 1. Ouvrir l'application : l'écran **Connexion** s'affiche.
 2. Saisir l'**adresse e-mail** et le **mot de passe** fournis par le propriétaire.

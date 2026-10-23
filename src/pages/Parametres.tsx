@@ -656,7 +656,7 @@ export default function Parametres() {
             </li>
             <li className="flex items-start gap-2">
               <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
-              Schéma de base : migrations 001 à 007.
+              Schéma de base : migrations 001 à 008.
             </li>
           </ul>
 

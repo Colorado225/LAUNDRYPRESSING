@@ -24,12 +24,12 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Migrations | 7 (`001_init` → `007_palier4`) |
 | Tables PostgreSQL | 20 + 3 vues (`expense_totals`, `order_balances`, vues de synthèse) |
 | Politiques RLS | 66 (dont 30 restrictives posées par le palier 4) |
-| Fonctions SQL | 31 (dont `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
+| Fonctions SQL | 32 (dont `create_tenant_for_user`,  `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette et de base | 5 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`) |
-| Fichiers de tests | 26 (20 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
-| Tests automatisés | 376 |
+| Fichiers de tests | 29 (23 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
+| Tests automatisés | 405 |
 | Contrôles SQL exécutés | 123 (isolations, rôles, paliers 1 à 4) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
@@ -209,7 +209,7 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
 | Tests | `npm test` | 227 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, création de commande, isolation statique, configuration, provisionnement |
 | Build | `npm run build` | compilation TypeScript + PWA (précache 81 fichiers, 1 369 KiB) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`007`, jeu de démonstration, 123 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support) sur un PostgreSQL 16 jetable |
+| SQL réel | `npm run sql:verify` | migrations `001`→`008`, jeu de démonstration, 134 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`
