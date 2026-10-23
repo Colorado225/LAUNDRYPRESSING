@@ -35,3 +35,6 @@ lerna-debug.log*
 # Supabase CLI (état local)
 supabase/.branches
 supabase/.temp
+
+# Assemblage des Edge Functions (scripts/deploy-fonctions.mjs --verifier)
+supabase/functions/.build/

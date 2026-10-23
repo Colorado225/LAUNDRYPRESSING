@@ -19,7 +19,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "recette": "node scripts/recette.mjs"
+    "recette": "node scripts/recette.mjs",
+    "simulateur": "node scripts/cinetpay-simule.mjs",
+    "deploy:fonctions": "node scripts/deploy-fonctions.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",
