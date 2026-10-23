@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   ORDER_FLOW,
+  allowedStatusTargets,
   isOrderLate,
   orderStatusRank,
   todayIso,
 } from '@/constants/orders'
+import { memberLabel } from '@/services/tenantMembers'
 import {
   MIN_PAYMENT,
   canAcceptPayment,
@@ -223,5 +225,73 @@ describe('catalogue — jeu de départ et sélecteurs', () => {
       'Lavage',
       'Repassage seul',
     ])
+  })
+})
+
+
+describe('allowedStatusTargets — ce que l’interface propose', () => {
+  it('l’atelier ne reçoit que l’avancement', () => {
+    const cibles = allowedStatusTargets('washing', 'artisan')
+
+    expect(cibles).toEqual(['drying', 'ironing', 'quality_check', 'ready', 'delivered'])
+    expect(cibles).not.toContain('cancelled')
+  })
+
+  it('le comptoir peut annuler mais pas revenir en arrière', () => {
+    const cibles = allowedStatusTargets('ironing', 'receptionist')
+
+    expect(cibles).toContain('cancelled')
+    expect(cibles).not.toContain('washing')
+  })
+
+  it('une commande livrée est définitive pour le comptoir', () => {
+    expect(allowedStatusTargets('delivered', 'receptionist')).toEqual([])
+  })
+
+  it('le propriétaire peut revenir en arrière', () => {
+    const cibles = allowedStatusTargets('quality_check', 'owner')
+
+    expect(cibles).toEqual([
+      'received',
+      'sorting',
+      'washing',
+      'drying',
+      'ironing',
+      'ready',
+      'delivered',
+      'cancelled',
+    ])
+  })
+
+  it('seul le propriétaire rouvre une commande annulée', () => {
+    expect(allowedStatusTargets('cancelled', 'receptionist')).toEqual([])
+    expect(allowedStatusTargets('cancelled', 'owner')).toEqual([...ORDER_FLOW])
+  })
+
+  it('sans rôle reconnu, aucune transition n’est proposée', () => {
+    expect(allowedStatusTargets('received', null)).toEqual([])
+  })
+})
+
+describe('memberLabel — équipe du pressing', () => {
+  it('préfère le nom affiché au rôle', () => {
+    expect(
+      memberLabel(
+        { userId: 'u1', role: 'receptionist', displayName: 'Awa' },
+        'u2',
+      ),
+    ).toBe('Awa')
+  })
+
+  it('retombe sur le rôle quand le nom manque', () => {
+    expect(
+      memberLabel({ userId: 'u1', role: 'artisan', displayName: null }, 'u2'),
+    ).toBe('Atelier')
+  })
+
+  it('signale le compte courant', () => {
+    expect(
+      memberLabel({ userId: 'u1', role: 'owner', displayName: 'Koffi' }, 'u1'),
+    ).toBe('Koffi (moi)')
   })
 })
