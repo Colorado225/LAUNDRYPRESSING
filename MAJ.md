@@ -489,7 +489,8 @@ préproduction, sans double paiement ni écrasement silencieux.
 
 | Date | Palier | Action | Commit |
 | --- | --- | --- | --- |
-| 23/10/2026 | 0 | Création de `MAJ.md`, archivage de `docs/AUDIT.md`, inventaire courant, CI GitHub Actions | à compléter |
+| 23/10/2026 | 0 | `MAJ.md`, archivage de `docs/AUDIT.md`, `docs/AUDIT-COURANT.md`, correction du décompte de politiques RLS | `1726cf7` |
+| 23/10/2026 | 0 | Intégration continue : `npm ci`, types, style, tests, build sur chaque PR | `cc390d1` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.
