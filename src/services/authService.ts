@@ -107,8 +107,14 @@ export async function signInWithPassword(
 export async function restoreSession(): Promise<RestoredSession | null> {
   const supabase = getSupabaseClient()
 
-  const { data, error } = await supabase.auth.getSession()
-  if (error || !data.session) return null
+  const { data } = await supabase.auth.getSession()
+
+  // ⚠️ `getSession()` peut renvoyer une session **avec** une erreur : c'est le
+  // cas d'un jeton expiré dont le rafraîchissement échoue faute de réseau.
+  // La session en cache reste parfaitement exploitable en mode avion (les
+  // requêtes échoueront de toute façon et Dexie fournit les données) ; seule
+  // l'absence de session doit ramener à l'écran de connexion.
+  if (!data.session) return null
 
   const user = data.session.user
   const cached = cachedMembership()
