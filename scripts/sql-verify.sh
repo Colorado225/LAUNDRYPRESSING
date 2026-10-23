@@ -94,6 +94,7 @@ FICHIERS=(
   "supabase/tests/roles.sql"
   "supabase/tests/inscription.sql"
   "supabase/tests/audit.sql"
+  "supabase/tests/recette_reelle.sql"
 )
 
 ECHECS=0

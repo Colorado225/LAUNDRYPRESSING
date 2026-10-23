@@ -327,10 +327,23 @@ begin
     ('00000000-0000-4000-8000-0000000000a1', '11111111-1111-4111-8111-111111111111', 'receptionist')
   on conflict (user_id, tenant_id) do update set role = excluded.role;
 
-  select action, details ->> 'role' into v_action, v_role
+  -- Filtre sur le COMPTE concerné, pas sur la dernière ligne : les écritures
+  -- d'une même transaction partagent `created_at` à la microseconde près, et
+  -- `id` (uuid aléatoire) ne départage rien. Sans ce filtre, le test lisait
+  -- parfois le rattachement de la section 0 et échouait au hasard.
+  -- `tenant_users` a une clé primaire composite : l'auteur du rattachement est
+  -- dans le détail, pas dans `entity_id`.
+  select action,
+         case
+           when jsonb_typeof(details -> 'role') = 'object'
+             then details -> 'role' ->> 'apres'
+           else details ->> 'role'
+         end
+  into v_action, v_role
   from public.audit_log
   where tenant_id = '11111111-1111-4111-8111-111111111111'
     and entity = 'tenant_users'
+    and details ->> 'user_id' = '00000000-0000-4000-8000-0000000000a1'
   order by created_at desc, id desc
   limit 1;
 

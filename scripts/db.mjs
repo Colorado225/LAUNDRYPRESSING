@@ -65,6 +65,7 @@ export const FICHIERS_TESTS = [
   'supabase/tests/roles.sql',
   'supabase/tests/inscription.sql',
   'supabase/tests/audit.sql',
+  'supabase/tests/recette_reelle.sql',
 ]
 
 /** Table de suivi : une ligne par fichier déjà appliqué. */
