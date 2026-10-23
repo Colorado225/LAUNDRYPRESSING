@@ -20,10 +20,13 @@ import {
  *     table `orders`. Le client peut donc omettre `amount`, il sera ignoré.
  *  4. Une commande déjà payée ne peut pas être repayée.
  *  5. Un artisan ne peut pas encaisser (rôle vérifié côté serveur).
- *  6. Un seul guichet ouvert par commande : une tentative récente est
+ *  6. Le montant demandé est le RESTE À PAYER (total − encaissements déjà
+ *     réglés), jamais le total : un acompte en espèces ne doit pas être payé
+ *     deux fois.
+ *  7. Un seul guichet ouvert par commande : une tentative récente est
  *     réutilisée au lieu d'en créer une seconde (protection contre le double
  *     paiement, renforcée par un index unique partiel en base).
- *  7. Chaque tentative crée une ligne `payment_transactions` (traçabilité).
+ *  8. Chaque tentative crée une ligne `payment_transactions` (traçabilité).
  *
  * Entrée  : { orderId, amount?, customerName?, customerPhone? }
  * Sortie  : { payment_url, transaction_id, amount }
@@ -134,8 +137,29 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return apiError('order_cancelled', 'Une commande annulée ne peut pas être payée.', 409, origin)
   }
 
-  // --- 4. Montant : celui de la base, jamais celui du client ----------------
-  const chargeableAmount = roundToChargeableAmount(order.total_amount)
+  // --- 4. Montant : le RESTE À PAYER, jamais celui du client ----------------
+  // Depuis le palier 2, un client peut régler un acompte en espèces au
+  // comptoir. Facturer `total_amount` dans ce cas ferait payer deux fois la
+  // part déjà réglée : on ne demande que le solde réel, relu en base.
+  const { data: paidRows } = await admin
+    .from('payment_transactions')
+    .select('amount')
+    .eq('order_id', order.id)
+    .eq('status', 'paid')
+
+  const alreadyPaid = (paidRows ?? []).reduce(
+    (somme, ligne) => somme + Number(ligne.amount ?? 0),
+    0,
+  )
+  const remaining = order.total_amount - alreadyPaid
+
+  if (remaining <= 0) {
+    return apiError('already_paid', 'Cette commande est déjà réglée.', 409, origin)
+  }
+
+  // CinetPay n'accepte que des multiples de 5 : un reste non divisible est
+  // arrondi au multiple supérieur (au plus 4 FCFA d'écart).
+  const chargeableAmount = roundToChargeableAmount(remaining)
   if (chargeableAmount < 100) {
     return apiError(
       'amount_too_low',
