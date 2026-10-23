@@ -6,6 +6,8 @@ import { getSupabaseClient } from '@/lib/supabaseClient'
 import { useTenantStore } from '@/lib/tenantContext'
 import { restoreSession, signOut } from '@/services/authService'
 import { syncPendingOrders } from '@/sync/syncEngine'
+import { useSubscriptionStore } from '@/lib/subscriptionContext'
+import { isPlatformAdmin } from '@/services/platformService'
 
 /**
  * Porte d'entrée de l'application (phase 5).
@@ -74,7 +76,19 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // 2. Déconnexion explicite (jeton révoqué, mot de passe changé…).
+  // 2. Une fois la session ouverte (palier 4) : état de l'abonnement et droits
+  //    de supervision. Les deux appels sont facultatifs — une panne réseau ne
+  //    doit jamais empêcher d'entrer dans l'application.
+  useEffect(() => {
+    if (phase !== 'connecte') return
+
+    void useSubscriptionStore.getState().refresh()
+    void isPlatformAdmin()
+      .then((admin) => useTenantStore.getState().setPlatformAdmin(admin))
+      .catch(() => undefined)
+  }, [phase])
+
+  // 3. Déconnexion explicite (jeton révoqué, mot de passe changé…).
   useEffect(() => {
     if (!isSupabaseConfigured) return
 
@@ -89,6 +103,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       if (!navigator.onLine) return
 
       useTenantStore.getState().clear()
+      useSubscriptionStore.getState().clear()
       setNotice('Votre session a expiré. Reconnectez-vous pour synchroniser vos commandes.')
       setPhase('anonyme')
     })

@@ -15,6 +15,7 @@ import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
  * Phase 4 : retour de paiement CinetPay (/paiement/retour).
  * Phase 5 : connexion Supabase (AuthGate), écran /offline, bouton Retour Android.
  * Palier 3 : tableau de bord, clients, stock et dépenses (écrans de gestion).
+ * Palier 4 : abonnement, support et console de supervision de l'éditeur.
  *
  * Les écrans sont chargés à la demande (`React.lazy`) : la librairie de scan
  * (`html5-qrcode`) pèse à elle seule plusieurs centaines de kilo-octets et ne
@@ -35,6 +36,9 @@ const TableauDeBord = lazy(() => import('@/pages/TableauDeBord'))
 const Clients = lazy(() => import('@/pages/Clients'))
 const Stock = lazy(() => import('@/pages/Stock'))
 const Depenses = lazy(() => import('@/pages/Depenses'))
+const Abonnement = lazy(() => import('@/pages/Abonnement'))
+const Support = lazy(() => import('@/pages/Support'))
+const Supervision = lazy(() => import('@/pages/Supervision'))
 
 export default function App() {
   useEffect(() => {
@@ -73,6 +77,9 @@ export default function App() {
               <Route path="/clients" element={<Clients />} />
               <Route path="/stock" element={<Stock />} />
               <Route path="/depenses" element={<Depenses />} />
+              <Route path="/abonnement" element={<Abonnement />} />
+              <Route path="/support" element={<Support />} />
+              <Route path="/supervision" element={<Supervision />} />
               <Route path="/commandes/:orderId/recu" element={<Receipt />} />
               <Route path="/offline" element={<Offline />} />
               {/* Retour CinetPay. L'alias anglais évite de casser un lien déjà partagé. */}

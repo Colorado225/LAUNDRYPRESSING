@@ -47,6 +47,7 @@ export type TenantUserRow = {
   role: TenantRole
   /** Nom affiché dans l'interface (« Propriétaire », « Awa », …). */
   display_name: string | null
+  created_at: string
 }
 
 export type OrderRow = {
@@ -273,6 +274,105 @@ export type ExpenseCategory =
   | 'transport'
   | 'autre'
 
+/**
+ * Abonnement SaaS (palier 4).
+ *
+ * L'éditeur vend une formule mensuelle ; le règlement se fait hors application
+ * et l'éditeur enregistre la période réglée. Aucune ligne n'est écrite par le
+ * pressing : `platform_set_subscription` est réservée aux administrateurs.
+ */
+export type SubscriptionState = 'trial' | 'active' | 'grace' | 'expired' | 'suspended'
+
+export type PlanRow = {
+  code: string
+  name: string
+  description: string
+  price_fcfa: number
+  duration_days: number
+  max_users: number | null
+  max_shops: number
+  is_active: boolean
+  sort_order: number
+}
+
+export type SubscriptionRow = {
+  tenant_id: string
+  plan_code: string
+  status: SubscriptionState
+  started_on: string
+  current_period_end: string
+  trial_ends_on: string | null
+  grace_days: number
+  suspended_reason: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Vue renvoyée par la fonction `my_subscription()`. */
+export type SubscriptionSnapshot = {
+  tenant_id: string
+  state: SubscriptionState
+  writable: boolean
+  plan_code?: string
+  plan_name?: string
+  price_fcfa?: number
+  duration_days?: number
+  max_users?: number | null
+  max_shops?: number
+  status?: SubscriptionState
+  started_on?: string
+  current_period_end?: string
+  trial_ends_on?: string | null
+  grace_days?: number
+  suspended_reason?: string | null
+}
+
+/** Ligne de la console de supervision (`platform_tenants_overview`). */
+export type TenantOverviewRow = {
+  tenant_id: string
+  tenant_name: string
+  created_at: string
+  users_count: number
+  orders_count: number
+  last_order_at: string | null
+  plan_code: string | null
+  plan_name: string | null
+  price_fcfa: number | null
+  status: SubscriptionState | null
+  state: SubscriptionState
+  current_period_end: string | null
+  trial_ends_on: string | null
+}
+
+export type SupportRequestStatus = 'open' | 'in_progress' | 'closed'
+
+export type SupportRequestRow = {
+  id: string
+  tenant_id: string
+  author_id: string | null
+  author_name: string | null
+  subject: string
+  message: string
+  status: SupportRequestStatus
+  response: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Demande de support telle que la voit l'éditeur (nom du pressing joint). */
+export type PlatformSupportRequest = {
+  id: string
+  tenant_id: string
+  tenant_name: string
+  author_name: string | null
+  subject: string
+  message: string
+  status: SupportRequestStatus
+  response: string | null
+  created_at: string
+}
+
 export type ExpenseRow = {
   id: string
   tenant_id: string
@@ -447,6 +547,27 @@ export interface Database {
         Update: Partial<Omit<ExpenseRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
+      plans: {
+        Row: PlanRow
+        Insert: InsertOf<PlanRow, 'description' | 'duration_days' | 'max_users' | 'max_shops' | 'is_active' | 'sort_order'>
+        Update: Partial<PlanRow>
+        Relationships: []
+      }
+      subscriptions: {
+        Row: SubscriptionRow
+        Insert: InsertOf<
+          SubscriptionRow,
+          'status' | 'started_on' | 'trial_ends_on' | 'grace_days' | 'suspended_reason' | 'notes' | 'created_at' | 'updated_at'
+        >
+        Update: Partial<Omit<SubscriptionRow, 'tenant_id'>>
+        Relationships: []
+      }
+      support_requests: {
+        Row: SupportRequestRow
+        Insert: InsertOf<SupportRequestRow, 'id' | 'author_id' | 'author_name' | 'status' | 'response' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<SupportRequestRow, 'id' | 'tenant_id' | 'author_id'>>
+        Relationships: []
+      }
       payment_transactions: {
         Row: PaymentTransactionRow
         Insert: InsertOf<
@@ -484,6 +605,67 @@ export interface Database {
       }
     }
     Functions: {
+      my_subscription: {
+        Args: Record<PropertyKey, never>
+        Returns: SubscriptionSnapshot | null
+      }
+      is_platform_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      platform_tenants_overview: {
+        Args: Record<PropertyKey, never>
+        Returns: TenantOverviewRow[]
+      }
+      platform_set_subscription: {
+        Args: {
+          p_tenant: string
+          p_plan: string
+          p_days?: number
+          p_status?: SubscriptionState
+          p_reason?: string | null
+        }
+        Returns: { tenant_id: string; state: SubscriptionState; writable: boolean }
+      }
+      platform_create_shop: {
+        Args: {
+          p_name: string
+          p_phone?: string | null
+          p_owner?: string | null
+          p_plan?: string
+          p_days?: number
+        }
+        Returns: { tenant_id: string; plan_code: string }
+      }
+      platform_members: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          tenant_id: string
+          tenant_name: string
+          user_id: string
+          email: string | null
+          role: TenantRole
+          display_name: string | null
+          created_at: string
+        }[]
+      }
+      platform_set_member: {
+        Args: {
+          p_tenant: string
+          p_user: string
+          p_role: TenantRole | null
+          p_display_name?: string | null
+        }
+        Returns: undefined
+      }
+      platform_support_requests: {
+        Args: Record<PropertyKey, never>
+        Returns: PlatformSupportRequest[]
+      }
+      platform_answer_support: {
+        Args: { p_id: string; p_response: string; p_status?: SupportRequestStatus }
+        Returns: undefined
+      }
       current_tenant_id: {
         Args: Record<PropertyKey, never>
         Returns: string

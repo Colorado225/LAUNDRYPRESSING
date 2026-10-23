@@ -23,7 +23,11 @@ import type { TenantRole } from '@/types/database'
  *  - le **stock** se consulte et se mouvemente au comptoir, mais seuls le
  *    propriétaire crée les articles, les fournisseurs et les dépenses ;
  *  - le **tableau de bord** est réservé au propriétaire : il expose la
- *    trésorerie du pressing.
+ *    trésorerie du pressing ;
+ *  - l'**abonnement** se consulte chez le propriétaire ; le **support** est
+ *    ouvert au comptoir, qui constate les pannes matérielles les premiers ;
+ *  - la **console de supervision** n'est pas un rôle de pressing : elle
+ *    s'appuie sur `is_platform_admin()` côté serveur.
  */
 export type Capability =
   | 'orders.create'
@@ -38,6 +42,8 @@ export type Capability =
   | 'stock.move'
   | 'expenses.manage'
   | 'dashboard.view'
+  | 'support.contact'
+  | 'subscription.view'
   | 'amounts.view'
   | 'tenant.manage'
 
@@ -55,6 +61,8 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'stock.move',
     'expenses.manage',
     'dashboard.view',
+    'support.contact',
+    'subscription.view',
     'amounts.view',
     'tenant.manage',
   ],
@@ -66,6 +74,7 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'cash.manage',
     'customers.manage',
     'stock.move',
+    'support.contact',
     'amounts.view',
   ],
   artisan: ['orders.updateStatus'],

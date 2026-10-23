@@ -2,8 +2,11 @@ import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import {
   Boxes,
+  Building2,
   ClipboardList,
+  CreditCard,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   PlusCircle,
   ScanLine,
@@ -14,6 +17,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import OfflineBadge from './OfflineBadge'
+import ShopSwitcher from './ShopSwitcher'
+import SubscriptionBanner from './SubscriptionBanner'
 import { TENANT_ROLE_LABELS } from '@/constants/orders'
 import { isSupabaseConfigured } from '@/lib/env'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -29,6 +34,7 @@ import { signOut } from '@/services/authService'
 export default function AppLayout({ children }: { children: ReactNode }) {
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
+  const isPlatformAdmin = useTenantStore((state) => state.isPlatformAdmin)
 
   const handleSignOut = async () => {
     // Confirmation obligatoire : sur une tablette partagée, une déconnexion
@@ -70,6 +76,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-2">
+            <ShopSwitcher />
             <OfflineBadge />
 
             {isSupabaseConfigured && (
@@ -141,7 +148,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               Prestations
             </NavLink>
           )}
+          {can(role, 'subscription.view') && (
+            <NavLink to="/abonnement" className={navLinkClass}>
+              <CreditCard size={18} aria-hidden />
+              Abonnement
+            </NavLink>
+          )}
+          {can(role, 'support.contact') && (
+            <NavLink to="/support" className={navLinkClass}>
+              <LifeBuoy size={18} aria-hidden />
+              Support
+            </NavLink>
+          )}
+          {isPlatformAdmin && (
+            <NavLink to="/supervision" className={navLinkClass}>
+              <Building2 size={18} aria-hidden />
+              Supervision
+            </NavLink>
+          )}
         </nav>
+        <SubscriptionBanner />
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8">{children}</main>

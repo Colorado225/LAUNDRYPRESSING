@@ -1,6 +1,28 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { SUPABASE_ANON_KEY, SUPABASE_URL, isSupabaseConfigured } from './env'
+import { readSelectedTenant } from './tenantSelection'
+
+/**
+ * En-tête `x-tenant-id` ajouté à chaque requête (palier 4).
+ *
+ * Pourquoi un `fetch` maison plutôt que `global.headers` ? Le client est créé
+ * une seule fois, alors que la boutique active peut changer en cours de
+ * session. Lire le stockage à chaque requête évite de recréer le client — et
+ * donc de perdre les abonnements d'authentification en cours.
+ *
+ * Côté serveur, `current_tenant_id()` ne retient cet en-tête que si le compte
+ * est réellement rattaché au pressing (fonction `is_tenant_member`).
+ */
+const fetchAvecBoutique: typeof fetch = (input, init) => {
+  const boutique = readSelectedTenant()
+  if (!boutique) return fetch(input, init)
+
+  const entetes = new Headers(init?.headers)
+  if (!entetes.has('x-tenant-id')) entetes.set('x-tenant-id', boutique)
+
+  return fetch(input, { ...init, headers: entetes })
+}
 
 /**
  * Client Supabase unique (singleton paresseux).
@@ -32,6 +54,7 @@ export function getSupabaseClient(): SupabaseClient<Database> {
         headers: {
           'x-application-name': 'pressing-pro-mvp',
         },
+        fetch: fetchAvecBoutique,
       },
     })
   }
