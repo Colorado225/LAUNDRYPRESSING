@@ -6,6 +6,43 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.13.0] — 2026-10-23
+
+Prévenir le client : WhatsApp ou appel, sans fournisseur ni compte à créer.
+
+### Ajouté
+
+- **`notifications` (migration 010)** — journal immuable des clients prévenus :
+  canal, motif, texte exact, auteur déduit du jeton. Aucune politique de mise à
+  jour ni de suppression ; écriture réservée au comptoir, fermée par un
+  abonnement échu.
+- **Section « Prévenir le client »** sur la commande : message pré-rempli visible
+  avant l'envoi, trois motifs (commande prête, retard de traitement, linge non
+  retiré), lien `wa.me` avec l'indicatif 225 déduit du numéro, lien `tel:`.
+- **« À prévenir » sur le tableau de bord** : commandes prêtes et retards, en
+  écartant les clients déjà joints depuis le dernier changement.
+- **Transmission hors ligne** : les sollicitations s'écrivent sur la tablette
+  puis partent au retour du réseau, comme les réclamations.
+
+### Décidé
+
+- Aucun montant dans les messages : un prix contesté se règle de vive voix, et
+  un message court est réellement lu.
+- Le message n'est **jamais** envoyé automatiquement : le comptoir garde la main
+  et le client reçoit un message d'un numéro qu'il connaît.
+
+### Corrigé
+
+- **Double de test de Supabase** : un `await` sur `insert()` ne traversait pas le
+  contrôle d'erreur du double (il renvoyait le constructeur). Les erreurs
+  d'insertion sont désormais réellement vues par les tests.
+
+### Vérifié
+
+- 518 tests sur 34 fichiers, **174 contrôles SQL** sur 11 fichiers (dont 7 sur
+  les notifications : cloisonnement, refus de l'atelier, immuabilité, FK
+  composite, abonnement échu), `tsc`, ESLint, build.
+
 ## [0.12.0] — 2026-10-23
 
 Mode « essai » CinetPay et outillage de déploiement des Edge Functions, en

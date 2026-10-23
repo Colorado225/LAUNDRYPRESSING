@@ -211,7 +211,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (481 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions) |
+| `npm test` | Suite Vitest complète (518 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run simulateur` | Faux CinetPay local (`0.0.0.0:54321`) pour tester le paiement en mode `test` |
@@ -221,7 +221,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
 | `npm run db:etat` | Inventaire **lecture seule** d'une base gérée (`DATABASE_URL`) : tables, RLS, migrations |
 | `npm run db:push` | Applique le socle, les migrations et le jeu de démonstration sur cette base |
-| `npm run db:verifier` | Rejoue les 167 contrôles SQL sur cette base (transaction annulée) |
+| `npm run db:verifier` | Rejoue les 174 contrôles SQL sur cette base (transaction annulée) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -934,6 +934,14 @@ Un prix différent du catalogue est un **tarif dérogatoire** : il faut un motif
 d'au moins 10 caractères, il est refusé à l'atelier et chaque changement de prix
 est journalisé dans `order_price_history` (qui, quand, de combien à combien,
 pourquoi).
+
+### Prévenir le client
+
+Depuis une commande, un message pré-rempli part vers **WhatsApp** ou le
+composeur (**appel**) : ni fournisseur, ni crédit par message, ni compte à créer.
+Chaque sollicitation est journalisée dans `notifications` (migration 010) et le
+tableau de bord liste les clients **à prévenir**. Le message ne mentionne jamais
+de montant : un prix contesté se règle de vive voix.
 
 ### Caisse, acomptes et reçus
 

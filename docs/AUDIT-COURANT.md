@@ -22,15 +22,15 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Fichiers TypeScript / TSX dans `src/` | 78 (dont 10 de test) |
 | Lignes de code applicatif | 13 477 (hors dossier `src/test/`) |
 | Migrations | 9 (`001_init` → `009_audit`) |
-| Tables PostgreSQL | 21 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
+| Tables PostgreSQL | 22 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
 | Politiques RLS | 67 (dont 30 restrictives posées par le palier 4) |
 | Fonctions SQL | 32 (dont `create_tenant_for_user`,  `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
-| Fichiers de tests | 32 Vitest (26 sous `src/`, 6 pour les scripts) + 10 fichiers SQL |
-| Tests automatisés | 481 |
-| Contrôles SQL exécutés | 167 (isolations, rôles, paliers 1 à 4, inscription, audit, recette réelle) |
+| Fichiers de tests | 34 Vitest (26 sous `src/`, 8 pour les scripts) + 11 fichiers SQL |
+| Tests automatisés | 518 |
+| Contrôles SQL exécutés | 174 (isolations, rôles, paliers 1 à 4, inscription, audit, notifications, recette réelle) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
 
@@ -211,7 +211,7 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
 | Tests | `npm test` | 227 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, création de commande, isolation statique, configuration, provisionnement |
 | Build | `npm run build` | compilation TypeScript + PWA (précache 81 fichiers, 1 369 KiB) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`009`, jeu de démonstration, 167 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support, journal d’audit, recette à deux pressings) sur un PostgreSQL 16 jetable |
+| SQL réel | `npm run sql:verify` | migrations `001`→`010`, jeu de démonstration, 174 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support, journal d’audit, recette à deux pressings) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`

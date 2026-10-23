@@ -181,6 +181,25 @@ La liste et l'historique fonctionnent **hors ligne** : ils sont calculés à
 partir des commandes de la tablette. Les coordonnées (adresse, préférences,
 notes) se modifient en ligne.
 
+### 3.6 bis Prévenir le client
+
+Ouvrir la commande → section **Prévenir le client**. Le message est déjà écrit ;
+choisir le motif (**Commande prête**, **Retard de traitement**, **Linge non
+retiré**), le relire, puis :
+
+- **Envoyer sur WhatsApp** ouvre WhatsApp avec le texte pré-rempli et le bon
+  numéro (indicatif 225 ajouté automatiquement) — il reste à appuyer sur
+  envoyer dans l'application ;
+- **Appeler** ouvre le composeur du téléphone.
+
+Chaque envoi est journalisé : la commande indique « Dernier contact : … », et le
+tableau de bord liste les clients **à prévenir** (commandes prêtes, retards) en
+omettant ceux déjà joints depuis le dernier changement. Aucun message ne part
+tout seul et aucun crédit SMS n'est consommé.
+
+> L'atelier ne voit pas cette section : prévenir un client est un geste du
+> comptoir.
+
 ### 3.7 Mouvementer le stock
 
 Onglet **Stock** → choisir l'article → **Entrée** ou **Sortie**. Une sortie

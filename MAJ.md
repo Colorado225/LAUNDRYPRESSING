@@ -615,5 +615,7 @@ instance**. C'est fait, sur le projet Supabase de recette :
 | 23/10/2026 | MVP | Assemblage et déploiement des Edge Functions sans CLI (`npm run deploy:fonctions`), 14 tests | `b90369b` |
 | 23/10/2026 | MVP | `docs/DEPLOIEMENT-FONCTIONS.md`, CHANGELOG 0.12.0 (481 tests, 167 contrôles SQL) | `dda26c0` |
 
+| 23/10/2026 | 6 | Prévenir le client : journal `notifications` (migration 010), panneau WhatsApp/appel, liste « à prévenir », 37 tests et 7 contrôles SQL | `1f726e8`, `0bf7a09`, `d726a2e` |
+
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.
