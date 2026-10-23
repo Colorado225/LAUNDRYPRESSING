@@ -167,6 +167,14 @@ CINETPAY_SITE_ID=123456
 4. Retour dans l'application ; la commande doit apparaître payée (ou en échec).
 5. Contrôle : la transaction porte `provider_payload.mode = "test"`.
 
+### Un garde-fou au déploiement
+
+`npm run deploy:fonctions` avertit avant d'envoyer le code si `CINETPAY_MODE=test`
+vise `localhost`/`127.0.0.1` : la fonction hébergée ne verra jamais ce
+simulateur, et le bouton « Payer » échouera au lieu de rester simplement
+inactif. Déployer sans identifiants CinetPay (bouton inactif, reste de
+l'application intact) est souvent préférable en attendant un tunnel.
+
 ### La limite à connaître : `localhost` chez Supabase
 
 Depuis une Edge Function **hébergée**, `localhost` désigne la machine de

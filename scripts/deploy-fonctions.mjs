@@ -215,6 +215,35 @@ export function lireConfig() {
   return buildConfig(valeurs)
 }
 
+/**
+ * Avertissements propres à un déploiement réel (pas à `--verifier`).
+ *
+ * Le piège : `CINETPAY_MODE=test` avec le simulateur sur `localhost` fonctionne
+ * à merveille en local, puis échoue en production déployée — depuis une Edge
+ * Function hébergée, `localhost` désigne la machine de Supabase. Le bouton
+ * « Payer » renverrait alors une erreur réseau au lieu d'être simplement inactif.
+ * Mieux vaut le dire avant d'envoyer le code que le découvrir chez un client.
+ */
+export function avertissementsDeploiement(config) {
+  const alertes = []
+  const { mode = 'production', baseUrl } = config.cinetpay ?? {}
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/i.test(baseUrl ?? '')
+
+  if (mode === 'test' && local) {
+    alertes.push(
+      'Mode test avec une adresse CinetPay locale : depuis une fonction hébergée, ' +
+        'localhost désigne la machine de Supabase. Le bouton « Payer » échouera. ' +
+        'Exposez le simulateur par un tunnel public, ou déployez sans identifiants CinetPay.',
+    )
+  } else if (mode === 'test') {
+    alertes.push(
+      'Mode test déployé : les paiements sont fictifs. Chaque transaction sera marquée « test ».',
+    )
+  }
+
+  return alertes
+}
+
 async function principal() {
   const assemblees = assemblerFonctions()
 
@@ -247,6 +276,10 @@ async function principal() {
   }
 
   if (secretsSeulement) return
+
+  for (const alerte of avertissementsDeploiement(config)) {
+    console.warn(`⚠ ${alerte}`)
+  }
 
   const existantes = await fonctionsExistantes(config)
 

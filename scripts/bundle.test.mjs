@@ -9,7 +9,7 @@ import {
   ordreDependances,
   resoudre,
 } from '../scripts/lib/bundle.mjs'
-import { FONCTIONS } from '../scripts/deploy-fonctions.mjs'
+import { FONCTIONS, avertissementsDeploiement } from '../scripts/deploy-fonctions.mjs'
 
 /**
  * Assembleur des Edge Functions.
@@ -147,5 +147,38 @@ describe('resoudre', () => {
     expect(resoudre('/projet/supabase/functions/init/index.ts', '../_shared/http.ts')).toBe(
       '/projet/supabase/functions/_shared/http.ts',
     )
+  })
+})
+
+describe('avertissementsDeploiement', () => {
+  const config = (cinetpay) => ({ cinetpay })
+
+  it('ne dit rien en mode production', () => {
+    expect(avertissementsDeploiement(config({ mode: 'production' }))).toEqual([])
+  })
+
+  it('avertit qu’un simulateur local est injoignable depuis Supabase', () => {
+    const alertes = avertissementsDeploiement(
+      config({ mode: 'test', baseUrl: 'http://localhost:54321' }),
+    )
+
+    expect(alertes).toHaveLength(1)
+    expect(alertes[0]).toMatch(/localhost/)
+    expect(alertes[0]).toMatch(/tunnel/)
+  })
+
+  it('reconnaît aussi 127.0.0.1', () => {
+    expect(
+      avertissementsDeploiement(config({ mode: 'test', baseUrl: 'http://127.0.0.1:54321' })),
+    ).toHaveLength(1)
+  })
+
+  it('avertit simplement quand le mode test vise une adresse distante', () => {
+    const alertes = avertissementsDeploiement(
+      config({ mode: 'test', baseUrl: 'https://simulateur.exemple.ci' }),
+    )
+
+    expect(alertes).toHaveLength(1)
+    expect(alertes[0]).toMatch(/fictifs/)
   })
 })
