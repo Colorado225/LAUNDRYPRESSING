@@ -461,6 +461,26 @@ Pour désigner un éditeur : `PLATFORM_ADMIN=true` dans `.env` avant
 
 ---
 
+### 5.9 Consulter le journal d'audit
+
+Ouvrir **Journal d'audit** dans le menu (propriétaire uniquement).
+
+Le journal enregistre **tout seul** les décisions sensibles : tarif d'une
+prestation modifié, rôle d'un compte changé, compte rattaché ou détaché,
+clôture de caisse, remboursement, dépense, abonnement, nom du pressing.
+
+- Chaque ligne indique **qui** a agi (adresse du compte et rôle au moment de
+  l'action), **quoi** et **quand**, avec l'ancienne et la nouvelle valeur.
+- Le filtre **Catégorie** restreint l'affichage aux tarifs, à la caisse, etc.
+- Les écritures faites par le système (notification de paiement) apparaissent
+  sous l'auteur « Serveur ».
+
+> Le journal est **en lecture seule, pour tout le monde**. Personne — pas même
+> le propriétaire — ne peut ajouter, modifier ou effacer une ligne depuis
+> l'application. C'est ce qui lui donne sa valeur en cas de litige.
+
+---
+
 ## 6. Travailler sans réseau
 
 Le pressing fonctionne en **mode avion**. Ce qui marche et ce qui ne marche pas :

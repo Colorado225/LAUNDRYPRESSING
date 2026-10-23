@@ -43,7 +43,6 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Application mobile native (Android/iOS) | La PWA installable couvre le besoin de saisie en atelier. |
 | Synchronisation temps réel entre appareils (Realtime) | Le MVP synchronise à la demande et au retour du réseau. |
 | Import / export CSV | Hors périmètre. |
-| Journal d'audit consultable dans l'interface | Les données existent (`order_status_history`, `order_price_history`) mais l'écran est reporté. |
 | Réinitialisation du mot de passe par e-mail | En MVP, le propriétaire recrée un mot de passe depuis Supabase. Un flux « mot de passe oublié » demande un écran dédié et un modèle d'e-mail personnalisé. |
 | Création de comptes depuis la console de supervision | Exigerait la clé `service_role` dans le navigateur : proscrit. L'éditeur crée le compte dans Supabase Auth puis le rattache. |
 | Verrouillage de la tablette après inactivité | Utile pour un appareil partagé en atelier : nécessite une gestion de session avancée. |
@@ -64,7 +63,7 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
 | Pagination **serveur** des commandes | Les commandes lisent Dexie et sont paginées côté rendu (20 par page). Les dépenses, elles, sont déjà paginées par curseur côté serveur ; la même mécanique servira quand les commandes passeront au serveur. |
-| Recette sur un projet Supabase réel | Aucun identifiant disponible : provisionnement, Edge Functions et paiement de bout en bout ne sont pas testés. Le schéma et les règles RLS le sont sur PostgreSQL 16 (134 contrôles) ; `npm run recette` couvre 7 contrôles du projet déployé. La marche à suivre humaine est dans `docs/RECETTE-SUPABASE.md`. |
+| Recette sur un projet Supabase réel | Aucun identifiant disponible : provisionnement, Edge Functions et paiement de bout en bout ne sont pas testés. Le schéma et les règles RLS le sont sur PostgreSQL 16 (151 contrôles) ; `npm run recette` couvre 7 contrôles du projet déployé. La marche à suivre humaine est dans `docs/RECETTE-SUPABASE.md`. |
 | Demandes de support hors ligne | Aucune file d'attente dédiée : une demande nécessite une connexion. |
 | Connexion à une base gérée **distante** | `scripts/db.mjs` a été validé sur un PostgreSQL 16.2 local ; l'environnement de développement filtre la sortie réseau, la connexion à un hôte distant n'a donc pas pu être exercée. Marche à suivre : `docs/NEON.md`. |
 | Rapports côté serveur | Les rapports lisent IndexedDB : une autre tablette n'apparaît qu'après synchronisation. Une agrégation SQL (vue matérialisée + `rpc`) deviendra utile au-delà de quelques milliers de commandes. |

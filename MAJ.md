@@ -532,6 +532,23 @@ Supabase dans cet environnement.
 
 ---
 
+### Palier 5 — Journal d'audit (dernier manque de l'audit)
+
+- [x] **Table `audit_log`** — `009_audit.sql`. Auteur, rôle et adresse figés à
+      l'écriture ; code d'action stable ; détail `{ colonne: { avant, apres } }`.
+      Lecture réservée au propriétaire, écriture réservée aux déclencheurs
+      (`security definer`), ni modification ni suppression possibles.
+- [x] **Sept déclencheurs** — pressing, comptes et rôles, abonnement,
+      remboursements, clôtures de caisse, prestations, dépenses. Un déclencheur
+      générique unique, qui ignore les colonnes techniques et les écritures sans
+      changement réel.
+- [x] **Écran `/audit`** — lecture paginée par curseur, filtre par catégorie,
+      détail en français, auteur et rôle. Capacité `audit.view` (propriétaire).
+- [x] **17 contrôles SQL** (`supabase/tests/audit.sql`) et **37 tests** côté
+      application.
+
+---
+
 ## 5. Journal d'avancement
 
 | Date | Palier | Action | Commit |
@@ -571,6 +588,8 @@ Supabase dans cet environnement.
 | 23/10/2026 | MVP | Facture A4 (`/commandes/:id/facture`) : numéro déterministe, lignes regroupées, acomptes, montant en lettres, 42 tests | `f1fda36` |
 | 23/10/2026 | MVP | Inscription libre : `create_tenant_for_user` (migration 008), 29 tests + 11 contrôles SQL | `313cffc` |
 | 23/10/2026 | MVP | Refonte visuelle de la page d'authentification (verre dépoli, halos animés, panneau photo) | `7b84d06` |
+| 23/10/2026 | MVP | Provisionnement réel du projet Supabase (migrations 001→008, `site_url`, révocation `anon`) | `9c8a33c` |
+| 23/10/2026 | 5 | Journal d'audit : table `audit_log`, 7 déclencheurs, écran `/audit`, 37 tests et 17 contrôles SQL | `7de1b1b` puis `0256577` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

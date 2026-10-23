@@ -6,6 +6,50 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.10.0] — 2026-10-23
+
+Journal d'audit des actions sensibles (palier 5) : ce que l'audit courant
+signalait comme le dernier manque — « pas de trace de qui a modifié un prix, un
+accès ou un montant ».
+
+### Ajouté
+
+- **Table `audit_log`** (migration `009_audit.sql`) : auteur, rôle et adresse
+  **figés au moment de l'action**, code d'action stable (`tenant_users.update`),
+  table et ligne concernées, détail des colonnes modifiées, horodatage.
+- **Sept déclencheurs** sur les tables sensibles : pressing, comptes et rôles,
+  abonnement, remboursements, clôtures de caisse, prestations, dépenses. Un seul
+  déclencheur générique compare avant/après et ignore les colonnes techniques
+  (`updated_at`, `version`).
+- **Écran `/audit`** : liste paginée par curseur, filtre par catégorie,
+  avant/après lisible (`tarif : 1 500 FCFA → 2 000 FCFA`), auteur et rôle.
+  Réservé au propriétaire.
+- **17 contrôles SQL** et **37 tests** (mise en forme, lecture, montage de
+  l'écran).
+
+### Décidé
+
+- **Le journal s'écrit côté serveur, jamais depuis l'application.** Aucune
+  politique d'insertion, de modification ni de suppression : même le
+  propriétaire ne peut pas effacer une ligne. Un journal modifiable ne
+  prouverait rien en cas de litige.
+- **Aucune phrase française en base.** La base stocke un code stable et des
+  valeurs brutes ; les libellés vivent dans `src/services/auditService.ts`, où
+  on peut les corriger sans migration.
+- **Le rôle et l'adresse sont recopiés, pas joints.** Un rôle change : relire
+  l'état courant donnerait une réponse fausse sur « qui était quoi ce jour-là ».
+- **`orders` n'est pas surveillé.** Les statuts ont déjà leur historique ; une
+  ligne de journal à chaque scan d'atelier noierait les décisions de gestion.
+- **Périmètre : l'argent, les droits, l'identité du pressing.** Les mouvements
+  de stock et les scans sont exclus pour la même raison.
+
+### Vérifié
+
+- 442 tests sur 30 fichiers, **151 contrôles SQL** sur 9 fichiers, `tsc`,
+  ESLint, build.
+- Migration appliquée sur le projet Supabase de recette : 21 tables,
+  **7 déclencheurs**, 1 politique de lecture.
+
 ## [0.9.0] — 2026-10-23
 
 Vraie page d'authentification : connexion **et** inscription libre d'un

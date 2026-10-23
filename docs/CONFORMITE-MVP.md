@@ -31,6 +31,7 @@ reste à faire.
 | 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3) ; dépenses **paginées côté serveur** |
 | 11 | Rapports et statistiques | — | `/rapports` | `src/pages/Rapports.tsx`, `src/lib/reporting.ts` | ✅ **livré** (courbes 7/30/90 j, comparaison de périodes, export CSV) |
 | 12 | Profil et paramètres | — | `/parametres` | `src/pages/Parametres.tsx` | ✅ **livré** (pressing modifiable, équipe, sécurité, données locales) |
+| 13 | Journal d'audit *(hors maquette)* | — | `/audit` | `src/pages/Audit.tsx` | ✅ **livré** (palier 5 : qui a changé un tarif, un rôle, une clôture) |
 
 Légende : ✅ conforme · ⚠️ conforme mais perfectible · 🟰 hors demande MVP mais
 déjà livré · ❌ manquant.
@@ -38,6 +39,27 @@ déjà livré · ❌ manquant.
 ---
 
 ## 2. Écran par écran
+
+### 13. Journal d'audit — `/audit`
+
+Écran absent de la maquette d'origine, ajouté pour combler le dernier manque
+relevé par l'audit courant (« pas de trace de qui a modifié un prix, un accès ou
+un montant »).
+
+- **Livré :** liste paginée des actions sensibles — pressing renommé, rôle
+  modifié, compte rattaché, prestation ou tarif changé, caisse clôturée,
+  remboursement, dépense, abonnement. Filtre par catégorie, détail en français
+  (`tarif : 1 500 FCFA → 2 000 FCFA`), auteur et rôle figés au moment de
+  l'action.
+- **Réservé au propriétaire** : `audit.view` côté interface, politique RLS côté
+  base. Un réceptionniste qui ouvre l'URL voit un refus explicite, sans requête.
+- **Inviolable par conception** : le journal est écrit par des déclencheurs
+  `security definer`, sans aucune politique d'insertion, de modification ou de
+  suppression. Le propriétaire lui-même ne peut pas effacer une ligne.
+- **En ligne uniquement** : le journal vit sur le serveur ; il n'est pas mis en
+  cache dans IndexedDB.
+
+---
 
 ### 1. Connexion — `/` et `/reinitialisation`
 
@@ -239,6 +261,6 @@ C'est une décision de mise sur le marché, pas de code.
 
 - `npm run typecheck` — 0 erreur
 - `npm run lint` — 0 avertissement
-- `npm test` — **227 tests**, 12 fichiers
-- `npm run sql:verify` — **134 contrôles** sur PostgreSQL 16.2
+- `npm test` — **442 tests**, 30 fichiers
+- `npm run sql:verify` — **151 contrôles** sur PostgreSQL 16.2
 - `npm run build` — PWA, 81 fichiers précachés
