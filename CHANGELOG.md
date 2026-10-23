@@ -6,6 +6,41 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.11.0] — 2026-10-23
+
+Recette d'isolation sur un vrai projet Supabase, et finitions de la page de
+connexion.
+
+### Ajouté
+
+- **`supabase/tests/recette_reelle.sql`** — 16 contrôles conçus pour tourner
+  **sur un projet Supabase réel** autant qu'en local : deux pressings, trois
+  comptes (propriétaire A, artisan A, propriétaire B). Isolation dans les deux
+  sens, matrice de rôles, refus à l'anonyme, abonnement échu en lecture seule,
+  console éditeur fermée. Tout se termine par `ROLLBACK`.
+- Le fichier entre dans `scripts/sql-verify.sh` et `scripts/db.mjs` : la CI le
+  rejoue à chaque poussée, il ne peut donc pas pourrir.
+
+### Modifié
+
+- **Page de connexion, finitions** : la carte est bornée à la hauteur de l'écran
+  et défile en interne — sur un portable de 768 px, le formulaire d'inscription
+  n'est plus coupé. Liseré dégradé en haut de la zone de saisie, **zoom très
+  lent** de la photo (34 s), transition douce au changement d'onglet. Les
+  animations restent coupées sous `prefers-reduced-motion`, zoom compris, qui
+  retombe alors sur son échelle de repos.
+- **`supabase/tests/audit.sql`** : le contrôle du changement de rôle filtrait sur
+  « la dernière ligne », donc sur un horodatage partagé par toute la
+  transaction. Il filtre maintenant sur le compte concerné — il ne peut plus
+  échouer au hasard.
+
+### Vérifié
+
+- 442 tests sur 30 fichiers, **167 contrôles SQL** sur 10 fichiers, `tsc`,
+  ESLint, build.
+- Recette réelle exécutée sur le projet Supabase de recette : sous le jeton du
+  propriétaire A, 1 commande visible et **0** commande du pressing voisin.
+
 ## [0.10.0] — 2026-10-23
 
 Journal d'audit des actions sensibles (palier 5) : ce que l'audit courant

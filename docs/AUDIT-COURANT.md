@@ -193,9 +193,11 @@ transporté par `orders.status_reason`, recopié dans l'historique par le
 déclencheur puis effacé : l'écran d'annulation le propose, et le palier 2 a
 ajouté le motif obligatoire du tarif dérogatoire et du remboursement.
 
-La **recette sur un projet Supabase réel** (provisionnement, Edge Functions,
-paiement de bout en bout) n'a pas pu être faite : aucun identifiant dans
-l'environnement de développement. En revanche, le schéma, les 13 politiques
+La **recette sur un projet Supabase réel** a été faite le 23/10 pour sa partie
+schéma, isolation et rôles : `supabase/tests/recette_reelle.sql` a tourné sur le
+projet de recette avec deux pressings et trois comptes (voir
+`docs/RECETTE-SUPABASE.md`). Restent hors de portée : les Edge Functions
+déployées et le paiement CinetPay de bout en bout, faute de compte marchand. En revanche, le schéma, les 13 politiques
 RLS, les 5 déclencheurs et les 11 règles de rôle ont été **réellement exécutés**
 sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 
@@ -209,7 +211,7 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
 | Tests | `npm test` | 227 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, création de commande, isolation statique, configuration, provisionnement |
 | Build | `npm run build` | compilation TypeScript + PWA (précache 81 fichiers, 1 369 KiB) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`009`, jeu de démonstration, 151 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support) sur un PostgreSQL 16 jetable |
+| SQL réel | `npm run sql:verify` | migrations `001`→`009`, jeu de démonstration, 167 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support, journal d’audit, recette à deux pressings) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`

@@ -9,7 +9,7 @@ de connexion dans un fichier du dépôt.
 ## 1. En une phrase
 
 La base gérée sert de **cible de schéma et de vérification** — migrations,
-RLS, 151 contrôles SQL — et **non** de backend direct pour l'application : le
+RLS, 167 contrôles SQL — et **non** de backend direct pour l'application : le
 navigateur ne peut pas détenir un mot de passe de base, et Neon ne fournit ni
 PostgREST ni `auth.uid()`.
 
@@ -33,7 +33,7 @@ DATABASE_URL=postgresql://utilisateur:motdepasse@hote/base?sslmode=require
 
 npm run db:etat       # lecture seule, sûr sur n'importe quelle base
 npm run db:push       # crée le schéma (base vierge uniquement)
-npm run db:verifier   # 151 contrôles
+npm run db:verifier   # 167 contrôles
 ```
 
 **Sortie attendue après `db:push` puis `db:verifier` :**
@@ -42,7 +42,7 @@ npm run db:verifier   # 151 contrôles
 Tables      : 20 dans le schéma public
 Politiques  : 66 règles RLS
 Sans RLS    : 0 table(s)
-✓ 151 contrôles SQL réussis sur 9 fichiers.
+✓ 167 contrôles SQL réussis sur 10 fichiers.
 ```
 
 Le script refuse de s'exécuter si `DATABASE_URL` est absente, affiche toujours
@@ -120,7 +120,7 @@ cela ne protège que les journaux.
 | --- | --- |
 | `db:push` | 9 fichiers appliqués, sans erreur |
 | `db:etat` | 20 tables, 66 politiques, 0 table sans RLS, 9/9 migrations |
-| `db:verifier` | **151 contrôles** sur 9 fichiers (`isolation` 9, `palier1` 10, `palier2` 23, `palier2_complement` 23, `palier3` 17, `palier4` 30, `roles` 11, `inscription` 11, `audit` 17) |
+| `db:verifier` | **167 contrôles** sur 10 fichiers (`isolation` 9, `palier1` 10, `palier2` 23, `palier2_complement` 23, `palier3` 17, `palier4` 30, `roles` 11, `inscription` 11, `audit` 17, `recette_reelle` 16) |
 
 En revanche, la connexion à une base **distante** n'a pas pu être exercée depuis
 l'environnement de développement utilisé ici : la sortie réseau y est filtrée

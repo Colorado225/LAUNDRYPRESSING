@@ -532,6 +532,24 @@ Supabase dans cet environnement.
 
 ---
 
+### Palier 1 — critère de sortie « préproduction réelle » (23/10)
+
+Le document source demandait de valider l'authentification sur une **vraie
+instance**. C'est fait, sur le projet Supabase de recette :
+
+- [x] Projet réel provisionné (PostgreSQL 17), migrations `001` à `009`
+      appliquées et enregistrées.
+- [x] `supabase/tests/recette_reelle.sql` exécuté dans le SQL Editor : deux
+      pressings, trois comptes, six séries de contrôles — isolation dans les deux
+      sens, rôles, anonyme, abonnement échu, console éditeur. Tout vert, aucune
+      trace laissée (`ROLLBACK`).
+- [x] Compte réel créé par l'inscription libre de l'application : pressing
+      « revizit », propriétaire, essai de 14 jours, connexion fonctionnelle.
+- [ ] Restent non testés : Edge Functions déployées, paiement CinetPay de bout
+      en bout (aucun compte marchand), installation PWA sur tablette Android.
+
+---
+
 ### Palier 5 — Journal d'audit (dernier manque de l'audit)
 
 - [x] **Table `audit_log`** — `009_audit.sql`. Auteur, rôle et adresse figés à
@@ -590,6 +608,8 @@ Supabase dans cet environnement.
 | 23/10/2026 | MVP | Refonte visuelle de la page d'authentification (verre dépoli, halos animés, panneau photo) | `7b84d06` |
 | 23/10/2026 | MVP | Provisionnement réel du projet Supabase (migrations 001→008, `site_url`, révocation `anon`) | `9c8a33c` |
 | 23/10/2026 | 5 | Journal d'audit : table `audit_log`, 7 déclencheurs, écran `/audit`, 37 tests et 17 contrôles SQL | `7de1b1b` puis `0256577` |
+| 23/10/2026 | 1 | Recette réelle à deux pressings (`recette_reelle.sql`, 16 contrôles) exécutée sur le projet Supabase | à venir |
+| 23/10/2026 | MVP | Page de connexion : hauteur bornée, liseré d'accent, zoom lent de la photo, transition d'onglet | à venir |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

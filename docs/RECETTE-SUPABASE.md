@@ -8,7 +8,7 @@
 | Contrôle | Commande | Résultat |
 | --- | --- | --- |
 | Types, style, tests, build | `npm run typecheck && npm run lint && npm test && npm run build` | 442 tests, 30 fichiers |
-| Schéma, RLS, rôles, abonnement | `npm run sql:verify` | 151 contrôles sur PostgreSQL 16.2 |
+| Schéma, RLS, rôles, abonnement | `npm run sql:verify` | 167 contrôles sur PostgreSQL 16.2 |
 | Recette technique du projet déployé | `npm run recette` | 7 contrôles en lecture seule |
 
 **Ce qui reste à faire par un humain :** le provisionnement réel, le paiement
@@ -34,6 +34,26 @@ Supabase**, sans mot de passe de base transmis.
 | `site_url` | `http://localhost:5173` (+ `uri_allow_list` correspondante) |
 | Confirmation e-mail | **activée** (`mailer_autoconfirm = false`) |
 | Longueur de mot de passe | 6 côté serveur (l'application en exige 8) |
+
+### Recette d'isolation exécutée sur ce projet (23/10/2026)
+
+`supabase/tests/recette_reelle.sql` a été collé dans le SQL Editor du projet et
+exécuté **en entier**. Il crée deux pressings et trois comptes, puis se place
+dans la peau de chacun en rejouant les jetons que PostgREST fabrique. Tout finit
+par `ROLLBACK` : aucune trace ne subsiste.
+
+| Contrôle | Résultat |
+| --- | --- |
+| 1.1 – 1.5 | propriétaire A : pressing courant correct, 1 commande visible, **0 commande du voisin**, son journal lisible, celui de B invisible |
+| 2.1 – 2.2 | propriétaire B : symétrique, 1 commande, journal de A invisible |
+| 3.1 – 3.3 | artisan A : fait avancer une commande, **montant refusé (42501)**, journal inaccessible |
+| 4.1 – 4.2 | anonyme : lecture des commandes **et** création de pressing refusées |
+| 5.1 – 5.3 | abonnement échu : état `expired`, **lecture encore possible**, écriture refusée |
+| 6.1 | propriétaire d'un pressing : console de supervision refusée |
+
+Relevé complémentaire, pour la trace : sous le jeton du propriétaire A,
+`current_tenant_id()` renvoie bien le pressing A, `select count(*) from orders`
+donne **1**, et le filtre sur le pressing B donne **0**.
 
 **Deux limites connues, à traiter avant une démonstration :**
 

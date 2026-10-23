@@ -219,7 +219,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
 | `npm run db:etat` | Inventaire **lecture seule** d'une base gérée (`DATABASE_URL`) : tables, RLS, migrations |
 | `npm run db:push` | Applique le socle, les migrations et le jeu de démonstration sur cette base |
-| `npm run db:verifier` | Rejoue les 151 contrôles SQL sur cette base (transaction annulée) |
+| `npm run db:verifier` | Rejoue les 167 contrôles SQL sur cette base (transaction annulée) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
