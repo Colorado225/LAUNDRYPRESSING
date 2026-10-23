@@ -55,7 +55,7 @@ Le socle technique de la Phase 1 a déjà été **partiellement posé** (commit 
 .
 ├── .env.example                                  # mis à jour Phase 1 (contient encore des restes Axios)
 ├── .gitignore                                    # ⚠ dernière ligne concaténée : ".env.localnode_modules/"
-├── AUDIT.md                                      # ← ce rapport (réécrit)
+├── docs/AUDIT.md                                 # ← ce rapport (réécrit)
 ├── DEPLOYMENT_GUIDE.md                           # obsolète (parle de VITE_API_BASE_URL)
 ├── README.md                                     # mis à jour Phase 1, mais décrit des features inexistantes
 ├── RESTRUCTURATION.md                            # cahier des charges
@@ -434,7 +434,7 @@ C'est l'écart le plus coûteux du chantier : il touche **tous** les composants 
 
 **Bilan des suppressions : ≈ 5 000 lignes de code hors périmètre ou mort** (sur 6 730), soit une base de code ramenée à ~1 700 lignes utiles, avant ajout des modules MVP.
 
-> Toute fonctionnalité supprimée est **conservée dans l'historique Git** (commit `ae2903f`) et sera listée dans `docs/BACKLOG.md` en Phase 6. Aucune perte définitive.
+> Toute fonctionnalité supprimée est **conservée dans l'historique Git** (commit `ae2903f`) et listée dans `docs/BACKLOG.md`. Aucune perte définitive.
 
 ---
 

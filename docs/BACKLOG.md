@@ -58,7 +58,9 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
 | Sujet | Détail |
 | --- | --- |
-| Tests automatisés dans la CI | Les phases 2 à 4 ont été vérifiées par scripts ad hoc, non conservés. `Vitest` est prévu en phase 6. |
+| Exécution des tests en intégration continue | 58 tests Vitest existent (`npm test`) mais aucun workflow CI n'est encore branché : à faire lors de la mise en production. |
+| Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
+| Couverture de code | Pas encore mesurée (pas de `@vitest/coverage-v8`) ; à activer avec un seuil minimum. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
 | Authentification complète | `TenantGate` permet de choisir un pressing à la main ; la connexion Supabase réelle arrive en phase 5. |
 | Pagination de la liste des commandes | Chargement local complet via Dexie ; à revoir au‑delà de quelques centaines de commandes. |

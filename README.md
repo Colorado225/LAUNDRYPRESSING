@@ -21,7 +21,7 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
 statistiques avancées, gestion des stocks, gestion du personnel, facturation PDF, suivi client public.
-Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `AUDIT.md`.
+Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `docs/AUDIT.md`.
 
 ---
 
@@ -156,6 +156,8 @@ passe** : il est inutilisable en production.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
+| `npm test` | Suite Vitest complète (58 tests) |
+| `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
 
@@ -214,6 +216,12 @@ pas en `npm run dev`).
 │   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
 │   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
 │   ├── sync/syncEngine.ts        # envoi des commandes en attente
+│   ├── test/                     # tests Vitest + amorçage (jamais dans le bundle)
+│   │   ├── setup.ts              # fake-indexeddb, environnement React
+│   │   ├── qrService.test.ts
+│   │   ├── syncEngine.test.ts
+│   │   ├── tenantIsolation.test.ts
+│   │   └── useCreateOrder.test.tsx
 │   └── types/database.ts         # types alignés sur le schéma SQL
 ├── supabase/
 │   ├── config.toml               # verify_jwt de chaque Edge Function
@@ -223,11 +231,15 @@ pas en `npm run dev`).
 │   │   └── cinetpay-webhook/     # notification serveur (sans JWT)
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
-│   └── seed.sql                  # jeu de démonstration (2 pressings)
+│   ├── seed.sql                  # jeu de démonstration (2 pressings)
+│   └── tests/isolation.sql       # preuve d'isolation sur une vraie base
 ├── docs/
+│   ├── AUDIT.md                  # rapport de la phase 0
+│   ├── BACKLOG.md                # fonctionnalités explicitement hors périmètre
+│   ├── RAPPORT-FINAL.md          # bilan du MVP (fonctionne / V2 / coûts)
 │   └── USER_GUIDE.md             # parcours réceptionniste / artisan / propriétaire
-├── AUDIT.md                      # rapport de la phase 0
-├── BACKLOG.md                    # fonctionnalités explicitement hors périmètre
+├── CHANGELOG.md                  # historique des versions du MVP
+├── vitest.config.ts              # configuration de la suite de tests
 └── RESTRUCTURATION.md            # cahier des charges du MVP
 ```
 
@@ -515,7 +527,7 @@ automatiquement par Supabase — ne pas les définir manuellement.
   par relecture et transpilation (`esbuild`), et la logique pure (arrondi, mapping
   des opérateurs, HMAC) par **19/19** assertions exécutées hors Deno.
 - Le remboursement, le paiement partiel et le paiement à la livraison sont hors
-  périmètre (voir `BACKLOG.md`).
+  périmètre (voir `docs/BACKLOG.md`).
 - Sans `CINETPAY_SECRET_KEY`, le webhook reste fonctionnel mais la notification
   n'est pas authentifiée cryptographiquement (mode « vérification seule ») ; un
   avertissement est écrit dans les logs.
@@ -618,7 +630,7 @@ pressing ne les voit.
 
 ### Limites connues de cette phase
 
-- Pas de réinitialisation de mot de passe par e-mail (reporté en V2, `BACKLOG.md`).
+- Pas de réinitialisation de mot de passe par e-mail (reporté en V2, `docs/BACKLOG.md`).
 - Un utilisateur = un pressing : `resolveTenantForUser` retient le premier
   rattachement. Le sélecteur multi-pressing est en V2.
 - Le rôle est affiché mais ne restreint pas encore la navigation : un artisan voit
@@ -628,15 +640,103 @@ pressing ne les voit.
 
 ---
 
+## 7sexies. Qualité et vérifications (phase 6)
+
+### Suite de tests automatisés
+
+```bash
+npm test          # exécution unique
+npm run test:watch
+```
+
+Vitest + `jsdom` + `fake-indexeddb` : les modules sont testés dans un
+environnement proche du navigateur, avec un IndexedDB en mémoire et **sans aucun
+appel réseau** (Supabase est remplacé par un double).
+
+| Fichier | Tests | Ce qui est couvert |
+| --- | --- | --- |
+| `src/test/qrService.test.ts` | 18 | Format `TENANT-ORDER-TIMESTAMP`, aller-retour encodage/décodage, QR étrangers rejetés, dimensions réelles du PNG (en-tête IHDR) |
+| `src/test/syncEngine.test.ts` | 11 | Hors ligne, non configuré, sans pressing, envoi nominal, **échec partiel**, idempotence, appels concurrents, traduction FR des erreurs |
+| `src/test/useCreateOrder.test.tsx` | 6 | Refus sans pressing, total calculé, QR cohérent, champs nettoyés, unicité, **aucune requête réseau** |
+| `src/test/tenantIsolation.test.ts` | 23 | RLS activée sur les 6 tables, absence de politique permissive, révocation `anon`, écritures de paiement verrouillées, aucune clé `service_role` côté client, tout `.from()` filtré ou documenté |
+
+Les tests vivent dans `src/test/` : `tsc --noEmit` les vérifie comme le reste du
+code, mais ils ne sont **jamais** inclus dans le bundle de production.
+
+### Isolation multi-tenant sur une vraie base
+
+Le test automatisé ci-dessus vérifie les politiques dans les migrations. La
+preuve « deux pressings, deux connexions » exige une base réelle :
+
+```text
+1. Appliquer 001_init.sql, 002_payments.sql puis seed.sql.
+2. Ouvrir supabase/tests/isolation.sql dans le SQL Editor de Supabase.
+3. Lire les NOTICE : chaque « OK » est une garantie vérifiée.
+```
+
+Le script rejoue exactement ce que fait PostgREST (`set local role authenticated`
++ `request.jwt.claims` reconstitué depuis le JWT) et contrôle six points :
+
+1. le pressing 1 ne voit que ses 2 commandes ;
+2. la commande du pressing 2 est introuvable **même par identifiant exact** ;
+3. les lignes de vêtements sont isolées de la même façon ;
+4. une insertion au nom du pressing 2 est refusée — avec vérification du code
+   `42501` (RLS), pour ne pas passer pour une mauvaise raison ;
+5. un client ne peut pas écrire dans `payment_transactions` ;
+6. le rôle `anon` ne lit rien du tout.
+
+Tout se termine par `ROLLBACK` : aucune donnée de test ne subsiste.
+
+### Audit d'accessibilité et de performance
+
+Lighthouse **n'a pas pu être exécuté** : l'environnement de développement ne
+contient aucun navigateur Chrome/Chromium et l'installation est bloquée. Les
+critères ont donc été vérifiés statiquement, puis corrigés :
+
+| Point | Avant | Après |
+| --- | --- | --- |
+| Contraste texte blanc sur bouton principal | 3,74:1 (échec AA) | **5,47:1** (teal-700) |
+| Contraste survol | 5,47:1 | 7,58:1 (teal-800) |
+| Texte d'aide `slate-400` sur blanc | 2,8:1 | `slate-500` à 4,76:1 |
+| Bouton de fermeture du scanner | 40 px | 48 px |
+| Code imprimé sur l'étiquette | 8 px, gris clair | 9 px, `slate-600`, retour à la ligne |
+| `lang`, `viewport`, `theme-color`, `description` | présents | conservés |
+| Alternatives textuelles | `alt` sur chaque image, `aria-label` sur les boutons icône | conservées |
+
+**PWA** : manifeste complet (`id`, `start_url`, `display: standalone`, icônes
+192/512/maskable, deux raccourcis), service worker précachant 39 fichiers
+(1,19 Mo), écran de repli fonctionnel.
+
+**Performance** : bundle initial 204 kB (64 kB gzip) — la librairie de scan
+(383 kB) et l'écran hors ligne sont chargés à la demande ; polices système, donc
+aucune requête réseau bloquante au premier rendu.
+
+> ⚠️ Ces mesures ne remplacent pas Lighthouse. Le score doit être relevé sur un
+> déploiement HTTPS réel avant la mise en production (voir `docs/RAPPORT-FINAL.md`).
+
+### Vérification syntaxique du SQL
+
+Aucun PostgreSQL n'étant disponible dans l'environnement, les quatre fichiers SQL
+ont été analysés avec l'analyseur officiel de PostgreSQL (`libpg_query` via le
+paquet Python `pglast`) — 98 instructions valides. Cela garantit l'absence
+d'erreur de syntaxe, **pas** l'absence d'erreur d'exécution.
+
+```bash
+python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
+/tmp/sqlvenv/bin/python -c "from pglast import parse_sql; print(len(parse_sql(open('supabase/migrations/001_init.sql').read())))"
+```
+
+---
+
 ## 8. Feuille de route
 
-- [x] **Phase 0** — Audit (`AUDIT.md`)
+- [x] **Phase 0** — Audit (`docs/AUDIT.md`)
 - [x] **Phase 1** — Socle technique (PWA, Supabase, tenant, migration RLS)
 - [x] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
 - [x] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
 - [x] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
 - [x] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
-- [ ] **Phase 6** — QA (Vitest, Lighthouse, test d'isolation, CHANGELOG, tag `v0.1.0-mvp`)
+- [x] **Phase 6** — QA (Vitest, isolation multi-tenant, CHANGELOG, tag `v0.1.0-mvp`) — *Lighthouse à relever sur un déploiement réel*
 
 ---
 
