@@ -26,7 +26,7 @@ reste à faire.
 | 5 | Création d'une commande | `/orders/new` | `/commandes/nouvelle` | `src/pages/OrderForm.tsx` | ✅ **trois étapes** (Client → Vêtements → Paiement) |
 | 6 | Scan QR / Atelier | `/atelier` | `/atelier` | `src/pages/Atelier.tsx` | ✅ livré, **complété** (historique des derniers scans) |
 | 7 | Catalogue | `/catalogue` | `/catalogue` | `src/pages/Catalogue.tsx` | ✅ livré, mis en cache IndexedDB |
-| 8 | Paiement / Caisse | `/payment/:orderId` | panneaux dans la fiche + `/caisse` + `/commandes/:orderId/recu` | `src/components/PaymentButton.tsx`, `CashPanel.tsx`, `src/pages/Caisse.tsx`, `Receipt.tsx` | ✅ livré |
+| 8 | Paiement / Caisse | `/payment/:orderId` | panneaux dans la fiche + `/caisse` + `/commandes/:orderId/recu` + `/commandes/:orderId/facture` | `PaymentButton.tsx`, `CashPanel.tsx`, `Caisse.tsx`, `Receipt.tsx`, `Facture.tsx` | ✅ livré (reçu 80 mm **et** facture A4) |
 | 9 | Clients | `/clients` | `/clients` | `src/pages/Clients.tsx` | ✅ livré |
 | 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3) ; dépenses **paginées côté serveur** |
 | 11 | Rapports et statistiques | — | `/rapports` | `src/pages/Rapports.tsx`, `src/lib/reporting.ts` | ✅ **livré** (courbes 7/30/90 j, comparaison de périodes, export CSV) |

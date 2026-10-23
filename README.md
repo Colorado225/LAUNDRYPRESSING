@@ -211,7 +211,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (334 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
+| `npm test` | Suite Vitest complète (376 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
@@ -267,6 +267,8 @@ pas en `npm run dev`).
 │   │   ├── pagination.ts         # pages locales + curseur serveur (dépenses)
 │   │   ├── reporting.ts          # calculs purs des rapports (écran 11)
 │   │   ├── parametres.ts         # validation du pressing, tailles, purgeabilité
+│   │   ├── facturation.ts        # numéro, lignes, montant en lettres
+│   │   ├── impression.ts         # @page A4 / 80 mm injecté à l'impression
 │   │   ├── permissions.ts        # matrice des capacités par rôle
 │   │   └── ids.ts                # UUID côté client + code QR
 │   ├── pages/
@@ -276,6 +278,7 @@ pas en `npm run dev`).
 │   │   ├── OrderForm.tsx         # création hors ligne
 │   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
 │   │   ├── PaymentReturn.tsx     # retour CinetPay (lecture seule)
+│   │   ├── Facture.tsx           # facture A4 imprimable (texte, sans lib PDF)
 │   │   ├── Atelier.tsx           # scan QR → changement de statut
 │   │   ├── Clients.tsx           # fiche client + historique (palier 3)
 │   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)

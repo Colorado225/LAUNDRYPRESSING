@@ -6,6 +6,49 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.8.0] — 2026-10-23
+
+Facturation A4 — le document que le pressing archive et transmet, à côté du
+ticket 80 mm remis au client.
+
+### Ajouté
+
+- **`/commandes/:orderId/facture`** (`src/pages/Facture.tsx`) : facture A4 avec
+  en-tête du pressing, bloc client, prestations **regroupées** (deux chemises
+  lavées = une ligne, quantité 2), totaux, acomptes **datés**, reste à payer,
+  total **en toutes lettres** et mention « facture acquittée » quand le solde
+  est nul.
+- **`src/lib/facturation.ts`** : numéro **déterministe** `FA-AAAA-XXXXXX`,
+  regroupement des lignes, construction du document, montant en lettres en
+  français (règles de `quatre-vingts`, `cents`, `mille` invariable). 33 tests.
+- **`src/lib/impression.ts`** : `@page` injecté **au moment de l'impression**,
+  en A4 ou en 80 mm, puis retiré. La taille du papier ne peut pas dépendre d'une
+  classe du DOM, d'où cette feuille temporaire plutôt qu'une règle statique.
+- **Lien « Facture »** à côté du reçu dans le panneau d'encaissement.
+
+### Décidé
+
+- **Aucune bibliothèque PDF.** Une librairie comme jsPDF aurait ajouté ~300 ko
+  et produit un PDF image. Le navigateur, lui, sait « Enregistrer au format
+  PDF » depuis sa boîte d'impression : le document reste du **texte**,
+  sélectionnable et lisible par un lecteur d'écran.
+- **Numéro déterministe, pas séquentiel.** Un compteur « 0001, 0002… » exigerait
+  un état serveur : hors ligne, deux tablettes produiraient le même numéro, et
+  une facture réimprimée changerait de numéro. `FA-AAAA-` + six caractères de
+  l'UUID est stable, unique et ne demande aucun stockage.
+- **Pas de TVA inventée.** Le régime fiscal du pressing n'est pas connu de
+  l'application ; afficher un taux arbitraire produirait une fausse facture. Le
+  document donne le total HT/TTC neutre, la devise (XOF) et le montant en
+  lettres.
+- **Rendu hors ligne.** La facture est construite depuis Dexie, comme le reçu.
+  Le Mobile Money confirmé côté serveur n'y figure pas : la mention le dit
+  explicitement, plutôt que d'afficher un solde faux.
+
+### Vérifié
+
+- 376 tests sur 24 fichiers, 123 contrôles SQL, `tsc --noEmit`, ESLint, build de
+  production.
+
 ## [0.7.0] — 2026-10-23
 
 Écran 12 enrichi : les paramètres deviennent un poste de conduite du pressing,

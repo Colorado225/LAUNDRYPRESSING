@@ -124,6 +124,23 @@ message explicite : la commande reste enregistrée, le règlement se fera plus t
    articles, montant reçu et **reste à payer**.
 4. Le reçu s'imprime même hors ligne, puisque les données sont sur la tablette.
 
+### 3.4 bis Éditer une facture A4
+
+Pour une entreprise cliente, un remboursement ou l'archivage du pressing :
+
+1. Ouvrir la commande → panneau **Encaissement** → bouton **Facture**.
+2. Le document tient sur une page A4 : en-tête du pressing, client, prestations
+   **regroupées** (deux chemises lavées = une ligne, quantité 2), total,
+   acomptes datés, reste à payer, **total en toutes lettres**.
+3. **Imprimer** → dans la destination, choisir **« Enregistrer au format
+   PDF »** pour obtenir un fichier. Le texte reste sélectionnable.
+4. Quand tout est réglé, la facture porte la mention **« Facture acquittée »**.
+
+> Le **numéro** (`FA-2026-3B4C5D`) est dérivé de la commande : il ne change
+> jamais, même réimprimé six mois plus tard ou depuis une autre tablette.
+> Aucune TVA n'est affichée : l'application ne connaît pas le régime fiscal du
+> pressing et n'invente pas de taux.
+
 ### 3.5 Clôturer la caisse
 
 1. Onglet **Caisse** → le montant **attendu** est recalculé par le serveur à
