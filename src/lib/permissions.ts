@@ -26,6 +26,8 @@ import type { TenantRole } from '@/types/database'
  *    trésorerie du pressing ;
  *  - l'**abonnement** se consulte chez le propriétaire ; le **support** est
  *    ouvert au comptoir, qui constate les pannes matérielles les premiers ;
+ *  - le **journal d'audit** est réservé au propriétaire : il expose qui a
+ *    changé un tarif, un rôle ou une clôture, donc des décisions de gestion ;
  *  - la **console de supervision** n'est pas un rôle de pressing : elle
  *    s'appuie sur `is_platform_admin()` côté serveur.
  */
@@ -44,6 +46,7 @@ export type Capability =
   | 'dashboard.view'
   | 'support.contact'
   | 'subscription.view'
+  | 'audit.view'
   | 'amounts.view'
   | 'tenant.manage'
 
@@ -63,6 +66,7 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'dashboard.view',
     'support.contact',
     'subscription.view',
+    'audit.view',
     'amounts.view',
     'tenant.manage',
   ],

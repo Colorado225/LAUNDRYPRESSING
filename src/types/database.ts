@@ -373,6 +373,30 @@ export type PlatformSupportRequest = {
   created_at: string
 }
 
+/** Ligne du journal d'audit (migration 009) : action sensible, figée à l'écriture. */
+export type AuditLogRow = {
+  id: string
+  tenant_id: string
+  /** Compte auteur, `null` quand l'écriture vient du serveur (webhook, script). */
+  actor_id: string | null
+  /** Adresse e-mail figée au moment de l'action : elle ne suit pas les changements. */
+  actor_email: string | null
+  /** Rôle figé au moment de l'action, `null` hors du pressing concerné. */
+  actor_role: string | null
+  /** Code stable `<table>.<insert|update|delete>`. */
+  action: string
+  /** Table d'origine de l'événement. */
+  entity: string
+  entity_id: string | null
+  /**
+   * Détail de l'événement. Création : `{ colonne: valeur }`. Modification :
+   * `{ colonne: { avant, apres } }`. Le type reste ouvert, car la base stocke
+   * du jsonb et une valeur peut elle-même être un objet.
+   */
+  details: Record<string, unknown>
+  created_at: string
+}
+
 export type ExpenseRow = {
   id: string
   tenant_id: string
@@ -536,6 +560,14 @@ export interface Database {
           'id' | 'unit_cost' | 'supplier_id' | 'reason' | 'created_by' | 'created_at'
         >
         Update: Partial<Omit<StockMovementRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      audit_log: {
+        Row: AuditLogRow
+        // Le journal est en écriture seule côté serveur : aucun `Insert` client
+        // n'est exposé, et le type le dit pour décourager toute tentative.
+        Insert: never
+        Update: never
         Relationships: []
       }
       expenses: {

@@ -83,6 +83,7 @@ FICHIERS=(
   "supabase/migrations/006_palier3.sql"
   "supabase/migrations/007_palier4.sql"
   "supabase/migrations/008_inscription.sql"
+  "supabase/migrations/009_audit.sql"
   "supabase/seed.sql"
   "supabase/tests/isolation.sql"
   "supabase/tests/palier1.sql"
@@ -92,6 +93,7 @@ FICHIERS=(
   "supabase/tests/palier4.sql"
   "supabase/tests/roles.sql"
   "supabase/tests/inscription.sql"
+  "supabase/tests/audit.sql"
 )
 
 ECHECS=0
