@@ -184,7 +184,7 @@ export default function OrderDetail() {
               <li key={status}>
                 <span
                   className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-semibold ${
-                    isCurrent ? meta.badgeClass : 'border-slate-200 bg-white text-slate-400'
+                    isCurrent ? meta.badgeClass : 'border-slate-200 bg-white text-slate-500'
                   }`}
                 >
                   {meta.label}

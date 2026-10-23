@@ -146,7 +146,7 @@ export default function Atelier() {
             <ArrowRight size={16} aria-hidden />
           </button>
         </form>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-slate-500">
           Utile si l’étiquette est abîmée ou si la caméra de la tablette ne fonctionne pas.
         </p>
       </section>

@@ -229,7 +229,7 @@ function LabelSheet({
         )}
       </div>
 
-      <p className="mt-2 text-center text-[8px] text-slate-400">
+      <p className="mt-2 break-all text-center text-[9px] text-slate-600">
         Code : {order.qrCode}
       </p>
     </div>

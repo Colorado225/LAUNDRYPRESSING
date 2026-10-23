@@ -80,7 +80,7 @@ export default function QrScanner({ onScanSuccess, onClose }: QrScannerProps) {
             type="button"
             onClick={onClose}
             aria-label="Fermer le scanner"
-            className="inline-flex size-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+            className="inline-flex size-12 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 active:bg-slate-200"
           >
             <X size={20} aria-hidden />
           </button>
