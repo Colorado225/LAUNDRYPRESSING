@@ -709,6 +709,13 @@ export interface Database {
           refundable_amount: number
         }
       }
+      create_tenant_for_user: {
+        Args: {
+          p_name: string
+          p_phone?: string | null
+        }
+        Returns: string
+      }
     }
     Enums: { [_ in never]: never }
     CompositeTypes: { [_ in never]: never }

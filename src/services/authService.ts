@@ -78,7 +78,14 @@ export async function signInWithPassword(
     throw new AuthError('sign_in_failed', 'Connexion impossible : aucun compte retourné.')
   }
 
-  const membership = await resolveTenantForUser(data.user.id)
+  let membership = await resolveTenantForUser(data.user.id)
+
+  // Compte confirmé mais pressing jamais créé (confirmation par e-mail activée
+  // à l'inscription) : on termine l'inscription ici, une seule fois.
+  if (!membership) {
+    const cree = await finaliserInscriptionEnAttente(data.user.user_metadata).catch(() => null)
+    if (cree) membership = await resolveTenantForUser(data.user.id)
+  }
 
   if (!membership) {
     // Compte valide mais non rattaché : on referme la session pour ne pas
@@ -258,4 +265,181 @@ export function translateAuthError(message: string, status?: number): string {
   // Message d'origine conservé pour le diagnostic : il n'expose aucune donnée
   // sensible et évite de masquer une cause inattendue derrière un texte vague.
   return `Connexion impossible : ${message}`
+}
+
+/* -------------------------------------------------------------------------- */
+/* Inscription libre                                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface InscriptionInput {
+  email: string
+  motDePasse: string
+  nomPressing: string
+  telephone: string
+}
+
+export interface ResultatInscription {
+  /**
+   * `true` quand Supabase exige la confirmation de l'adresse avant d'ouvrir la
+   * session. Aucun pressing n'est alors créé : il le sera à la première
+   * connexion, une fois l'adresse confirmée.
+   */
+  confirmationRequise: boolean
+  /** Renseigné quand la session est immédiatement ouverte. */
+  session: RestoredSession | null
+  /** Identifiant du pressing créé, `null` si confirmation requise. */
+  tenantId: string | null
+}
+
+/**
+ * Crée le pressing du compte connecté.
+ *
+ * Séparé de `signUpWithPassword` pour être rejouable : si le compte a bien été
+ * créé mais que la création du pressing a échoué (réseau coupé entre deux
+ * requêtes), l'utilisateur doit pouvoir réessayer sans se retrouver coincé avec
+ * un compte sans pressing — état que `signInWithPassword` refuse justement.
+ */
+export async function createPressingForCurrentUser(
+  nomPressing: string,
+  telephone: string,
+): Promise<string> {
+  const supabase = getSupabaseClient()
+
+  const { data, error } = await supabase.rpc('create_tenant_for_user', {
+    p_name: nomPressing,
+    p_phone: telephone.trim() ? telephone.trim() : null,
+  })
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new AuthError(
+        'deja_rattache',
+        'Ce compte est déjà rattaché à un pressing. Connectez-vous plutôt que de créer un compte.',
+      )
+    }
+    if (error.code === '22023') {
+      throw new AuthError('saisie_invalide', error.message)
+    }
+    if (error.code === '42501' || error.code === 'PGRST301') {
+      throw new AuthError('session_perdue', 'Votre session a expiré. Reconnectez-vous.')
+    }
+    throw new AuthError(
+      'pressing_refuse',
+      `Le pressing n’a pas pu être créé : ${error.message}`,
+    )
+  }
+
+  // PostgREST renvoie la valeur scalaire de la fonction.
+  const tenantId = typeof data === 'string' ? data : null
+  if (!tenantId) {
+    throw new AuthError('pressing_refuse', 'Le pressing n’a pas pu être créé. Réessayez.')
+  }
+
+  return tenantId
+}
+
+/**
+ * Inscription d'un nouveau pressing.
+ *
+ * Le parcours tient en trois temps, et se rejoue sans dommage :
+ *  1. `signUp` — crée le compte Supabase ;
+ *  2. si la confirmation par e-mail est activée sur le projet, on s'arrête là
+ *     (aucune session, donc aucun droit d'écrire) ;
+ *  3. sinon, `create_tenant_for_user` crée le pressing et rattache le compte
+ *     comme propriétaire, en une seule transaction côté serveur.
+ *
+ * Si l'étape 3 échoue, la session reste ouverte : un nouvel appel saute
+ * `signUp` (le compte existe déjà) et retente uniquement la création.
+ */
+export async function signUpWithPassword(
+  input: InscriptionInput,
+): Promise<ResultatInscription> {
+  if (!navigator.onLine) {
+    throw new AuthError(
+      'offline',
+      'La création d’un compte nécessite internet. Réessayez une fois connecté.',
+    )
+  }
+
+  const supabase = getSupabaseClient()
+  const email = input.email.trim().toLowerCase()
+
+  // Reprise après un échec de création de pressing : le compte existe déjà et
+  // la session est ouverte, il ne reste qu'à créer le pressing.
+  const { data: existante } = await supabase.auth.getSession()
+  if (existante.session?.user) {
+    const tenantId = await createPressingForCurrentUser(input.nomPressing, input.telephone)
+    const membership = await resolveTenantForUser(existante.session.user.id)
+    return {
+      confirmationRequise: false,
+      session: {
+        userId: existante.session.user.id,
+        email: existante.session.user.email ?? email,
+        membership,
+        fromCache: false,
+      },
+      tenantId,
+    }
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password: input.motDePasse,
+    options: { data: { pressing_name: input.nomPressing.trim() } },
+  })
+
+  if (error) {
+    throw new AuthError('signup_failed', translateAuthError(error.message, error.status))
+  }
+
+  // Supabase ne révèle pas qu'une adresse est déjà prise : il renvoie un
+  // utilisateur sans identité. On le détecte pour éviter un faux succès.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new AuthError(
+      'email_deja_utilise',
+      'Cette adresse e-mail possède déjà un compte. Connectez-vous plutôt que de créer un compte.',
+    )
+  }
+
+  if (!data.session) {
+    // Confirmation par e-mail activée : rien ne peut être écrit tant que le
+    // lien n'a pas été ouvert. Le pressing sera créé à la première connexion.
+    return { confirmationRequise: true, session: null, tenantId: null }
+  }
+
+  const tenantId = await createPressingForCurrentUser(input.nomPressing, input.telephone)
+  const membership = await resolveTenantForUser(data.session.user.id)
+
+  return {
+    confirmationRequise: false,
+    session: {
+      userId: data.session.user.id,
+      email: data.session.user.email ?? email,
+      membership,
+      fromCache: false,
+    },
+    tenantId,
+  }
+}
+
+/**
+ * À appeler après confirmation de l'adresse e-mail, au moment de la connexion.
+ *
+ * `signInWithPassword` refuse un compte sans pressing ; or c'est exactement
+ * l'état d'un compte fraîchement confirmé dont le pressing n'a pas encore été
+ * créé. On réessaie donc la création ici, une seule fois, avec le nom saisi à
+ * l'inscription (conservé dans `user_metadata`).
+ */
+export async function finaliserInscriptionEnAttente(
+  metadata: Record<string, unknown> | undefined,
+): Promise<string | null> {
+  const nom = typeof metadata?.['pressing_name'] === 'string' ? metadata['pressing_name'] : ''
+  if (!nom) return null
+
+  try {
+    return await createPressingForCurrentUser(nom, '')
+  } catch (erreur) {
+    if (erreur instanceof AuthError && erreur.code === 'deja_rattache') return null
+    throw erreur
+  }
 }
