@@ -1,4 +1,4 @@
-import type { OrderStatus, PaymentStatus } from '@/types/database'
+import type { OrderStatus, PaymentMethod, PaymentStatus, TenantRole } from '@/types/database'
 
 /**
  * Référentiel des statuts de commande.
@@ -111,4 +111,23 @@ export const PAYMENT_STATUS_BADGE_CLASS: Record<PaymentStatus, string> = {
   pending: 'bg-rose-100 text-rose-700 border-rose-200',
   partial: 'bg-amber-100 text-amber-700 border-amber-200',
   paid: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rôles et moyens de paiement                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** Libellés français des rôles de `tenant_users` (phase 5). */
+export const TENANT_ROLE_LABELS: Record<TenantRole, string> = {
+  owner: 'Propriétaire',
+  receptionist: 'Réceptionniste',
+  artisan: 'Artisan',
+}
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  wave: 'Wave',
+  orange_money: 'Orange Money',
+  mtn_momo: 'MTN MoMo',
+  moov_money: 'Moov Money',
+  cash: 'Espèces',
 }

@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Toaster } from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
 import AppLayout from '@/components/AppLayout'
-import TenantGate from '@/components/TenantGate'
+import AuthGate from '@/components/AuthGate'
 import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
 
 /**
@@ -12,6 +12,7 @@ import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
  * Phase 2 : liste, création et fiche commande — toutes adossées à IndexedDB.
  * Phase 3 : page /atelier (scan QR + changement de statut).
  * Phase 4 : retour de paiement CinetPay (/paiement/retour).
+ * Phase 5 : connexion Supabase (AuthGate).
  *
  * Les écrans sont chargés à la demande (`React.lazy`) : la librairie de scan
  * (`html5-qrcode`) pèse à elle seule plusieurs centaines de kilo-octets et ne
@@ -46,7 +47,7 @@ export default function App() {
         }}
       />
 
-      <TenantGate>
+      <AuthGate>
         <AppLayout>
           <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -62,7 +63,7 @@ export default function App() {
             </Routes>
           </Suspense>
         </AppLayout>
-      </TenantGate>
+      </AuthGate>
     </BrowserRouter>
   )
 }

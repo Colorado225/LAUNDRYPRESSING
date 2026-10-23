@@ -15,6 +15,7 @@ import { useTenantStore } from '@/lib/tenantContext'
 import {
   ORDER_FLOW,
   ORDER_STATUSES,
+  PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_BADGE_CLASS,
   PAYMENT_STATUS_LABELS,
   getNextStatus,
@@ -106,6 +107,11 @@ export default function OrderDetail() {
               >
                 {PAYMENT_STATUS_LABELS[order.paymentStatus]}
               </span>
+              {order.paymentMethod && (
+                <span className="ml-2 text-xs text-slate-500">
+                  via {PAYMENT_METHOD_LABELS[order.paymentMethod]}
+                </span>
+              )}
             </dd>
           </div>
         </dl>
@@ -232,7 +238,7 @@ function BackButton() {
     <button
       type="button"
       onClick={() => navigate('/commandes')}
-      className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-slate-600 hover:text-brand-navy"
+      className="inline-flex min-h-12 items-center gap-2 text-sm font-semibold text-slate-600 hover:text-brand-navy active:text-brand-navy"
     >
       <ArrowLeft size={16} aria-hidden />
       Retour aux commandes
