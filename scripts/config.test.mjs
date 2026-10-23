@@ -3,6 +3,7 @@ import {
   buildConfig,
   extractProjectRef,
   isAbsoluteUrl,
+  isPlaceholder,
   parseEnvFile,
   redact,
   validateConfig,
@@ -17,11 +18,11 @@ import {
  */
 
 const VALID_ENV = {
-  VITE_SUPABASE_URL: 'https://abcdefghijklmnop.supabase.co',
-  VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiJ9.cle-publique.anon',
+  VITE_SUPABASE_URL: 'https://rzqvmklpwtxyzabc.supabase.co',
+  VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiJ9.cle_publicaire_anon',
   SUPABASE_ACCESS_TOKEN: 'sbp_0123456789abcdef',
   SUPABASE_DB_PASSWORD: 'mot-de-passe-base',
-  SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.cle-service.service',
+  SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.cle_service_role_x',
   APP_URL: 'https://pressing-pro.vercel.app',
   CINETPAY_API_KEY: 'cle-cinetpay',
   CINETPAY_SITE_ID: '123456',
@@ -69,8 +70,8 @@ describe('parseEnvFile', () => {
 
 describe('extractProjectRef', () => {
   it('extrait la référence d’une URL Supabase', () => {
-    expect(extractProjectRef('https://abcdefghijklmnop.supabase.co')).toBe('abcdefghijklmnop')
-    expect(extractProjectRef('https://abcdefghijklmnop.supabase.co/')).toBe('abcdefghijklmnop')
+    expect(extractProjectRef('https://rzqvmklpwtxyzabc.supabase.co')).toBe('rzqvmklpwtxyzabc')
+    expect(extractProjectRef('https://rzqvmklpwtxyzabc.supabase.co/')).toBe('rzqvmklpwtxyzabc')
   })
 
   it('rejette tout ce qui n’est pas une URL Supabase', () => {
@@ -96,16 +97,16 @@ describe('isAbsoluteUrl', () => {
 
 describe('buildConfig', () => {
   it('déduit la référence du projet depuis l’URL publique', () => {
-    const config = buildConfig({ VITE_SUPABASE_URL: 'https://abcdefghijklmnop.supabase.co' })
+    const config = buildConfig({ VITE_SUPABASE_URL: 'https://rzqvmklpwtxyzabc.supabase.co' })
 
-    expect(config.projectRef).toBe('abcdefghijklmnop')
+    expect(config.projectRef).toBe('rzqvmklpwtxyzabc')
   })
 
   it('déduit l’URL de notification CinetPay', () => {
     const config = buildConfig(VALID_ENV)
 
     expect(config.cinetpay.notifyUrl).toBe(
-      'https://abcdefghijklmnop.supabase.co/functions/v1/cinetpay-webhook',
+      'https://rzqvmklpwtxyzabc.supabase.co/functions/v1/cinetpay-webhook',
     )
   })
 
@@ -239,6 +240,38 @@ describe('validateConfig — avertissements non bloquants', () => {
     )
 
     expect(warnings.map((warning) => warning.key)).not.toContain('APP_URL')
+  })
+})
+
+describe('isPlaceholder', () => {
+  it('reconnaît les valeurs du fichier d’exemple', () => {
+    expect(isPlaceholder('https://abcdefghijklmnop.supabase.co')).toBe(true)
+    expect(isPlaceholder('sbp_remplacez_moi')).toBe(true)
+    expect(isPlaceholder('remplacez-moi')).toBe(true)
+    expect(isPlaceholder('https://votre-projet.supabase.co')).toBe(true)
+  })
+
+  it('accepte une valeur réelle', () => {
+    expect(isPlaceholder('https://xyzcompanyprod.supabase.co')).toBe(false)
+    expect(isPlaceholder('sbp_9f2c1d4e5a6b7c8d9e0f')).toBe(false)
+  })
+})
+
+describe('validateConfig — valeurs d’exemple', () => {
+  it('refuse un .env.example recopié sans modification', () => {
+    const { errors } = validateConfig(
+      buildConfig({
+        VITE_SUPABASE_URL: 'https://abcdefghijklmnop.supabase.co',
+        VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiJ9.exemple.exemple',
+        SUPABASE_ACCESS_TOKEN: 'sbp_remplacez_moi',
+        SUPABASE_DB_PASSWORD: 'remplacez_moi',
+        SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.exemple.exemple',
+      }),
+    )
+
+    expect(errors.map((error) => error.key)).toEqual(
+      expect.arrayContaining(['VITE_SUPABASE_URL', 'SUPABASE_ACCESS_TOKEN', 'SUPABASE_DB_PASSWORD']),
+    )
   })
 })
 

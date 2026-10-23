@@ -29,7 +29,7 @@ de bord Supabase.
   de la base.
 - **Repli Docker** — si le démon Docker est absent, le déploiement bascule sur
   l'empaquetage côté Supabase (`--use-api`), au lieu d'échouer.
-- **43 tests** sur les scripts : analyse du `.env`, validation, et contrat du
+- **46 tests** sur les scripts : analyse du `.env`, validation, et contrat du
   provisionnement rejoué contre un serveur HTTP simulé (création puis relance).
 
 ### Modifié
@@ -48,7 +48,7 @@ de bord Supabase.
 
 ### Tests
 
-108 tests Vitest (7 fichiers), dont 43 pour les scripts d'installation.
+111 tests Vitest (7 fichiers), dont 46 pour les scripts d'installation.
 
 ---
 

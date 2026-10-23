@@ -55,6 +55,20 @@ export function extractProjectRef(url) {
   return match ? (match[1] ?? '').toLowerCase() : null
 }
 
+/**
+ * Valeurs d'exemple de `.env.example`.
+ *
+ * Sans ce garde-fou, recopier le fichier sans le modifier produit une
+ * configuration qui *paraît* valide (jeton `sbp_…`, clé assez longue) et
+ * n'échoue qu'au milieu du déploiement, avec un message d'API incompréhensible.
+ */
+const PLACEHOLDER_PATTERN = /remplacez[-_ ]?moi|exemple|votre[-_]projet|abcdefghijklmnop/i
+
+/** `true` si la valeur n'a pas été personnalisée. */
+export function isPlaceholder(value) {
+  return PLACEHOLDER_PATTERN.test(value ?? '')
+}
+
 /** `true` si la valeur ressemble à une URL absolue. */
 export function isAbsoluteUrl(value) {
   try {
@@ -247,6 +261,22 @@ export function validateConfig(config) {
       key: 'SEED_OWNER_PASSWORD',
       message: 'Mot de passe trop court : Supabase exige au moins 6 caractères.',
     })
+  }
+
+  // --- Valeurs d'exemple laissées telles quelles ----------------------------
+  for (const [key, value] of [
+    ['VITE_SUPABASE_URL', config.supabaseUrl],
+    ['VITE_SUPABASE_ANON_KEY', config.anonKey],
+    ['SUPABASE_ACCESS_TOKEN', config.accessToken],
+    ['SUPABASE_DB_PASSWORD', config.dbPassword],
+    ['SUPABASE_SERVICE_ROLE_KEY', config.serviceRoleKey],
+  ]) {
+    if (isPlaceholder(value)) {
+      errors.push({
+        key,
+        message: 'Valeur d’exemple non modifiée : remplacez-la par celle de votre projet Supabase.',
+      })
+    }
   }
 
   // --- Garde-fou : un secret ne doit jamais être public --------------------
