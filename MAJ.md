@@ -26,20 +26,23 @@
 
 ## 1. Document source (verbatim)
 
-*Texte fourni le 23 octobre 2026, reproduit tel quel. Les liens d'images qui y
-figurent sont des artefacts de l'outil qui a produit l'analyse : ce ne sont pas
-des sources documentaires. Seuls les liens vers le dépôt et le cahier des
-charges sont exploitables.*
+*Texte fourni le 23 octobre 2026, reproduit **sans modification du contenu**.
+Seuls les niveaux de titres ont été décalés de deux crans (`#` → `###`) pour
+que le document s'imbrique dans celui-ci et n'entre pas en collision avec son
+sommaire.
+Les liens d'images sont des artefacts de l'outil qui a produit l'analyse : ce
+ne sont pas des sources documentaires ; seuls les liens vers le dépôt et le
+cahier des charges sont exploitables.*
 
 <!-- ===================== DÉBUT DU TEXTE SOURCE ===================== -->
 
-# Audit technique et fonctionnel — LAUNDRYPRESSING
+### Audit technique et fonctionnel — LAUNDRYPRESSING
 
 L’objectif est d’évaluer ton dépôt comme un véritable produit ERP de gestion de pressing, et pas uniquement comme une interface web : vérifier les fonctionnalités existantes, repérer les défauts techniques, identifier les risques métier et définir les améliorations prioritaires pour en faire une application fiable et commercialisable en Côte d’Ivoire.
 
 Point important : l’analyse préliminaire du code consulté fait déjà ressortir plusieurs problèmes potentiels, notamment dans l’authentification, certains composants d’interface et la gestion des paiements. Je vais distinguer les défauts observés des fonctionnalités qui restent à vérifier, afin de ne pas présenter une hypothèse comme un fait établi.
 
-## 1. État réel du dépôt
+#### 1. État réel du dépôt
 
 J’ai vérifié le dépôt public et consulté sa structure, ses fichiers de configuration, les pages principales, les services, la synchronisation locale, le schéma Supabase, les fonctions de paiement et la documentation.
 
@@ -49,7 +52,7 @@ J’ai vérifié le dépôt public et consulté sa structure, ses fichiers de co
 - Rapport d’audit présent dans le dépôt : [docs/AUDIT.md](https://github.com/Colorado225/LAUNDRYPRESSING/blob/main/docs/AUDIT.md?utm_source=chatgpt.com)
 - Liste des améliorations prévues : [docs/BACKLOG.md](https://github.com/Colorado225/LAUNDRYPRESSING/blob/main/docs/BACKLOG.md?utm_source=chatgpt.com)
 
-### Ce qui existe déjà dans le code
+##### Ce qui existe déjà dans le code
 
 Socle applicatif moderne
 
@@ -73,11 +76,11 @@ Le schéma PostgreSQL utilise des identifiants de pressing, des politiques RLS e
 
 Mon premier constat : le dépôt a évolué au-delà d’un simple template d’interface. Il contient désormais une base d’architecture pour un MVP offline-first. En revanche, la présence du code ne prouve pas que tous les flux fonctionnent en production : la documentation du projet précise elle-même que les migrations et les paiements réels n’ont pas encore été validés sur des services cloud configurés.
 
-## 2. Les problèmes et risques prioritaires
+#### 2. Les problèmes et risques prioritaires
 
 J’utilise trois niveaux : P0 pour les blocages ou risques critiques, P1 pour les améliorations nécessaires avant une commercialisation sérieuse et P2 pour les évolutions ultérieures.
 
-### P0 — Vérifier l’intégration et la mise en production
+##### P0 — Vérifier l’intégration et la mise en production
 
 Critique
 
@@ -87,7 +90,7 @@ Le fichier [docs/AUDIT.md](https://github.com/Colorado225/LAUNDRYPRESSING/blob/m
 
 Cela indique que ce rapport d’audit est au moins partiellement périmé par rapport au dépôt actuel. Il ne faut donc pas appliquer aveuglément ses anciennes conclusions ou réintroduire l’ancien code. Amélioration : auditer le commit courant, identifier tout code hérité encore utilisé, puis mettre à jour les rapports et les critères de validation.
 
-### P0 — Valider l’authentification réelle
+##### P0 — Valider l’authentification réelle
 
 Critique
 
@@ -103,7 +106,7 @@ Mais plusieurs scénarios restent à prouver sur une vraie instance Supabase :
 
 Amélioration : ajouter des tests d’intégration sur deux pressings réels de test, avec des comptes et des rôles différents.
 
-### P0 — Sécuriser les paiements avant de les activer
+##### P0 — Sécuriser les paiements avant de les activer
 
 Critique
 
@@ -115,7 +118,7 @@ Il faut également vérifier que les mises à jour de la transaction et de la co
 
 Amélioration : imposer une configuration stricte en production, tester les notifications falsifiées, les doublons, les montants incorrects, les paiements concurrents et les réponses du prestataire indisponible.
 
-### P1 — Compléter la gestion des accès par rôle
+##### P1 — Compléter la gestion des accès par rôle
 
 Important
 
@@ -125,7 +128,7 @@ Cacher un onglet dans l’interface ne suffit pas : chaque action sensible doit 
 
 Amélioration : définir une matrice d’autorisations et la tester : par exemple, l’artisan fait avancer les commandes, tandis que le propriétaire gère les paramètres et les accès. Le droit d’encaisser ou de consulter les montants doit être une décision explicite du produit.
 
-### P1 — Fiabiliser les opérations hors ligne
+##### P1 — Fiabiliser les opérations hors ligne
 
 Important
 
@@ -133,7 +136,7 @@ L’architecture locale est adaptée aux coupures de réseau fréquentes, mais u
 
 Amélioration : définir les règles de résolution des conflits, préserver l’historique des transitions, traiter les suppressions et annulations, et afficher clairement les opérations en attente ou en échec. Tester aussi la déconnexion pendant une synchronisation, le redémarrage de l’appareil et le changement de compte.
 
-### P1 — Vérifier le déploiement et la configuration
+##### P1 — Vérifier le déploiement et la configuration
 
 Important
 
@@ -141,7 +144,7 @@ Le projet possède un script de provisionnement, des variables d’environnement
 
 Amélioration : tester le provisionnement sur un projet Supabase de test, vérifier les migrations dans l’ordre, contrôler les secrets sans les exposer, puis valider le parcours complet sur une URL HTTPS de préproduction.
 
-## 3. Les fonctionnalités à implémenter pour un véritable ERP de pressing
+#### 3. Les fonctionnalités à implémenter pour un véritable ERP de pressing
 
 Le cahier des charges actuel limite volontairement le MVP aux commandes, aux QR codes, au mode hors ligne et au paiement Mobile Money. C’est cohérent pour une première version. Pour en faire ensuite un ERP SaaS vendable, je recommande de développer les modules suivants dans cet ordre.
 
@@ -236,7 +239,7 @@ V1.2
 
 Tous les indicateurs doivent provenir des données enregistrées et être calculés avec des règles explicites.
 
-## 4. Améliorations de l’architecture technique
+#### 4. Améliorations de l’architecture technique
 
 Voici les changements que je recommande sans réécrire inutilement ce qui fonctionne déjà.
 
@@ -252,13 +255,13 @@ Voici les changements que je recommande sans réécrire inutilement ce qui fonct
 | Déploiement            | Environnements développement, préproduction et production séparés, secrets isolés et procédure de retour arrière.               |
 | Qualité                | Tests automatisés dans une intégration continue et contrôles bloquants avant fusion.                                           |
 
-### Deux améliorations métier particulièrement importantes
+##### Deux améliorations métier particulièrement importantes
 
 A. Préserver l’historique des commandes. Une commande ne doit pas simplement remplacer son statut précédent. Chaque transition devrait conserver l’ancien statut, le nouveau statut, l’utilisateur, la date et, si nécessaire, un motif. Cela permet de savoir qui a marqué un vêtement comme prêt ou remis.
 
 B. Distinguer le statut de la commande du statut du paiement. Un vêtement peut être prêt sans être payé, et une commande peut être partiellement réglée. Il faut donc conserver deux états indépendants, avec un calcul fiable du montant restant dû.
 
-## 5. Modèle de données cible
+#### 5. Modèle de données cible
 
 Le schéma actuel possède déjà les entités essentielles `tenants`, `tenant_users`, `orders`, `order_items`, `order_status_history` et `payment_transactions`. Je conserverais cette base et l’étendrais progressivement.
 
@@ -302,7 +305,7 @@ Encaissements, dépenses et marges estimées
 
 Chaque table métier devra être rattachée au pressing concerné et protégée contre l’accès inter-tenant. Pour les paiements, il faudra également prévoir des références uniques, une traçabilité des tentatives et une procédure de rapprochement en cas de notification tardive.
 
-## 6. Plan d’exécution recommandé
+#### 6. Plan d’exécution recommandé
 
 Je ne recommande pas de lancer toutes les nouvelles fonctionnalités simultanément. Il faut d’abord établir un état fiable du code existant, puis avancer par étapes vérifiables.
 
@@ -325,7 +328,7 @@ Je ne recommande pas de lancer toutes les nouvelles fonctionnalités simultaném
 
    Ajouter l’abonnement, la gestion des accès, la supervision technique et le support, puis les stocks et les analyses avancées selon les besoins des premiers clients.
 
-## 7. Ce qui reste à vérifier avant de conclure à une mise en production
+#### 7. Ce qui reste à vérifier avant de conclure à une mise en production
 
 Le dépôt contient un rapport indiquant une suite de tests et un build réussis à un moment donné. Je n’ai pas exécuté ces commandes moi-même sur le commit courant, et je n’ai pas accès à une instance Supabase ou à des identifiants marchands pour confirmer les flux réels.
 
