@@ -6,6 +6,55 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.12.0] — 2026-10-23
+
+Mode « essai » CinetPay et outillage de déploiement des Edge Functions, en
+attendant les identifiants marchands.
+
+### Ajouté
+
+- **Mode `test` CinetPay** (`CINETPAY_MODE`) : l'API Checkout v2 n'a pas d'hôte
+  de bac à sable, le mode est donc une décision locale. Il accepte une
+  notification non signée (le statut reste reconfirmé auprès de l'API) et
+  marque chaque transaction `provider_payload.mode`. En `production`, une clé
+  d'essai (`test`, `demo`, `exemple`, `simul`…) est **refusée** au démarrage,
+  côté Edge Function comme côté `npm run setup`.
+- **`scripts/cinetpay-simule.mjs`** — faux CinetPay local (port 54321) :
+  initialisation avec les vrais contrôles (montant multiple de 5, transaction
+  unique), page de paiement « accepter / refuser », vérification de statut,
+  notification `form-urlencoded` signée en HMAC dans `x-token`, puis redirection
+  vers le `return_url`. État pur séparé dans `scripts/lib/cinetpay-simule.mjs`.
+- **`scripts/deploy-fonctions.mjs`** — déploiement des deux Edge Functions par
+  l'API d'administration Supabase, sans CLI : assemblage, `--verifier`,
+  `--secrets`. L'assembleur (`scripts/lib/bundle.mjs`) résout les imports
+  `_shared` en un fichier unique et conserve les imports `npm:` que Deno résout.
+- **`docs/DEPLOIEMENT-FONCTIONS.md`** — routes du simulateur, HMAC, limites
+  (dont `localhost` vu depuis une fonction hébergée) et bascule en production.
+
+### Modifié
+
+- `npm run setup` pousse désormais aussi `CINETPAY_MODE` : sans ce secret, la
+  fonction retombait sur `production` et refusait les identifiants d'essai.
+- `.env.example` documente le mode, les valeurs du simulateur et le secret de
+  signature.
+- Nouvelles entrées `npm run simulateur` et `npm run deploy:fonctions`.
+
+### Corrigé
+
+- **Assembleur** : un import coupé sur plusieurs lignes (Prettier) n'était pas
+  reconnu et laissait un `from '../_shared/…'` dans le fichier envoyé à
+  Supabase — l'erreur n'apparaissait qu'à la première requête réelle. Les
+  imports à effet de bord et les ré-exports sont traités aussi.
+
+### Vérifié
+
+- 477 tests sur 32 fichiers, **167 contrôles SQL** sur 10 fichiers, `tsc`,
+  ESLint, build. Le parcours d'essai est exercé de bout en bout contre le vrai
+  serveur du simulateur (initialisation, notification HMAC, redirection,
+  vérification, webhook injoignable).
+- **Non fait, faute d'identifiants** : aucune fonction déployée sur le projet
+  Supabase, aucun paiement CinetPay réel.
+
 ## [0.11.0] — 2026-10-23
 
 Recette d'isolation sur un vrai projet Supabase, et finitions de la page de

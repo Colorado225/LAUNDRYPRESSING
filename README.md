@@ -627,6 +627,29 @@ supabase functions deploy cinetpay-init
 supabase functions deploy cinetpay-webhook --no-verify-jwt
 ```
 
+### Sans la CLI : script de déploiement et mode essai
+
+```bash
+npm run deploy:fonctions -- --verifier    # assemble, inspecte, ne déploie rien
+npm run deploy:fonctions                  # crée ou met à jour les deux fonctions
+npm run deploy:fonctions -- --secrets     # pousse les secrets puis déploie
+```
+
+Les fonctions sont assemblées en **un fichier unique** (imports `_shared`
+résolus), l'API d'administration Supabase n'acceptant qu'un seul corps de
+source. Pour éprouver le parcours de paiement **sans compte marchand** :
+
+```bash
+npm run simulateur     # faux CinetPay sur http://localhost:54321
+# .env : CINETPAY_MODE=test, CINETPAY_BASE_URL=http://localhost:54321,
+#        CINETPAY_API_KEY=simulateur-test-key, CINETPAY_SITE_ID=123456
+```
+
+En mode `production`, une clé d'essai est **refusée** au démarrage ; en mode
+`test`, chaque transaction est marquée `provider_payload.mode = "test"`.
+Détail des routes, du HMAC et des limites (dont `localhost` vu depuis une
+fonction hébergée) : [`docs/DEPLOIEMENT-FONCTIONS.md`](docs/DEPLOIEMENT-FONCTIONS.md).
+
 `CINETPAY_NOTIFY_URL` est déduite de l'URL du projet
 (`https://<ref>.supabase.co/functions/v1/cinetpay-webhook`) et n'a donc pas à
 être saisie. `SUPABASE_URL`, `SUPABASE_ANON_KEY` et
