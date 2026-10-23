@@ -19,6 +19,8 @@ const EXPECTED: Record<TenantRole, Capability[]> = {
     'orders.editDetails',
     'orders.delete',
     'payments.initiate',
+    'cash.manage',
+    'catalog.manage',
     'amounts.view',
     'tenant.manage',
   ],
@@ -27,6 +29,7 @@ const EXPECTED: Record<TenantRole, Capability[]> = {
     'orders.updateStatus',
     'orders.editDetails',
     'payments.initiate',
+    'cash.manage',
     'amounts.view',
   ],
   artisan: ['orders.updateStatus'],
@@ -38,6 +41,8 @@ const ALL: Capability[] = [
   'orders.editDetails',
   'orders.delete',
   'payments.initiate',
+  'cash.manage',
+  'catalog.manage',
   'amounts.view',
   'tenant.manage',
 ]
@@ -65,6 +70,18 @@ describe('can — décisions produit explicites', () => {
   it('un réceptionniste ne supprime pas et ne gère pas les accès', () => {
     expect(can('receptionist', 'orders.delete')).toBe(false)
     expect(can('receptionist', 'tenant.manage')).toBe(false)
+  })
+
+  it('seul le propriétaire fixe les tarifs du catalogue', () => {
+    expect(can('owner', 'catalog.manage')).toBe(true)
+    expect(can('receptionist', 'catalog.manage')).toBe(false)
+    expect(can('artisan', 'catalog.manage')).toBe(false)
+  })
+
+  it('le comptoir encaisse et clôture la caisse, l’atelier non', () => {
+    expect(can('owner', 'cash.manage')).toBe(true)
+    expect(can('receptionist', 'cash.manage')).toBe(true)
+    expect(can('artisan', 'cash.manage')).toBe(false)
   })
 
   it('seul le propriétaire gère le pressing', () => {

@@ -38,6 +38,14 @@ const remote = vi.hoisted(() => ({
   nextVersion: 2,
   /** Simule une modification concurrente : la mise à jour ne touche aucune ligne. */
   conflictOnUpdate: false,
+  /** Lignes renvoyées par la lecture descendante (`pullOrders`). */
+  pullRows: [] as unknown[],
+  /** Encaissements transmis par `record_cash_payment`. */
+  rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
+  /** Erreur à renvoyer par l'appel RPC d'encaissement. */
+  cashError: null as null | { message: string; code: string },
+  /** Reste à payer renvoyé par l'encaissement. */
+  cashRemaining: 0,
 }))
 
 vi.mock('@/lib/env', () => ({
@@ -103,19 +111,35 @@ vi.mock('@/lib/supabaseClient', () => {
           return Promise.resolve({ error: message ? { message } : null })
         },
         select: () => {
-          // Relecture après doublon : la commande existe déjà côté serveur.
+          // Deux usages distincts :
+          //  - relecture après doublon (`.select('version').eq(…).maybeSingle()`) ;
+          //  - lecture descendante (`select(...).eq(…).gt(…).order(…).limit(…)`).
           const builder = {
             eq: () => builder,
+            gt: () => builder,
+            order: () => builder,
+            limit: () => Promise.resolve({ data: remote.pullRows, error: null }),
             maybeSingle: () => Promise.resolve({ data: { version: 7 }, error: null }),
             single: () => Promise.resolve({ data: { version: 7 }, error: null }),
+            then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve({ data: remote.pullRows, error: null }).then(resolve, reject),
           }
           return builder
         },
       }),
+      rpc: (fn: string, args: Record<string, unknown>) => {
+        remote.rpcCalls.push({ fn, args })
+        if (remote.cashError) return Promise.resolve({ data: null, error: remote.cashError })
+        return Promise.resolve({
+          data: { payment_id: args['p_payment_id'], paid: 0, remaining: remote.cashRemaining, duplicate: false },
+          error: null,
+        })
+      },
     }),
   }
 })
 
+const { queueCashPayment } = await import('@/db/cashRepository')
 const { syncPendingOrders } = await import('@/sync/syncEngine')
 
 function setOnline(online: boolean) {
@@ -139,6 +163,11 @@ beforeEach(async () => {
   remote.duplicateOnInsert = false
   remote.nextVersion = 2
   remote.conflictOnUpdate = false
+  remote.pullRows = []
+  remote.rpcCalls = []
+  remote.cashError = null
+  remote.cashRemaining = 0
+  await db.cashPayments.clear()
   useTenantStore.setState({ tenantId: TENANT, tenantName: 'Pressing Cocody', role: 'owner' })
   useSyncStore.getState().reset()
   setOnline(true)
@@ -372,5 +401,163 @@ describe('syncPendingOrders — échecs', () => {
     expect(stored?.syncError).toBe(
       'Réseau indisponible : la synchronisation reprendra automatiquement.',
     )
+  })
+})
+
+describe('syncPendingOrders — encaissements au comptoir (palier 2)', () => {
+  it('transmet l’encaissement, solde la commande et le retire de la file', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    const paiement = await queueCashPayment(TENANT, order.id, 2500, 'Acompte')
+    remote.rpcCalls = []
+    remote.cashRemaining = 0
+
+    const result = await syncPendingOrders()
+
+    expect(result.cashSucceeded).toBe(1)
+    expect(remote.rpcCalls).toHaveLength(1)
+    expect(remote.rpcCalls[0]?.fn).toBe('record_cash_payment')
+    // L'identifiant local garantit l'idempotence : le serveur le reçoit tel quel.
+    expect(remote.rpcCalls[0]?.args).toMatchObject({
+      p_order_id: order.id,
+      p_amount: 2500,
+      p_payment_id: paiement.id,
+    })
+
+    const stocke = await db.cashPayments.get(paiement.id)
+    expect(stocke?.synced).toBe(1)
+    expect(stocke?.lastError).toBeNull()
+
+    const commande = await db.orders.get(order.id)
+    expect(commande?.paymentStatus).toBe('paid')
+    expect(commande?.paymentMethod).toBe('cash')
+  })
+
+  it('un acompte laisse la commande partiellement réglée', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    await queueCashPayment(TENANT, order.id, 1000, null)
+    remote.cashRemaining = 1500
+
+    await syncPendingOrders()
+
+    const commande = await db.orders.get(order.id)
+    expect(commande?.paymentStatus).toBe('partial')
+  })
+
+  it('un refus définitif sort l’encaissement de la file et conserve le motif', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    const paiement = await queueCashPayment(TENANT, order.id, 99, null)
+    remote.cashError = { message: 'Le montant dépasse le reste à payer (0 FCFA).', code: '22023' }
+
+    await syncPendingOrders()
+
+    const stocke = await db.cashPayments.get(paiement.id)
+    expect(stocke?.synced).toBe(1)
+    expect(stocke?.lastError).toContain('dépasse le reste à payer')
+  })
+
+  it('une coupure réseau laisse l’encaissement en attente', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    const paiement = await queueCashPayment(TENANT, order.id, 1000, null)
+    remote.cashError = { message: 'Failed to fetch', code: 'FETCH' }
+
+    await syncPendingOrders()
+
+    const stocke = await db.cashPayments.get(paiement.id)
+    expect(stocke?.synced).toBe(0)
+    expect(stocke?.lastError).toBe(
+      'Réseau indisponible : la synchronisation reprendra automatiquement.',
+    )
+  })
+})
+
+describe('syncPendingOrders — lecture des modifications distantes', () => {
+  it('applique l’état d’une commande modifiée sur un autre appareil', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    remote.pullRows = [
+      {
+        id: order.id,
+        version: 2,
+        status: 'ready',
+        payment_status: 'paid',
+        payment_method: 'wave',
+        total_amount: 2500,
+        due_date: '2026-10-30',
+        updated_at: '2026-10-23T12:00:00.000Z',
+      },
+    ]
+
+    const result = await syncPendingOrders()
+
+    expect(result.pulled).toBe(1)
+
+    const local = await db.orders.get(order.id)
+    expect(local?.status).toBe('ready')
+    expect(local?.paymentStatus).toBe('paid')
+    expect(local?.paymentMethod).toBe('wave')
+    expect(local?.dueDate).toBe('2026-10-30')
+    expect(local?.serverVersion).toBe(2)
+    expect(local?.synced).toBe(1)
+  })
+
+  it('n’écrase jamais une commande ayant du travail local en attente', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    await updateOrderStatusLocal(order.id, 'washing')
+
+    // L'envoi échoue : la commande reste en file.
+    remote.failure = (table) => (table === 'orders' ? 'Failed to fetch' : null)
+    remote.pullRows = [
+      {
+        id: order.id,
+        version: 2,
+        status: 'ready',
+        payment_status: 'pending',
+        payment_method: null,
+        total_amount: 2500,
+        due_date: null,
+        updated_at: '2026-10-23T12:00:00.000Z',
+      },
+    ]
+
+    await syncPendingOrders()
+
+    const local = await db.orders.get(order.id)
+    expect(local?.status).toBe('washing')
+    expect(local?.synced).toBe(0)
+  })
+
+  it('ignore une version identique ou plus ancienne', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    remote.pullRows = [
+      {
+        id: order.id,
+        version: 1,
+        status: 'ready',
+        payment_status: 'paid',
+        payment_method: 'wave',
+        total_amount: 2500,
+        due_date: null,
+        updated_at: '2026-10-23T12:00:00.000Z',
+      },
+    ]
+
+    const result = await syncPendingOrders()
+
+    expect(result.pulled).toBe(0)
+    const local = await db.orders.get(order.id)
+    expect(local?.status).toBe('received')
   })
 })
