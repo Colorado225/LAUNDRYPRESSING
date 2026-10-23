@@ -50,6 +50,16 @@ export interface LocalOrder {
   syncConflict: string | null
   /** Échéance promise au client (AAAA-MM-JJ), `null` si aucune. */
   dueDate: string | null
+  /** Employé en charge, `null` tant que la commande n'est attribuée à personne. */
+  assignedTo: string | null
+  /** Date de la dernière attribution (ISO), `null` si aucune. */
+  assignedAt: string | null
+  /**
+   * Motif d'un changement de statut (annulation, retour en arrière).
+   * Transmis avec la commande puis effacé par le déclencheur serveur : il
+   * appartient à l'événement, pas à l'état courant.
+   */
+  statusReason: string | null
 }
 
 /** Vêtement d'une commande. */
@@ -67,6 +77,11 @@ export interface LocalOrderItem {
   /** Libellés recopiés au moment de la vente. */
   articleName: string | null
   serviceName: string | null
+  /**
+   * Motif du tarif dérogatoire (prix différent du catalogue). Obligatoire dès
+   * qu'un prix s'écarte du tarif de référence — contrôlé aussi côté serveur.
+   */
+  priceReason: string | null
 }
 
 /**
@@ -105,6 +120,44 @@ export interface LocalCashPayment {
   lastError: string | null
 }
 
+/** Réclamation ou vêtement abîmé constaté sur une commande. */
+export interface LocalOrderIssue {
+  id: string
+  orderId: string
+  tenantId: string
+  /** Ligne concernée, `null` si le dommage porte sur la commande entière. */
+  orderItemId: string | null
+  kind: 'stained' | 'torn' | 'discoloured' | 'missing' | 'other'
+  severity: 'minor' | 'major'
+  stage: 'reception' | 'treatment' | 'delivery'
+  description: string
+  resolution: 'repaired' | 'compensated' | 'rejected' | null
+  resolutionNote: string | null
+  resolvedAt: string | null
+  reportedBy: string | null
+  createdAt: string
+  synced: SyncFlag
+  lastError: string | null
+}
+
+/**
+ * Remboursement constaté localement.
+ *
+ * Un remboursement n'est jamais enregistré hors ligne : il sort de l'argent et
+ * doit être validé par le serveur (propriétaire uniquement). Cette table est un
+ * miroir local du journal distant, pour l'affichage et le reçu.
+ */
+export interface LocalRefund {
+  id: string
+  orderId: string
+  tenantId: string
+  amount: number
+  channel: 'cash' | 'mobile_money'
+  reason: string
+  refundedAt: string
+  refundedBy: string | null
+}
+
 /**
  * Paiement Mobile Money en attente d'envoi (utilisé en Phase 4).
  * Le store existe dès la Phase 2 pour éviter une migration de schéma Dexie.
@@ -130,6 +183,8 @@ export class PressingDatabase extends Dexie {
   pendingPayments!: Table<LocalPendingPayment, string>
   catalogEntries!: Table<LocalCatalogEntry, string>
   cashPayments!: Table<LocalCashPayment, string>
+  orderIssues!: Table<LocalOrderIssue, string>
+  refunds!: Table<LocalRefund, string>
 
   constructor() {
     super('pressing-pro')
@@ -202,6 +257,34 @@ export class PressingDatabase extends Dexie {
             if (item.serviceName === undefined) item.serviceName = null
           })
       })
+
+    // v5 (palier 2, finitions) : attribution à un employé, motif de dérogation,
+    // réclamations et miroir des remboursements.
+    this.version(5)
+      .stores({
+        orders:
+          'id, tenantId, status, synced, createdAt, qrCode, dueDate, assignedTo, [tenantId+status], [tenantId+synced]',
+        orderItems: 'id, orderId, tenantId, [orderId+tenantId]',
+        orderIssues: 'id, orderId, tenantId, synced, createdAt, [tenantId+synced]',
+        refunds: 'id, orderId, tenantId, refundedAt',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('orders')
+          .toCollection()
+          .modify((order: LocalOrder & Record<string, unknown>) => {
+            if (order.assignedTo === undefined) order.assignedTo = null
+            if (order.assignedAt === undefined) order.assignedAt = null
+            if (order.statusReason === undefined) order.statusReason = null
+          })
+
+        await tx
+          .table('orderItems')
+          .toCollection()
+          .modify((item: LocalOrderItem & Record<string, unknown>) => {
+            if (item.priceReason === undefined) item.priceReason = null
+          })
+      })
   }
 }
 
@@ -209,13 +292,11 @@ export const db = new PressingDatabase()
 
 /** Supprime toutes les données locales (déconnexion, changement de pressing). */
 export async function clearLocalData(): Promise<void> {
+  // Forme « tableau » : au-delà de cinq tables, la signature variadique de
+  // Dexie n'est plus typée.
   await db.transaction(
     'rw',
-    db.orders,
-    db.orderItems,
-    db.pendingPayments,
-    db.catalogEntries,
-    db.cashPayments,
+    [db.orders, db.orderItems, db.pendingPayments, db.catalogEntries, db.cashPayments, db.orderIssues, db.refunds],
     async () => {
       await Promise.all([
         db.orders.clear(),
@@ -223,6 +304,8 @@ export async function clearLocalData(): Promise<void> {
         db.pendingPayments.clear(),
         db.catalogEntries.clear(),
         db.cashPayments.clear(),
+        db.orderIssues.clear(),
+        db.refunds.clear(),
       ])
     },
   )

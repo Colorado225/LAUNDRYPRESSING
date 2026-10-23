@@ -211,6 +211,10 @@ export function allowedStatusTargets(
   current: OrderStatus,
   role: TenantRole | null | undefined,
 ): OrderStatus[] {
+  // Aucun rôle = aucun droit : l'interface ne propose rien plutôt que de
+  // laisser croire qu'une action est possible.
+  if (!role) return []
+
   const rangCourant = orderStatusRank(current)
 
   if (current === 'cancelled') {

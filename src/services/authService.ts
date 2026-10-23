@@ -43,9 +43,9 @@ export interface RestoredSession {
 
 /** Contexte mémorisé, reconstruit sans requête réseau. */
 function cachedMembership(): TenantMembership | null {
-  const { tenantId, tenantName, role } = useTenantStore.getState()
+  const { tenantId, tenantName, role, userId } = useTenantStore.getState()
   if (!tenantId || !tenantName || !role) return null
-  return { tenantId, tenantName, role }
+  return { tenantId, tenantName, role, userId }
 }
 
 /**

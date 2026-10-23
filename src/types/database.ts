@@ -45,6 +45,8 @@ export type TenantUserRow = {
   user_id: string
   tenant_id: string
   role: TenantRole
+  /** Nom affiché dans l'interface (« Propriétaire », « Awa », …). */
+  display_name: string | null
 }
 
 export type OrderRow = {
@@ -65,6 +67,16 @@ export type OrderRow = {
   version: number
   /** Date de livraison promise au client (jour calendaire, sans heure). */
   due_date: string | null
+  /** Employé en charge de la commande. */
+  assigned_to: string | null
+  /** Horodatage de la dernière attribution. */
+  assigned_at: string | null
+  /**
+   * Colonne de transport : le motif d'un changement de statut y transite le
+   * temps d'une mise à jour, puis le déclencheur l'efface en le recopiant dans
+   * `order_status_history.reason`.
+   */
+  status_reason?: string | null
 }
 
 export type OrderItemRow = {
@@ -81,6 +93,42 @@ export type OrderItemRow = {
   /** Libellés recopiés : une modification du catalogue ne réécrit pas l'historique. */
   article_name: string | null
   service_name: string | null
+  /** Motif exigé pour un prix différent du tarif du catalogue. */
+  price_reason: string | null
+}
+
+/** Réclamation ou vêtement abîmé (table `order_issues`, migration 005). */
+export type OrderIssueKind = 'stained' | 'torn' | 'discoloured' | 'missing' | 'other'
+export type OrderIssueStage = 'reception' | 'treatment' | 'delivery'
+export type OrderIssueResolution = 'repaired' | 'compensated' | 'rejected'
+
+export type OrderIssueRow = {
+  id: string
+  tenant_id: string
+  order_id: string
+  order_item_id: string | null
+  kind: OrderIssueKind
+  severity: 'minor' | 'major'
+  stage: OrderIssueStage
+  description: string
+  reported_by: string | null
+  resolution: OrderIssueResolution | null
+  resolution_note: string | null
+  resolved_at: string | null
+  created_at: string
+}
+
+/** Remboursement (table `payment_refunds`, migration 005). */
+export type PaymentRefundRow = {
+  id: string
+  tenant_id: string
+  order_id: string
+  payment_id: string | null
+  amount: number
+  channel: 'cash' | 'mobile_money'
+  reason: string
+  refunded_by: string | null
+  refunded_at: string
 }
 
 export type OrderStatusHistoryRow = {
@@ -151,6 +199,8 @@ export type CashSessionRow = {
   expected_total: number
   declared_total: number
   difference: number
+  /** Somme des remboursements en espèces de la journée. */
+  refunded_total: number
   notes: string | null
   closed_by: string | null
   closed_at: string
@@ -189,6 +239,9 @@ export interface Database {
           | 'synced_from_local'
           | 'version'
           | 'due_date'
+          | 'assigned_to'
+          | 'assigned_at'
+          | 'status_reason'
         >
         Update: Partial<Omit<OrderRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -197,7 +250,13 @@ export interface Database {
         Row: OrderItemRow
         Insert: InsertOf<
           OrderItemRow,
-          'id' | 'fabric_type' | 'special_instructions' | 'catalog_entry_id' | 'article_name' | 'service_name'
+          | 'id'
+          | 'fabric_type'
+          | 'special_instructions'
+          | 'catalog_entry_id'
+          | 'article_name'
+          | 'service_name'
+          | 'price_reason'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -227,6 +286,32 @@ export interface Database {
           'id' | 'notes' | 'closed_by' | 'closed_at'
         >
         Update: Partial<Omit<CashSessionRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      order_issues: {
+        Row: OrderIssueRow
+        Insert: InsertOf<
+          OrderIssueRow,
+          | 'id'
+          | 'order_item_id'
+          | 'severity'
+          | 'stage'
+          | 'reported_by'
+          | 'resolution'
+          | 'resolution_note'
+          | 'resolved_at'
+          | 'created_at'
+        >
+        Update: Partial<Omit<OrderIssueRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      payment_refunds: {
+        Row: PaymentRefundRow
+        Insert: InsertOf<
+          PaymentRefundRow,
+          'id' | 'payment_id' | 'channel' | 'refunded_by' | 'refunded_at'
+        >
+        Update: Partial<Omit<PaymentRefundRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
       payment_transactions: {
@@ -285,6 +370,19 @@ export interface Database {
         }
         Returns: CashSessionRow
       }
+      record_refund: {
+        Args: {
+          p_order_id: string
+          p_amount: number
+          p_reason: string
+          p_channel?: 'cash' | 'mobile_money'
+        }
+        Returns: {
+          refund_id: string
+          refunded_total: number
+          refundable_amount: number
+        }
+      }
     }
     Enums: { [_ in never]: never }
     CompositeTypes: { [_ in never]: never }
@@ -294,5 +392,7 @@ export interface Database {
 /** Raccourcis pratiques. */
 export type Order = OrderRow
 export type OrderItem = OrderItemRow
+export type OrderIssue = OrderIssueRow
+export type PaymentRefund = PaymentRefundRow
 export type Tenant = TenantRow
 export type TenantUser = TenantUserRow

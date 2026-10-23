@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Banknote, CloudOff, Loader2, Printer, ReceiptText } from 'lucide-react'
+import { Banknote, CloudOff, Loader2, Printer, ReceiptText, Undo2, Wifi } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useCashPayments, useQueueCashPayment } from '@/db/hooks'
+import { useCashPayments, useOrderRefunds, useQueueCashPayment } from '@/db/hooks'
 import type { LocalOrder } from '@/db/localDb'
 import { formatDateTimeFr, formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
@@ -13,6 +13,7 @@ import {
   clampPaymentAmount,
   computeBalance,
 } from '@/services/cashService'
+import { MIN_REFUND_REASON, RefundError, recordRefund } from '@/services/refundService'
 
 /**
  * Encaissement au comptoir (palier 2).
@@ -26,15 +27,26 @@ import {
 export default function CashPanel({ order }: { order: LocalOrder }) {
   const role = useTenantStore((state) => state.role)
   const paiements = useCashPayments(order.id)
+  const remboursements = useOrderRefunds(order.id)
   const encaisser = useQueueCashPayment()
 
   const [ouvert, setOuvert] = useState(false)
   const [montant, setMontant] = useState('')
   const [note, setNote] = useState('')
   const [envoi, setEnvoi] = useState(false)
+  const [rembourser, setRembourser] = useState(false)
+  const [montantRembourse, setMontantRembourse] = useState('')
+  const [motif, setMotif] = useState('')
+  const [envoiRemboursement, setEnvoiRemboursement] = useState(false)
 
   const solde = computeBalance(order.totalAmount, order.paymentStatus, paiements)
   const peutEncaisser = can(role, 'cash.manage') && canAcceptPayment(order, solde)
+
+  // Un remboursement ne change pas le « reste à payer » : il constate une
+  // sortie d'argent. Seul le propriétaire peut le décider.
+  const dejaRembourse = remboursements.reduce((total, ligne) => total + ligne.amount, 0)
+  const remboursable = Math.max(solde.paid - dejaRembourse, 0)
+  const peutRembourser = role === 'owner' && remboursable > 0
 
   const ouvrir = () => {
     setMontant(String(solde.remaining))
@@ -61,6 +73,41 @@ export default function CashPanel({ order }: { order: LocalOrder }) {
       toast.error(error instanceof Error ? error.message : "Impossible d'enregistrer le paiement")
     } finally {
       setEnvoi(false)
+    }
+  }
+
+  const ouvrirRemboursement = () => {
+    setMontantRembourse(String(remboursable))
+    setMotif('')
+    setRembourser(true)
+  }
+
+  const confirmerRemboursement = async () => {
+    const valeur = Math.floor(Number(montantRembourse.replace(/\s/g, '')))
+
+    if (!Number.isFinite(valeur) || valeur <= 0) {
+      toast.error('Indiquez un montant valide.')
+      return
+    }
+
+    setEnvoiRemboursement(true)
+    try {
+      await recordRefund({
+        orderId: order.id,
+        tenantId: order.tenantId,
+        amount: valeur,
+        reason: motif,
+      })
+      toast.success(`Remboursement de ${formatFcfa(valeur)} enregistré`, { icon: '↩️' })
+      setRembourser(false)
+      setMontantRembourse('')
+      setMotif('')
+    } catch (error) {
+      toast.error(
+        error instanceof RefundError ? error.message : 'Remboursement impossible. Réessayez.',
+      )
+    } finally {
+      setEnvoiRemboursement(false)
     }
   }
 
@@ -212,6 +259,99 @@ export default function CashPanel({ order }: { order: LocalOrder }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Remboursements : propriétaire seulement, connexion exigée. */}
+      {(peutRembourser || remboursements.length > 0) && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <Undo2 size={14} aria-hidden /> Remboursements
+            </h3>
+
+            {peutRembourser && !rembourser && (
+              <button
+                type="button"
+                onClick={ouvrirRemboursement}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                Rembourser jusqu’à {formatFcfa(remboursable)}
+              </button>
+            )}
+          </div>
+
+          {remboursements.length > 0 && (
+            <ul className="mt-2 divide-y divide-slate-100">
+              {remboursements.map((ligne) => (
+                <li key={ligne.id} className="py-2">
+                  <p className="text-sm font-semibold text-rose-800">
+                    −{formatFcfa(ligne.amount)} · {ligne.channel === 'cash' ? 'espèces' : 'Mobile Money'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {formatDateTimeFr(ligne.refundedAt)} · {ligne.reason}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {rembourser && (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-rose-900">
+                <Wifi size={13} aria-hidden />
+                Le remboursement est transmis immédiatement au serveur.
+              </p>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Montant remboursé (FCFA)
+                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={remboursable}
+                  value={montantRembourse}
+                  onChange={(event) => setMontantRembourse(event.target.value)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-rose-400"
+                />
+              </label>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Motif ({MIN_REFUND_REASON} caractères minimum)
+                </span>
+                <textarea
+                  value={motif}
+                  onChange={(event) => setMotif(event.target.value)}
+                  rows={2}
+                  placeholder="Ex. : tache non retirée sur la chemise, geste commercial accordé au client"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-rose-400"
+                />
+              </label>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void confirmerRemboursement()}
+                  disabled={envoiRemboursement}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-bold text-white hover:bg-rose-800 disabled:opacity-60"
+                >
+                  {envoiRemboursement ? <Loader2 className="animate-spin" size={16} aria-hidden /> : null}
+                  Confirmer le remboursement
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRembourser(false)}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </section>
   )

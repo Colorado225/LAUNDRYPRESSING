@@ -386,6 +386,11 @@ export default function Caisse() {
                 <span className="text-sm text-slate-600">
                   Attendu {formatFcfa(entree.expected_total)} · déclaré{' '}
                   {formatFcfa(entree.declared_total)}
+                  {entree.refunded_total > 0 && (
+                    <span className="text-rose-700">
+                      {' '}· dont −{formatFcfa(entree.refunded_total)} remboursés
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`text-sm font-bold ${

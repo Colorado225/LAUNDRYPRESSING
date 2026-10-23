@@ -49,6 +49,7 @@ export async function createOrderLocal(
     catalogEntryId: item.catalogEntryId ?? null,
     articleName: item.articleName?.trim() ? item.articleName.trim() : null,
     serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
+    priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
   }))
 
   const order: LocalOrder = {
@@ -65,6 +66,9 @@ export async function createOrderLocal(
     createdAt,
     updatedAt: createdAt,
     dueDate: input.dueDate ?? null,
+    assignedTo: input.assignedTo ?? null,
+    assignedAt: null,
+    statusReason: null,
     // Une commande neuve n'existe pas encore côté serveur.
     synced: 0,
     syncedAt: null,
@@ -92,6 +96,7 @@ export async function createOrderLocal(
 export async function updateOrderStatusLocal(
   orderId: string,
   status: OrderStatus,
+  reason: string | null = null,
 ): Promise<LocalOrder> {
   const existing = await db.orders.get(orderId)
   if (!existing) throw new Error('Commande introuvable en base locale')
@@ -99,6 +104,9 @@ export async function updateOrderStatusLocal(
   const updated: LocalOrder = {
     ...existing,
     status,
+    // Le motif accompagne CE changement ; il sera effacé côté serveur une fois
+    // journalisé dans l'historique.
+    statusReason: reason?.trim() ? reason.trim() : null,
     updatedAt: nowIso(),
     synced: 0,
     syncError: null,
@@ -126,6 +134,32 @@ export async function updateOrderDueDateLocal(
   const updated: LocalOrder = {
     ...existing,
     dueDate,
+    updatedAt: nowIso(),
+    synced: 0,
+    syncError: null,
+  }
+
+  await db.orders.put(updated)
+  return updated
+}
+
+/**
+ * Attribue la commande à un employé (ou la remet dans le pot commun).
+ *
+ * Écriture locale d'abord : l'attribution se fait à l'atelier, souvent sans
+ * réseau. Le serveur vérifie ensuite que l'employé appartient bien au pressing.
+ */
+export async function updateOrderAssignmentLocal(
+  orderId: string,
+  assignedTo: string | null,
+): Promise<LocalOrder> {
+  const existing = await db.orders.get(orderId)
+  if (!existing) throw new Error('Commande introuvable en base locale')
+
+  const updated: LocalOrder = {
+    ...existing,
+    assignedTo,
+    assignedAt: assignedTo ? nowIso() : null,
     updatedAt: nowIso(),
     synced: 0,
     syncError: null,
@@ -211,6 +245,7 @@ export interface RemoteOrderState {
   payment_method: PaymentMethod | null
   total_amount: number
   due_date: string | null
+  assigned_to: string | null
   updated_at: string
 }
 
@@ -236,6 +271,9 @@ export async function applyRemoteOrderState(remote: RemoteOrderState): Promise<b
     paymentMethod: remote.payment_method,
     totalAmount: remote.total_amount,
     dueDate: remote.due_date,
+    assignedTo: remote.assigned_to,
+    // L'état distant ne porte pas de motif : celui-ci a déjà été journalisé.
+    statusReason: null,
     serverVersion: remote.version,
     updatedAt: remote.updated_at,
     synced: 1 satisfies SyncFlag,
@@ -286,6 +324,9 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
     created_at: order.createdAt,
     updated_at: order.updatedAt,
     due_date: order.dueDate,
+    assigned_to: order.assignedTo,
+    assigned_at: order.assignedAt,
+    status_reason: order.statusReason,
     // Trace explicite : la ligne provient du mode hors ligne.
     synced_from_local: true,
     // À l'insertion, la version serveur est 1 ; en mise à jour, le trigger
@@ -306,6 +347,7 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     catalog_entry_id: item.catalogEntryId,
     article_name: item.articleName,
     service_name: item.serviceName,
+    price_reason: item.priceReason,
   }
 }
 

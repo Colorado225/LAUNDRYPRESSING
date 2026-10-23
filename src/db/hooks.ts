@@ -5,11 +5,18 @@ import { useTenantStore } from '@/lib/tenantContext'
 import {
   countPendingOrders,
   createOrderLocal,
+  updateOrderAssignmentLocal,
   updateOrderStatusLocal,
   updateOrderDueDateLocal,
 } from './ordersRepository'
 import { queueCashPayment } from './cashRepository'
-import { db, type LocalCashPayment, type LocalOrder } from './localDb'
+import {
+  db,
+  type LocalCashPayment,
+  type LocalOrder,
+  type LocalOrderIssue,
+  type LocalRefund,
+} from './localDb'
 
 /**
  * Hooks React du mode offline-first.
@@ -78,8 +85,8 @@ export function useCreateOrder() {
 
 /** Changement de statut local (reste fonctionnel en mode avion). */
 export function useUpdateOrderStatus() {
-  return useCallback(async (orderId: string, status: OrderStatus) => {
-    return updateOrderStatusLocal(orderId, status)
+  return useCallback(async (orderId: string, status: OrderStatus, reason: string | null = null) => {
+    return updateOrderStatusLocal(orderId, status, reason)
   }, [])
 }
 
@@ -90,6 +97,36 @@ export function useCashPayments(orderId: string | undefined): LocalCashPayment[]
       if (!orderId) return []
       return db.cashPayments.where('orderId').equals(orderId).sortBy('receivedAt')
     }, [orderId]) ?? []
+  )
+}
+
+/** Réclamations d'une commande, les plus récentes d'abord. */
+export function useOrderIssues(orderId: string | undefined): LocalOrderIssue[] {
+  return (
+    useLiveQuery(async () => {
+      if (!orderId) return []
+      const lignes = await db.orderIssues.where('orderId').equals(orderId).toArray()
+      return lignes.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    }, [orderId]) ?? []
+  )
+}
+
+/** Remboursements enregistrés pour une commande. */
+export function useOrderRefunds(orderId: string | undefined): LocalRefund[] {
+  return (
+    useLiveQuery(async () => {
+      if (!orderId) return []
+      return db.refunds.where('orderId').equals(orderId).sortBy('refundedAt')
+    }, [orderId]) ?? []
+  )
+}
+
+/** Attribution d'une commande à un employé (écriture locale immédiate). */
+export function useUpdateOrderAssignment() {
+  return useCallback(
+    async (orderId: string, assignedTo: string | null) =>
+      updateOrderAssignmentLocal(orderId, assignedTo),
+    [],
   )
 }
 

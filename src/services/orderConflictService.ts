@@ -103,6 +103,7 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     catalogEntryId: item.catalog_entry_id ?? null,
     articleName: item.article_name ?? null,
     serviceName: item.service_name ?? null,
+    priceReason: item.price_reason ?? null,
   }))
 
   const localOrder: LocalOrder = {

@@ -21,6 +21,12 @@ import {
   summariseCash,
 } from '@/db/cashRepository'
 import { applyRemoteCashState, applyRemoteOrderState } from '@/db/ordersRepository'
+import {
+  countPendingIssues,
+  getPendingOrderIssues,
+  markIssueError,
+  markIssueSynced,
+} from '@/db/issueRepository'
 
 /**
  * Moteur de synchronisation offline-first.
@@ -45,7 +51,10 @@ import { applyRemoteCashState, applyRemoteOrderState } from '@/db/ordersReposito
  *     commandes (l'ordre est important : la commande doit exister côté serveur).
  *     L'identifiant du paiement est généré sur la tablette : un renvoi ne crée
  *     pas de second encaissement.
- *  7. Une **lecture** légère rapatrie l'état des commandes modifiées ailleurs
+ *  7. Les **réclamations** (vêtements abîmés) sont transmises après les
+ *     commandes. Elles sont immuables : un refus définitif les sort de la file
+ *     au lieu de les renvoyer indéfiniment.
+ *  8. Une **lecture** légère rapatrie l'état des commandes modifiées ailleurs
  *     (paiement Mobile Money, changement de statut sur une autre tablette).
  *     Elle ne touche JAMAIS une commande ayant du travail local en attente.
  */
@@ -69,6 +78,8 @@ export interface SyncResult {
   conflicts: number
   /** Encaissements au comptoir transmis avec succès. */
   cashSucceeded: number
+  /** Réclamations transmises avec succès. */
+  issuesSucceeded: number
   /** Commandes dont l'état a été rafraîchi depuis le serveur. */
   pulled: number
   /** `true` quand le passage a été ignoré (hors ligne, non configuré, sans tenant). */
@@ -82,6 +93,7 @@ const EMPTY_RESULT: SyncResult = {
   failed: 0,
   conflicts: 0,
   cashSucceeded: 0,
+  issuesSucceeded: 0,
   pulled: 0,
   skipped: true,
   lastError: null,
@@ -232,6 +244,60 @@ async function pushCashPayments(tenantId: string): Promise<{ succeeded: number; 
   return { succeeded, lastError }
 }
 
+/**
+ * Transmet les réclamations en attente.
+ *
+ * Contrairement aux commandes, il n'y a pas de version : une réclamation ne
+ * fait que s'ajouter. Un doublon d'identifiant signifie simplement que l'envoi
+ * précédent avait abouti sans réponse — on la marque transmise.
+ */
+async function pushOrderIssues(
+  tenantId: string,
+): Promise<{ succeeded: number; lastError: string | null }> {
+  const enAttente = await getPendingOrderIssues(tenantId)
+  if (enAttente.length === 0) return { succeeded: 0, lastError: null }
+
+  const supabase = getSupabaseClient()
+  let succeeded = 0
+  let lastError: string | null = null
+
+  for (const issue of enAttente) {
+    const { error } = await supabase.from('order_issues').insert({
+      id: issue.id,
+      tenant_id: tenantId,
+      order_id: issue.orderId,
+      order_item_id: issue.orderItemId,
+      kind: issue.kind,
+      severity: issue.severity,
+      stage: issue.stage,
+      description: issue.description,
+      created_at: issue.createdAt,
+    })
+
+    if (error) {
+      const code = 'code' in error ? String(error.code ?? '') : ''
+      const definitive =
+        error.message.includes('duplicate key') ||
+        ['23505', '23503', '23514', '22023', '42501'].includes(code)
+      lastError = toFrenchSyncError(error)
+
+      if (error.message.includes('duplicate key')) {
+        // Déjà présente côté serveur : le travail est fait.
+        await markIssueSynced(issue.id)
+        succeeded += 1
+      } else {
+        await markIssueError(issue.id, lastError, definitive)
+      }
+      continue
+    }
+
+    await markIssueSynced(issue.id)
+    succeeded += 1
+  }
+
+  return { succeeded, lastError }
+}
+
 /** Rafraîchit l'état des commandes modifiées sur un autre appareil. */
 async function pullOrders(tenantId: string): Promise<number> {
   const supabase = getSupabaseClient()
@@ -239,7 +305,9 @@ async function pullOrders(tenantId: string): Promise<number> {
 
   const { data, error } = await supabase
     .from('orders')
-    .select('id, version, status, payment_status, payment_method, total_amount, due_date, updated_at')
+    .select(
+      'id, version, status, payment_status, payment_method, total_amount, due_date, assigned_to, updated_at',
+    )
     .eq('tenant_id', tenantId)
     .gt('updated_at', depuis)
     .order('updated_at', { ascending: true })
@@ -290,8 +358,9 @@ async function runSync(): Promise<SyncResult> {
 
   const pendingOrders = await getPendingOrders(tenantId)
   const pendingCash = await getPendingCashPayments(tenantId)
+  const pendingIssues = await getPendingOrderIssues(tenantId)
 
-  if (pendingOrders.length === 0 && pendingCash.length === 0) {
+  if (pendingOrders.length === 0 && pendingCash.length === 0 && pendingIssues.length === 0) {
     // Rien à envoyer, mais d'autres appareils ont peut-être écrit : on relit.
     const pulled = await pullOrders(tenantId).catch(() => 0)
     useSyncStore.getState().finishSync({ pendingCount: 0, lastError: null })
@@ -360,13 +429,22 @@ async function runSync(): Promise<SyncResult> {
 
   if (cash.lastError) lastError = cash.lastError
 
-  // 4. Lecture des modifications faites ailleurs.
+  // 4. Réclamations : après les commandes, qu'elles référencent.
+  const issues = await pushOrderIssues(tenantId).catch((error: unknown) => ({
+    succeeded: 0,
+    lastError: toFrenchSyncError(error),
+  }))
+
+  if (issues.lastError) lastError = issues.lastError
+
+  // 5. Lecture des modifications faites ailleurs.
   const pulled = await pullOrders(tenantId).catch(() => 0)
 
   const remaining = await countPendingOrders(tenantId)
   const cashSummary = await summariseCash(tenantId)
+  const remainingIssues = await countPendingIssues(tenantId)
   useSyncStore.getState().finishSync({
-    pendingCount: remaining + cashSummary.pending,
+    pendingCount: remaining + cashSummary.pending + remainingIssues,
     lastError,
   })
 
@@ -376,6 +454,7 @@ async function runSync(): Promise<SyncResult> {
     failed,
     conflicts,
     cashSucceeded: cash.succeeded,
+    issuesSucceeded: issues.succeeded,
     pulled,
     skipped: false,
     lastError,

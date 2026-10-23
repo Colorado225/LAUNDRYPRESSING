@@ -37,6 +37,7 @@ const EMPTY_ITEM: OrderItemDraft = {
   catalogEntryId: undefined,
   articleName: undefined,
   serviceName: undefined,
+  priceReason: undefined,
 }
 
 interface OrderItemDraft extends OrderItemInput {
@@ -171,6 +172,26 @@ export default function OrderForm() {
     setErrors([])
 
     const lignes: OrderItemInput[] = items.map(({ mode: _mode, ...item }) => item)
+
+    // Tarif dérogatoire : le serveur refuse un prix différent du catalogue sans
+    // motif (22023). On bloque ici pour éviter un aller-retour inutile.
+    const derogeSansMotif = items.some((item) => {
+      const prixCatalogue = catalog.find((entree) => entree.id === item.catalogEntryId)?.price
+      return (
+        item.mode === 'catalog' &&
+        item.catalogEntryId !== undefined &&
+        prixCatalogue !== undefined &&
+        item.price !== prixCatalogue &&
+        (item.priceReason ?? '').trim().length < 10
+      )
+    })
+
+    if (derogeSansMotif) {
+      setErrors([
+        'Un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).',
+      ])
+      return
+    }
 
     const parsed = createOrderSchema.safeParse({
       customerName,
@@ -407,6 +428,37 @@ export default function OrderForm() {
                       <Trash2 size={18} aria-hidden />
                     </button>
                   </div>
+
+                  {(() => {
+                    const prixCatalogue = catalog.find(
+                      (entree) => entree.id === item.catalogEntryId,
+                    )?.price
+                    const deroge =
+                      item.mode === 'catalog' &&
+                      prixCatalogue !== undefined &&
+                      item.price !== prixCatalogue
+
+                    if (!deroge) return null
+
+                    return (
+                      <Field
+                        label="Motif du tarif dérogatoire"
+                        htmlFor={`item-reason-${index}`}
+                        hint={`Prix du catalogue : ${formatFcfa(prixCatalogue)}. Un motif est exigé et journalisé.`}
+                      >
+                        <input
+                          id={`item-reason-${index}`}
+                          value={item.priceReason ?? ''}
+                          onChange={(event) =>
+                            updateItem(index, { priceReason: event.target.value })
+                          }
+                          maxLength={300}
+                          placeholder="Geste commercial : tache ancienne signalée par le client"
+                          className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
+                        />
+                      </Field>
+                    )
+                  })()}
                 </div>
               </li>
             ))}

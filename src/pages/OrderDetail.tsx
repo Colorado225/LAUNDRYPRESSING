@@ -27,6 +27,9 @@ import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib
 import { can, canSeeAmounts } from '@/lib/permissions'
 import ConflictBanner from '@/components/ConflictBanner'
 import CashPanel from '@/components/CashPanel'
+import AssignmentPanel from '@/components/AssignmentPanel'
+import IssuePanel from '@/components/IssuePanel'
+import { useState } from 'react'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
@@ -39,6 +42,11 @@ export default function OrderDetail() {
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const seeAmounts = canSeeAmounts(role)
+
+  // Déclarés AVANT tout retour anticipé : l'ordre des hooks doit rester stable
+  // entre le chargement et l'affichage de la fiche.
+  const [annulationOuverte, setAnnulationOuverte] = useState(false)
+  const [motifAnnulation, setMotifAnnulation] = useState('')
 
   if (data === undefined) {
     return (
@@ -73,9 +81,9 @@ export default function OrderDetail() {
   const peutReculer = can(role, 'orders.editDetails') && role === 'owner'
   const peutAnnuler = can(role, 'orders.updateStatus') && role !== 'artisan'
 
-  const changeStatus = async (status: typeof order.status) => {
+  const changeStatus = async (status: typeof order.status, reason: string | null = null) => {
     try {
-      await updateStatus(order.id, status)
+      await updateStatus(order.id, status, reason)
       toast.success(`Statut mis à jour : ${ORDER_STATUSES[status].label}`, { icon: '✅' })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Mise à jour impossible')
@@ -200,6 +208,12 @@ export default function OrderDetail() {
         </ul>
       </section>
 
+      {/* Prise en charge : attribution à un employé */}
+      <AssignmentPanel order={order} />
+
+      {/* Réclamations et vêtements abîmés */}
+      <IssuePanel order={order} items={items} />
+
       {/* Caisse : espèces, acompte, solde et reçu */}
       {seeAmounts && <CashPanel order={order} />}
 
@@ -254,16 +268,62 @@ export default function OrderDetail() {
             </button>
           )}
 
-          {peutAnnuler && order.status !== 'cancelled' && order.status !== 'delivered' && (
-            <button
-              type="button"
-              onClick={() => void changeStatus('cancelled')}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-            >
-              Annuler la commande
-            </button>
-          )}
+          {peutAnnuler &&
+            order.status !== 'cancelled' &&
+            order.status !== 'delivered' &&
+            !annulationOuverte && (
+              <button
+                type="button"
+                onClick={() => setAnnulationOuverte(true)}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                Annuler la commande
+              </button>
+            )}
         </div>
+
+        {annulationOuverte && (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-rose-900">
+                Motif de l’annulation (recommandé, conservé dans l’historique)
+              </span>
+              <textarea
+                value={motifAnnulation}
+                onChange={(event) => setMotifAnnulation(event.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="Ex. : client absent depuis trois semaines, vêtements rendus au dépôt"
+                className="w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm outline-none focus:border-rose-500"
+              />
+            </label>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void changeStatus('cancelled', motifAnnulation)
+                  setAnnulationOuverte(false)
+                  setMotifAnnulation('')
+                }}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-bold text-white hover:bg-rose-800"
+              >
+                Confirmer l’annulation
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAnnulationOuverte(false)
+                  setMotifAnnulation('')
+                }}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700"
+              >
+                Retour
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   )

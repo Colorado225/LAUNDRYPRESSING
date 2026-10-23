@@ -20,12 +20,15 @@ export interface TenantMembership {
   tenantId: string
   tenantName: string
   role: TenantRole
+  /** Compte Supabase connecté, `null` en mode démonstration. */
+  userId: string | null
 }
 
 interface TenantState {
   tenantId: string | null
   tenantName: string | null
   role: TenantRole | null
+  userId: string | null
   setMembership: (membership: TenantMembership) => void
   clear: () => void
 }
@@ -36,9 +39,10 @@ export const useTenantStore = create<TenantState>()(
       tenantId: null,
       tenantName: null,
       role: null,
-      setMembership: ({ tenantId, tenantName, role }) =>
-        set({ tenantId, tenantName, role }),
-      clear: () => set({ tenantId: null, tenantName: null, role: null }),
+      userId: null,
+      setMembership: ({ tenantId, tenantName, role, userId }) =>
+        set({ tenantId, tenantName, role, userId }),
+      clear: () => set({ tenantId: null, tenantName: null, role: null, userId: null }),
     }),
     {
       name: STORAGE_KEY,
@@ -47,6 +51,7 @@ export const useTenantStore = create<TenantState>()(
         tenantId: state.tenantId,
         tenantName: state.tenantName,
         role: state.role,
+        userId: state.userId,
       }),
     },
   ),
@@ -98,6 +103,7 @@ export async function resolveTenantForUser(userId: string): Promise<TenantMember
     tenantId: tenant.id,
     tenantName: tenant.name,
     role: membership.role,
+    userId,
   }
 
   useTenantStore.getState().setMembership(resolved)

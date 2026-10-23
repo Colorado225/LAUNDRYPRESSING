@@ -302,6 +302,7 @@ function DemoAccess({ onAuthenticated }: { onAuthenticated: () => void }) {
       tenantId: id,
       tenantName: name.trim() || 'Pressing de démonstration',
       role: 'owner',
+      userId: null,
     })
     onAuthenticated()
   }
