@@ -163,3 +163,77 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     price: item.price,
   }
 }
+
+/**
+ * Recherche une commande par le contenu de son QR Code (phase 3).
+ *
+ * Le scan peut renvoyer :
+ *  - la chaîne exacte stockée (`qrCode`) → correspondance directe ;
+ *  - un code légèrement différent (étiquette réimprimée avec un autre
+ *    horodatage) → repli sur l'identifiant de commande extrait du QR.
+ *
+ * `tenantId` est vérifié côté client pour prévenir le scan d'une étiquette
+ * appartenant à un autre pressing ; la RLS reste la sécurité de référence.
+ */
+export async function findOrderByQrCode(
+  tenantId: string,
+  decodedText: string,
+): Promise<LocalOrderWithItems | { foreignTenantId: string } | null> {
+  const trimmed = decodedText.trim()
+
+  const direct = await db.orders.where('qrCode').equals(trimmed).first()
+  const order =
+    direct ??
+    (await findOrderByShortReference(tenantId, trimmed)) ??
+    (await findOrderByParsedQr(trimmed))
+
+  if (!order) return null
+
+  // Étiquette d'un autre pressing : on ne divulgue aucune donnée client.
+  if (order.tenantId !== tenantId) {
+    return { foreignTenantId: order.tenantId }
+  }
+
+  const items = await db.orderItems.where('orderId').equals(order.id).toArray()
+  return { order, items }
+}
+
+/**
+ * Repli sur la référence courte imprimée (`CMD-7F3A2B`) saisie à la main,
+ * lorsque le QR Code est illisible.
+ */
+async function findOrderByShortReference(
+  tenantId: string,
+  input: string,
+): Promise<LocalOrder | undefined> {
+  const match = /^CMD-([0-9a-f]{6})$/i.exec(input)
+  if (!match?.[1]) return undefined
+
+  const suffix = match[1].toUpperCase()
+  const candidates = await db.orders.where('tenantId').equals(tenantId).toArray()
+  return candidates.find((order) => order.id.replace(/-/g, '').slice(-6).toUpperCase() === suffix)
+}
+
+async function findOrderByParsedQr(decodedText: string): Promise<LocalOrder | undefined> {
+  // Import dynamique volontaire : la librairie `qrcode` (~50 Ko) ne doit être
+  // chargée que lors d'un scan, pas au démarrage de la liste des commandes.
+  const { parseQrString } = await import('@/services/qrService')
+  const parsed = parseQrString(decodedText)
+  if (!parsed) return undefined
+  return db.orders.get(parsed.orderId)
+}
+
+/** Commandes actuellement en atelier (hors « livrée » et « annulée »). */
+export async function getWorkshopOrders(tenantId: string): Promise<LocalOrder[]> {
+  const orders = await db.orders
+    .where('[tenantId+status]')
+    .anyOf([
+      [tenantId, 'received'],
+      [tenantId, 'washing'],
+      [tenantId, 'ironing'],
+      [tenantId, 'ready'],
+    ])
+    .toArray()
+
+  return orders.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}

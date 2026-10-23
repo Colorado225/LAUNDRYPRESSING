@@ -80,6 +80,13 @@ export class PressingDatabase extends Dexie {
       orderItems: 'id, orderId, tenantId, [orderId+tenantId]',
       pendingPayments: 'id, orderId, tenantId, status, createdAt',
     })
+
+    // v2 (phase 3) : ajout de l'index `qrCode`, indispensable au scan de
+    // l'atelier — rechercher une commande sans index parcourrait toute la table.
+    // Dexie réindexe automatiquement les enregistrements existants.
+    this.version(2).stores({
+      orders: 'id, tenantId, status, synced, createdAt, qrCode, [tenantId+status], [tenantId+synced]',
+    })
   }
 }
 
