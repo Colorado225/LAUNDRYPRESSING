@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CloudOff, Loader2, Lock, Receipt, Trash2, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { can } from '@/lib/permissions'
@@ -11,8 +11,11 @@ import {
   EXPENSE_CATEGORY_LABELS,
   createExpense,
   deleteExpense,
-  listExpenses,
+  listExpensesPage,
+  sumExpensesSince,
 } from '@/services/expenseService'
+import { startOfMonth } from '@/services/dashboardService'
+import type { Curseur } from '@/lib/pagination'
 import { listSuppliers } from '@/services/stockService'
 import type { ExpenseCategory, ExpenseRow, SupplierRow } from '@/types/database'
 
@@ -31,7 +34,13 @@ export default function Depenses() {
   const [depenses, setDepenses] = useState<ExpenseRow[]>([])
   const [fournisseurs, setFournisseurs] = useState<SupplierRow[]>([])
   const [chargement, setChargement] = useState(true)
+  const [chargementSuite, setChargementSuite] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  /** Curseur de la dernière ligne reçue ; `null` = pas de suite. */
+  const [curseur, setCurseur] = useState<Curseur | null>(null)
+  const [aPlus, setAPlus] = useState(false)
+  /** Total du mois calculé par le serveur, `null` si la lecture échoue. */
+  const [totalMois, setTotalMois] = useState<number | null>(null)
 
   const [libelle, setLibelle] = useState('')
   const [categorie, setCategorie] = useState<ExpenseCategory>('fournitures')
@@ -41,6 +50,11 @@ export default function Depenses() {
   const [note, setNote] = useState('')
   const [envoi, setEnvoi] = useState(false)
 
+  /**
+   * Première page. Le total du mois vient d'une agrégation **serveur** : il
+   * doit rester juste même quand la page affichée ne couvre pas tout le mois
+   * (une page fait 25 lignes, un mois chargé en compte davantage).
+   */
   const charger = useCallback(async () => {
     if (!tenantId || !autorise) {
       setChargement(false)
@@ -49,12 +63,16 @@ export default function Depenses() {
     setErreur(null)
 
     try {
-      const [liste, listeFournisseurs] = await Promise.all([
-        listExpenses(tenantId),
+      const [page, listeFournisseurs, total] = await Promise.all([
+        listExpensesPage(tenantId),
         listSuppliers(tenantId),
+        sumExpensesSince(tenantId, startOfMonth()).catch(() => null),
       ])
-      setDepenses(liste)
+      setDepenses(page.lignes)
+      setCurseur(page.curseur)
+      setAPlus(page.aPlus)
       setFournisseurs(listeFournisseurs)
+      setTotalMois(total)
     } catch (error) {
       setErreur(error instanceof Error ? error.message : 'Chargement impossible.')
     } finally {
@@ -62,16 +80,27 @@ export default function Depenses() {
     }
   }, [tenantId, autorise])
 
+  /** Page suivante, ajoutée à la suite de la liste déjà affichée. */
+  const chargerSuite = async () => {
+    if (!tenantId || !curseur || chargementSuite) return
+    setChargementSuite(true)
+    setErreur(null)
+
+    try {
+      const page = await listExpensesPage(tenantId, { curseur })
+      setDepenses((actuelles) => [...actuelles, ...page.lignes])
+      setCurseur(page.curseur)
+      setAPlus(page.aPlus)
+    } catch (error) {
+      setErreur(error instanceof Error ? error.message : 'Chargement impossible.')
+    } finally {
+      setChargementSuite(false)
+    }
+  }
+
   useEffect(() => {
     void charger()
   }, [charger])
-
-  const totalMois = useMemo(() => {
-    const mois = todayIso().slice(0, 7)
-    return depenses
-      .filter((depense) => depense.spent_on.startsWith(mois))
-      .reduce((total, depense) => total + depense.amount, 0)
-  }, [depenses])
 
   const ajouter = async () => {
     if (!tenantId) return
@@ -161,7 +190,15 @@ export default function Depenses() {
 
         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-right">
           <p className="text-xs uppercase tracking-wide text-slate-500">Total du mois</p>
-          <p className="text-lg font-bold text-rose-700">{formatFcfa(totalMois)}</p>
+          <p className="text-lg font-bold text-rose-700">
+            {totalMois === null ? (
+              <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-700">
+                <CloudOff size={14} aria-hidden /> Hors ligne
+              </span>
+            ) : (
+              formatFcfa(totalMois)
+            )}
+          </p>
         </div>
       </header>
 
@@ -269,9 +306,17 @@ export default function Depenses() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white">
-        <h2 className="px-4 pt-4 text-sm font-bold uppercase tracking-wide text-slate-500">
-          Dernières dépenses
-        </h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+            Dernières dépenses
+          </h2>
+          {depenses.length > 0 && (
+            <p className="text-xs text-slate-500">
+              {depenses.length} affichée{depenses.length > 1 ? 's' : ''}
+              {aPlus ? ', plus anciennes disponibles' : ' — début du registre atteint'}
+            </p>
+          )}
+        </div>
 
         {chargement ? (
           <p className="flex items-center gap-2 p-4 text-sm text-slate-500">
@@ -314,6 +359,25 @@ export default function Depenses() {
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Pagination par curseur : le bouton demande « ce qui vient après la
+            dernière ligne vue », jamais un décalage. Une dépense ajoutée
+            entre-temps ne fait donc ni doublon ni trou. */}
+        {aPlus && !chargement && (
+          <div className="border-t border-slate-100 p-3">
+            <button
+              type="button"
+              onClick={() => void chargerSuite()}
+              disabled={chargementSuite}
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-brand-navy hover:bg-slate-50 disabled:opacity-60"
+            >
+              {chargementSuite ? (
+                <Loader2 className="animate-spin" size={16} aria-hidden />
+              ) : null}
+              Charger les dépenses plus anciennes
+            </button>
+          </div>
         )}
       </section>
     </div>

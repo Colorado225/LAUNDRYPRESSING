@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PAGE_SIZE, paginate } from '@/lib/pagination'
+import {
+  DEFAULT_PAGE_SIZE,
+  decouperPageCurseur,
+  filtreCurseur,
+  paginate,
+  type Curseur,
+} from '@/lib/pagination'
 
 /**
  * Pagination locale de la liste des commandes.
@@ -69,5 +75,75 @@ describe('paginate', () => {
     const copie = [...liste]
     paginate(liste, 2, 10)
     expect(liste).toEqual(copie)
+  })
+})
+
+/**
+ * Pagination par curseur (listes alimentées par le serveur).
+ *
+ * Deux propriétés à garantir : la ligne supplémentaire ne sert qu'à savoir
+ * s'il y a une suite, et le filtre produit par `filtreCurseur` décrit bien
+ * « strictement après » — pas « après ou égal », qui bouclerait sur la même
+ * ligne à chaque page.
+ */
+
+function ligne(id: string, valeur: string) {
+  return { id, created_at: valeur }
+}
+
+describe('decouperPageCurseur', () => {
+  it('ne renvoie que la page demandée et signale la suite', () => {
+    const recues = [ligne('a', '2026-10-23T10:00:00Z'), ligne('b', '2026-10-22T10:00:00Z'), ligne('c', '2026-10-21T10:00:00Z')]
+    const page = decouperPageCurseur(recues, 2, (l) => l.created_at)
+
+    expect(page.lignes).toHaveLength(2)
+    expect(page.lignes.map((l) => l.id)).toEqual(['a', 'b'])
+    expect(page.aPlus).toBe(true)
+    expect(page.curseur).toEqual({ valeur: '2026-10-22T10:00:00Z', id: 'b' })
+  })
+
+  it('ne signale pas de suite quand la page est incomplète', () => {
+    const page = decouperPageCurseur([ligne('a', '2026-10-23T10:00:00Z')], 25, (l) => l.created_at)
+    expect(page.aPlus).toBe(false)
+    expect(page.lignes).toHaveLength(1)
+  })
+
+  it('signale encore une suite quand le serveur renvoie exactement une page pleine plus une', () => {
+    const recues = Array.from({ length: 26 }, (_, i) => ligne(`id-${i}`, `2026-10-${String(23 - i).padStart(2, '0')}T10:00:00Z`))
+    const page = decouperPageCurseur(recues, 25, (l) => l.created_at)
+    expect(page.lignes).toHaveLength(25)
+    expect(page.aPlus).toBe(true)
+    expect(page.curseur?.id).toBe('id-24')
+  })
+
+  it('renvoie un curseur nul sur une page vide', () => {
+    const page = decouperPageCurseur<{ id: string; created_at: string }>([], 25, (l) => l.created_at)
+    expect(page).toEqual({ lignes: [], curseur: null, aPlus: false })
+  })
+
+  it('borne une limite absurde à une ligne', () => {
+    const page = decouperPageCurseur([ligne('a', 'x'), ligne('b', 'y')], 0, (l) => l.created_at)
+    expect(page.lignes).toHaveLength(1)
+    expect(page.aPlus).toBe(true)
+  })
+})
+
+describe('filtreCurseur', () => {
+  const curseur: Curseur = { valeur: '2026-10-22T10:00:00Z', id: 'b' }
+
+  it('exige un horodatage strictement antérieur, ou un identifiant plus petit', () => {
+    expect(filtreCurseur('created_at', curseur)).toBe(
+      'created_at.lt.2026-10-22T10:00:00Z,and(created_at.eq.2026-10-22T10:00:00Z,id.lt.b)',
+    )
+  })
+
+  it('n’utilise jamais l’égalité seule, qui bouclerait', () => {
+    expect(filtreCurseur('created_at', curseur)).not.toBe('created_at.eq.2026-10-22T10:00:00Z')
+  })
+
+  it('retire les caractères qui casseraient la syntaxe PostgREST', () => {
+    expect(filtreCurseur('created_at', { valeur: 'a,b(c)', id: 'x,y' })).toBe(
+      'created_at.lt.abc,and(created_at.eq.abc,id.lt.xy)',
+    )
   })
 })

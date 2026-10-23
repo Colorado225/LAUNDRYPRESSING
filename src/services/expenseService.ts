@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { isSupabaseConfigured } from '@/lib/env'
 import { todayIso } from '@/constants/orders'
+import { decouperPageCurseur, filtreCurseur, type Curseur } from '@/lib/pagination'
 import type { ExpenseCategory, ExpenseRow } from '@/types/database'
 
 /**
@@ -42,17 +43,53 @@ function requireClient() {
   return getSupabaseClient()
 }
 
-export async function listExpenses(tenantId: string, limit = 60): Promise<ExpenseRow[]> {
-  const { data, error } = await requireClient()
+/** Taille d'une page de dépenses : ce qui tient à l'écran sans faire défiler. */
+export const TAILLE_PAGE_DEPENSES = 25
+
+export interface PageDepenses {
+  lignes: ExpenseRow[]
+  /** Curseur à passer pour obtenir la suite, `null` si la page est vide. */
+  curseur: Curseur | null
+  /** Existe-t-il au moins une dépense plus ancienne ? */
+  aPlus: boolean
+}
+
+/**
+ * Une page de dépenses, de la plus récente à la plus ancienne.
+ *
+ * Pagination **par curseur** et non par `offset` : la liste des dépenses est
+ * alimentée par le serveur et grandit chaque semaine. Avec un décalage, une
+ * dépense saisie entre deux pages ferait réapparaître la dernière ligne de la
+ * page précédente et disparaître une autre. Le curseur, lui, repart de la
+ * dernière ligne réellement vue.
+ *
+ * Tri `created_at` décroissant puis `id` : l'horodatage seul n'est pas unique,
+ * et un tri non total rendrait la pagination instable.
+ */
+export async function listExpensesPage(
+  tenantId: string,
+  options: { curseur?: Curseur | null; limite?: number } = {},
+): Promise<PageDepenses> {
+  const limite = Math.max(1, Math.floor(options.limite ?? TAILLE_PAGE_DEPENSES))
+
+  let requete = requireClient()
     .from('expenses')
     .select('*')
     .eq('tenant_id', tenantId)
-    .order('spent_on', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .order('id', { ascending: false })
+    // Une ligne de plus que la page : elle sert seulement à savoir s'il y a
+    // une suite, sans demander un `count(*)` à chaque page.
+    .limit(limite + 1)
 
+  if (options.curseur) {
+    requete = requete.or(filtreCurseur('created_at', options.curseur))
+  }
+
+  const { data, error } = await requete
   if (error) throw new Error(expenseErrorMessage(error.message))
-  return data ?? []
+
+  return decouperPageCurseur((data ?? []) as ExpenseRow[], limite, (ligne) => ligne.created_at)
 }
 
 export interface CreateExpenseInput {
