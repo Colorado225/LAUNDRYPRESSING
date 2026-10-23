@@ -4,9 +4,11 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : palier 4 terminé** (abonnement, multi-boutiques, supervision de
+**État actuel : palier 4 terminé, conformité MVP vérifiée** (abonnement, multi-boutiques, supervision de
 l'éditeur, support). Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont
-livrés : le produit est complet au périmètre de l'audit.
+livrés : le produit est complet au périmètre de l'audit. La correspondance avec
+les douze écrans de la maquette est tenue dans
+[`docs/CONFORMITE-MVP.md`](docs/CONFORMITE-MVP.md).
 
 ---
 
@@ -272,7 +274,9 @@ pas en `npm run dev`).
 │   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
 │   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
 │   │   ├── Support.tsx           # demandes d'assistance (palier 4)
-│   │   └── Supervision.tsx       # console de l'éditeur (palier 4)
+│   │   ├── Supervision.tsx       # console de l'éditeur (palier 4)
+│   │   ├── Parametres.tsx        # compte, pressing, synchronisation
+│   │   └── Reinitialisation.tsx  # nouveau mot de passe (lien reçu)
 │   ├── services/
 │   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut

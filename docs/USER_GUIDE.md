@@ -315,7 +315,21 @@ réponse s'affiche sous la demande, avec son statut (Ouverte, En cours,
 Clôturée). Les demandes sont cloisonnées par pressing et nécessitent une
 connexion internet.
 
-### 5.11 Console de supervision (éditeur uniquement)
+### 5.11 Consulter les paramètres
+
+Onglet **Paramètres**, ouvert à tous les rôles :
+
+- le **pressing** et son identifiant (bouton *Copier*, utile au support) ;
+- le **compte** connecté : rôle sur ce pressing, adresse e-mail, identifiant ;
+- la **synchronisation** : état, commandes en attente, dernière réussite,
+  dernière erreur, et un bouton *Synchroniser maintenant* ;
+- un rappel du mode hors ligne et le lien vers l'abonnement (propriétaire).
+
+Le mot de passe se change depuis l'écran de connexion : **« Recevoir un lien de
+réinitialisation »** envoie un e-mail, dont le lien ouvre la page de choix du
+nouveau mot de passe. Un lien expiré affiche un message explicite.
+
+### 5.12 Console de supervision (éditeur uniquement)
 
 Onglet **Supervision** — visible seulement pour les comptes inscrits dans
 `platform_admins` :

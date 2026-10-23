@@ -6,6 +6,41 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.5.1] — 2026-10-23
+
+Passe de **conformité MVP** : comparaison des douze écrans de la maquette avec
+le code livré, puis comblement des manques réels.
+
+### Ajouté
+
+- **Réinitialisation du mot de passe** : lien sur l'écran de connexion
+  (`resetPasswordForEmail`), page `/reinitialisation` qui enregistre le nouveau
+  mot de passe (`updateUser`). Le message de confirmation reste neutre pour ne
+  pas révéler quelles adresses existent.
+- **Arguments de connexion** : encart *Rapide / Sécurisé / Fiable* à côté du
+  formulaire, masqué sous 1024 px pour laisser toute la largeur à la tablette.
+- **Historique des derniers scans** (`/atelier`) : cinq dernières lectures de la
+  session (client, code, statut, heure).
+- **Page Paramètres** (`/parametres`) : pressing et identifiant copiable, compte
+  connecté et rôle, état de synchronisation avec relance manuelle, rappel hors
+  ligne et accès à l'abonnement.
+- **Barre latérale en bureau** : à partir de 1024 px, la navigation passe en
+  colonne fixe à gauche ; en dessous, les onglets horizontaux et leurs cibles
+  tactiles de 48 px sont conservés. Une seule liste de destinations alimente les
+  deux présentations.
+- **`docs/CONFORMITE-MVP.md`** : correspondance écran par écran, écarts réels et
+  écarts assumés.
+
+### Décisions
+
+- **Pas de bouton OAuth « Se connecter avec Supabase »** : aucun fournisseur
+  n'est configuré pour un pressing, et le `tenant_id` vient de `tenant_users`,
+  jamais du fournisseur d'identité.
+- **Pas de route `/payment/:orderId`** : le paiement reste un panneau de la fiche
+  commande, où le contexte (client, articles, solde) est disponible.
+- **Modules des paliers 3 et 4 conservés** : ils sont livrés, testés et masqués
+  par rôle quand le pressing ne s'en sert pas.
+
 ## [0.5.0] — 2026-10-23
 
 Palier 4 de la feuille de route (`MAJ.md`) : le **SaaS** — abonnement,

@@ -19,7 +19,7 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 
 | Élément | Valeur |
 | --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 76 (dont 10 de test) |
+| Fichiers TypeScript / TSX dans `src/` | 78 (dont 10 de test) |
 | Lignes de code applicatif | 13 477 (hors dossier `src/test/`) |
 | Migrations | 7 (`001_init` → `007_palier4`) |
 | Tables PostgreSQL | 20 + 3 vues (`expense_totals`, `order_balances`, vues de synthèse) |
@@ -61,6 +61,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `/abonnement` | `Abonnement.tsx` — formule, échéance, droits (propriétaire) | différé |
 | `/support` | `Support.tsx` — demandes d'assistance du pressing | différé |
 | `/supervision` | `Supervision.tsx` — console de l'éditeur | différé |
+| `/parametres` | `Parametres.tsx` — compte, pressing, synchronisation | différé |
+| `/reinitialisation` | `Reinitialisation.tsx` — nouveau mot de passe (avant `AuthGate`) | différé |
 | `/paiement/retour` | `PaymentReturn.tsx` — retour CinetPay, lecture seule | différé |
 | `/payment/return` | alias redirigé (anciens liens) | — |
 

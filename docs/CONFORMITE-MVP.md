@@ -19,7 +19,7 @@ reste à faire.
 
 | # | Écran demandé | Route demandée | Route livrée | Fichier | État |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Connexion | `/login` | `/` (écran affiché sans session) | `src/pages/Login.tsx`, `src/components/AuthGate.tsx` | ✅ livré, **complété** (lien de réinitialisation, arguments de vente) |
+| 1 | Connexion | `/login` | `/` (écran affiché sans session) + `/reinitialisation` | `src/pages/Login.tsx`, `Reinitialisation.tsx`, `src/components/AuthGate.tsx` | ✅ **complet** (réinitialisation, arguments de vente) |
 | 2 | Tableau de bord | `/dashboard` | `/tableau-de-bord` | `src/pages/TableauDeBord.tsx` | ✅ livré, au-delà du MVP demandé |
 | 3 | Liste des commandes | `/orders` | `/commandes` | `src/pages/Orders.tsx` | ✅ livré (recherche, onglets dont « En retard ») |
 | 4 | Détail d'une commande | `/orders/:id` | `/commandes/:orderId` | `src/pages/OrderDetail.tsx` | ✅ livré (timeline, statut, reçu) |
@@ -30,7 +30,7 @@ reste à faire.
 | 9 | Clients | `/clients` | `/clients` | `src/pages/Clients.tsx` | ✅ livré |
 | 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3), voir §4 |
 | 11 | Rapports et statistiques | — | `/tableau-de-bord` | `TableauDeBord.tsx` | 🟰 indicateurs livrés ; graphiques non faits |
-| 12 | Profil et paramètres | — | *aucune route* | — | ❌ **manquant** (page basique à créer) |
+| 12 | Profil et paramètres | — | `/parametres` | `src/pages/Parametres.tsx` | ✅ **livré** (page basique, lecture seule) |
 
 Légende : ✅ conforme · ⚠️ conforme mais perfectible · 🟰 hors demande MVP mais
 déjà livré · ❌ manquant.
@@ -39,15 +39,16 @@ déjà livré · ❌ manquant.
 
 ## 2. Écran par écran
 
-### 1. Connexion — `/`
+### 1. Connexion — `/` et `/reinitialisation`
 
 - **Livré :** e-mail + mot de passe via Supabase Auth, mot de passe masqué
   (`Afficher` / `Masquer`), erreurs traduites en français, mode démonstration
   quand Supabase n'est pas configuré, restauration de session hors ligne.
-- **Ajouté le 23/10 :** lien **« Recevoir un lien de réinitialisation »**
+- **Livré le 23/10 :** lien **« Recevoir un lien de réinitialisation »**
   (`resetPasswordForEmail`) et page `/reinitialisation` qui écrit le nouveau mot
   de passe (`updateUser`), plus un encart d'arguments **Rapide / Sécurisé /
-  Fiable** sur grand écran.
+  Fiable** sur grand écran. Un lien expiré affiche un message explicite au lieu
+  d'un formulaire inutilisable.
 - **Écart assumé :** pas de bouton « Se connecter avec Supabase » en OAuth. Un
   pressing n'a pas de fournisseur OAuth configuré, et un compte Google
   n'apporte aucune information de rattachement : le `tenant_id` vient de
@@ -124,6 +125,16 @@ déjà livré · ❌ manquant.
   un panneau de la fiche commande : il y a toujours un contexte (client,
   articles, solde), ce qu'une page nue ferait perdre.
 
+### 12. Paramètres — `/parametres`
+
+- **Livré :** pressing et identifiant copiable, compte connecté et rôle, état de
+  synchronisation (en attente, dernière réussite, dernière erreur) avec relance
+  manuelle, rappel hors ligne, accès à l'abonnement pour le propriétaire.
+- **Choix :** écran en **lecture seule**. Modifier le nom du pressing, la
+  formule ou l'équipe se fait déjà dans `/abonnement` et dans la console de
+  supervision : dupliquer ces écritures multiplierait les chemins pour aucun
+  gain.
+
 ### 9. Clients — `/clients`
 
 - **Livré :** liste, recherche nom / téléphone, nombre de commandes, total
@@ -138,12 +149,18 @@ déjà livré · ❌ manquant.
 
 ## 3. Ce qui manque vraiment
 
-| Priorité | Élément | Pourquoi |
+| Priorité | Élément | État |
 | --- | --- | --- |
-| 1 | Page **Paramètres** (écran 12) | Dernier écran de la liste non couvert : informations du pressing, compte connecté, état de synchronisation, accès à l'abonnement. |
-| 2 | Formulaire de commande en **trois étapes** (écran 5) | Gain d'ergonomie réel au comptoir ; touche le chemin critique, donc à faire avec les tests. |
-| 3 | Tableau des **5 dernières commandes** (écran 2) | Confort ; le tableau de bord actuel montre déjà les indicateurs. |
-| 4 | Pagination de la liste (écran 3) | Nécessaire au-delà de quelques centaines de commandes ; déjà consigné en dette. |
+| ~~1~~ | Page **Paramètres** (écran 12) | ✅ **fait** — `/parametres` : pressing, compte, synchronisation, hors ligne. |
+| 1 | Formulaire de commande en **trois étapes** (écran 5) | À faire. Touche le chemin critique : rejouer les tests de création. |
+| 2 | Tableau des **5 dernières commandes** (écran 2) | À faire. Confort : le tableau de bord montre déjà les indicateurs. |
+| 3 | Pagination de la liste (écran 3) | Nécessaire au-delà de quelques centaines de commandes ; consigné en dette. |
+
+### Mise en page
+
+La maquette décrit une **barre latérale** ; l'application utilise désormais les
+deux : colonne fixe à partir de 1024 px, onglets horizontaux en dessous, pour
+que la tablette d'atelier garde des cibles de 48 px sans menu caché.
 
 ---
 
