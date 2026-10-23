@@ -1,15 +1,25 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import Socle from '@/pages/Socle'
+import AppLayout from '@/components/AppLayout'
+import TenantGate from '@/components/TenantGate'
+import Orders from '@/pages/Orders'
+import OrderForm from '@/pages/OrderForm'
+import OrderDetail from '@/pages/OrderDetail'
+import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
 
 /**
  * Racine de l'application.
  *
- * Phase 1 : seule la page de diagnostic du socle est exposée.
- * Les routes métier (/connexion, /commandes, /atelier, /paiement/retour)
- * arrivent aux phases 2 à 5, avec chargement différé (`React.lazy`).
+ * Phase 2 : liste, création et fiche commande — toutes adossées à IndexedDB.
+ * Le moteur de synchronisation démarre une seule fois pour toute la session.
  */
 export default function App() {
+  useEffect(() => {
+    startSyncEngine()
+    return () => stopSyncEngine()
+  }, [])
+
   return (
     <BrowserRouter>
       <Toaster
@@ -25,10 +35,17 @@ export default function App() {
         }}
       />
 
-      <Routes>
-        <Route path="/" element={<Socle />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <TenantGate>
+        <AppLayout>
+          <Routes>
+            <Route path="/" element={<Navigate to="/commandes" replace />} />
+            <Route path="/commandes" element={<Orders />} />
+            <Route path="/commandes/nouvelle" element={<OrderForm />} />
+            <Route path="/commandes/:orderId" element={<OrderDetail />} />
+            <Route path="*" element={<Navigate to="/commandes" replace />} />
+          </Routes>
+        </AppLayout>
+      </TenantGate>
     </BrowserRouter>
   )
 }
