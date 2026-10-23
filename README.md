@@ -82,7 +82,9 @@ VITE_SUPABASE_ANON_KEY=<clé anon publique>
 
 1. Créer un projet sur [supabase.com](https://supabase.com).
 2. Ouvrir **SQL Editor**, coller le contenu de `supabase/migrations/001_init.sql`, exécuter.
-3. (Optionnel) Exécuter `supabase/seed.sql` pour deux pressings de démonstration.
+3. Exécuter ensuite `supabase/migrations/002_payments.sql` (table `payment_transactions`
+   du module Mobile Money). L'ordre est impératif : la migration 002 référence `orders`.
+4. (Optionnel) Exécuter `supabase/seed.sql` pour deux pressings de démonstration.
 
 **Option B — Supabase local**
 
@@ -173,6 +175,7 @@ pas en `npm run dev`).
 │   ├── components/
 │   │   ├── AppLayout.tsx         # en-tête, navigation, bandeau de synchro
 │   │   ├── OfflineBadge.tsx      # vert / orange / rouge + envoi manuel
+│   │   ├── PaymentButton.tsx     # bouton Mobile Money + badges opérateurs
 │   │   ├── QrCodeDisplay.tsx     # étiquette 80 mm imprimable
 │   │   ├── QrScanner.tsx         # scan caméra (html5-qrcode)
 │   │   └── TenantGate.tsx        # sélection du pressing (temporaire, phase 5)
@@ -191,16 +194,26 @@ pas en `npm run dev`).
 │   │   ├── Orders.tsx            # liste (recherche + filtres)
 │   │   ├── OrderForm.tsx         # création hors ligne
 │   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
+│   │   ├── PaymentReturn.tsx     # retour CinetPay (lecture seule)
 │   │   └── Atelier.tsx           # scan QR → changement de statut
-│   ├── services/qrService.ts     # génération / analyse des codes QR
+│   ├── services/
+│   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
+│   │   └── qrService.ts          # génération / analyse des codes QR
 │   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
 │   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
 │   ├── sync/syncEngine.ts        # envoi des commandes en attente
 │   └── types/database.ts         # types alignés sur le schéma SQL
 ├── supabase/
+│   ├── config.toml               # verify_jwt de chaque Edge Function
+│   ├── functions/
+│   │   ├── _shared/              # client CinetPay, CORS, clients Supabase
+│   │   ├── cinetpay-init/        # initialisation du paiement (JWT requis)
+│   │   └── cinetpay-webhook/     # notification serveur (sans JWT)
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
+│   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
 │   └── seed.sql                  # jeu de démonstration (2 pressings)
 ├── AUDIT.md                      # rapport de la phase 0
+├── BACKLOG.md                    # fonctionnalités explicitement hors périmètre
 └── RESTRUCTURATION.md            # cahier des charges du MVP
 ```
 
@@ -384,13 +397,136 @@ l'étiquette, au format **80 mm** (imprimante thermique de comptoir).
 
 ---
 
+## 7quater. Paiement Mobile Money (phase 4 — CinetPay)
+
+### Vue d'ensemble
+
+Le module ajoute le paiement Mobile Money **Wave, Orange Money, MTN MoMo et Moov
+Money** via l'API Checkout v2 de CinetPay. Aucune donnée de carte n'est manipulée :
+le client est redirigé vers le guichet CinetPay, qui gère lui-même l'authentification
+auprès de l'opérateur.
+
+```
+Navigateur                Edge Functions (Deno)          CinetPay
+    |                            |                          |
+    |-- « Payer » -------------->| cinetpay-init            |
+    |                            |-- relit le montant dans `orders`
+    |                            |-- POST /v2/payment ----->|
+    |                            |<-- payment_url ----------|
+    |<-- payment_url ------------|  (trace `pending` en base)
+    |-- redirection vers le guichet CinetPay ---------------->
+    |                            |                          |  paiement
+    |                            |<-- POST notify_url ------|  (webhook)
+    |                            |-- POST /v2/payment/check->|
+    |                            |<-- statut ACCEPTED -------|
+    |                            |-- orders.payment_status = 'paid'
+    |<-- retour /paiement/retour?order=… (lecture seule) -----|
+```
+
+### Sécurité du montant
+
+Le montant envoyé à CinetPay est **toujours relu dans la table `orders` côté
+serveur**. Le montant fourni par le navigateur est ignoré : un client qui
+modifierait la requête ne pourrait donc pas payer 100 FCFA une commande de 12 000 FCFA.
+
+CinetPay impose un montant **multiple de 5** en XOF. La fonction
+`roundToChargeableAmount()` arrondit au multiple de 5 supérieur ; l'écart maximal
+est de 4 FCFA, et il est tracé (`amount` = montant débité, `order_amount` = montant
+réel de la commande) pour la réconciliation comptable.
+
+### Pourquoi une table dédiée `payment_transactions`
+
+Une commande peut connaître plusieurs tentatives de paiement (échec Wave, nouvel
+essai Orange Money). Stocker le paiement dans des colonnes de `orders` aurait fait
+perdre l'historique et rendu l'idempotence impossible. La table porte une contrainte
+`unique` sur `transaction_id` : rejouer une notification ne peut pas créer de doublon.
+
+**Écritures serveur uniquement.** La RLS n'autorise que le `SELECT` pour les
+utilisateurs authentifiés de leur propre pressing (`tenant_id = current_tenant_id()`).
+Toutes les écritures passent par la clé `service_role` des Edge Functions : un client
+malveillant ne peut donc pas s'auto-attribuer un paiement.
+
+### Séquence de la notification (webhook)
+
+`notify_url` est le **seul** mécanisme fiable de mise à jour : le client peut fermer
+son navigateur avant la redirection. Chaque notification est traitée ainsi :
+
+1. Lecture du corps (`application/x-www-form-urlencoded`, parfois JSON).
+2. Vérification du jeton **HMAC-SHA256** de l'en-tête `x-token` si
+   `CINETPAY_SECRET_KEY` est configurée — message = concaténation ordonnée de
+   16 champs (voir `_shared/cinetpay.ts`).
+3. Relecture du statut réel par appel serveur à `POST /v2/payment/check` :
+   **une notification n'est jamais crue sur parole**.
+4. Comparaison du montant encaissé avec le montant attendu. En cas d'incohérence,
+   la transaction passe en `error` et la commande **n'est pas** marquée payée.
+5. Mise à jour idempotente : une transaction déjà `paid` est définitive ; une
+   notification tardive de refus ne peut pas annuler un paiement encaissé.
+
+Réponses HTTP : `200` sur succès ou transaction inconnue (pour éviter les relances
+infinies), `401` sur signature invalide, `503` si CinetPay est injoignable — dans ce
+cas CinetPay réessaiera.
+
+### La page de retour ne valide rien
+
+`/paiement/retour` affiche l'état du paiement en **lisant** `payment_transactions`.
+Elle n'écrit jamais en base. C'est volontaire : une URL de retour est un simple
+`GET` déclenché par le navigateur, donc falsifiable. Si le webhook n'est pas encore
+arrivé, la page sonde 4 fois à 3 secondes d'intervalle puis affiche « en attente »,
+avec un bouton de actualisation manuelle.
+
+### Configuration
+
+```bash
+# Secrets des Edge Functions (jamais dans le bundle Vite)
+supabase secrets set \
+  CINETPAY_API_KEY=... \
+  CINETPAY_SITE_ID=... \
+  CINETPAY_SECRET_KEY=... \
+  APP_URL=https://votre-domaine.ci
+
+# Déploiement (le webhook doit accepter les appels sans JWT)
+supabase functions deploy cinetpay-init
+supabase functions deploy cinetpay-webhook --no-verify-jwt
+```
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` sont injectées
+automatiquement par Supabase — ne pas les définir manuellement.
+
+### Limites de cette phase
+
+- **Aucun test réel n'a pu être exécuté** : ni projet Supabase provisionné, ni
+  identifiants marchand CinetPay, ni binaire `deno` dans l'environnement de
+  développement. Les Edge Functions ne sont donc **pas typées** (`deno check`) et
+  la migration `002_payments.sql` **n'est pas exécutée**. Elles ont été validées
+  par relecture et transpilation (`esbuild`), et la logique pure (arrondi, mapping
+  des opérateurs, HMAC) par **19/19** assertions exécutées hors Deno.
+- Le remboursement, le paiement partiel et le paiement à la livraison sont hors
+  périmètre (voir `BACKLOG.md`).
+- Sans `CINETPAY_SECRET_KEY`, le webhook reste fonctionnel mais la notification
+  n'est pas authentifiée cryptographiquement (mode « vérification seule ») ; un
+  avertissement est écrit dans les logs.
+
+### Test manuel (nécessite de vrais identifiants)
+
+1. Créer une commande de 8 500 FCFA, ouvrir sa fiche, cliquer **Payer par Mobile Money**.
+2. Sur le guichet CinetPay, vérifier le montant **8 500 FCFA** et l'absence de frais ajoutés.
+3. Payer avec un numéro de test Wave / Orange Money fourni par CinetPay.
+4. Après redirection, la page de retour doit afficher « Paiement confirmé » en
+   moins de 12 secondes (délai du sondage).
+5. Dans Supabase, vérifier `payment_transactions.status = 'paid'` avec
+   `signature_verified = true`, et `orders.payment_status = 'paid'`.
+6. Rejouer la notification (bouton « Renvoyer » du backoffice CinetPay) :
+   le statut ne doit pas changer et aucun doublon ne doit apparaître.
+
+---
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`AUDIT.md`)
 - [x] **Phase 1** — Socle technique (PWA, Supabase, tenant, migration RLS)
 - [x] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
 - [x] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
-- [ ] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
+- [x] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
 - [ ] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
 - [ ] **Phase 6** — QA (Vitest, Lighthouse, test d'isolation, CHANGELOG, tag `v0.1.0-mvp`)
 
