@@ -564,6 +564,8 @@ Supabase dans cet environnement.
 | 23/10/2026 | MVP | Commande en trois étapes, étape de règlement, cinq dernières commandes sur le tableau de bord (227 tests) | `015bc31` |
 | 23/10/2026 | MVP | Pagination de la liste des commandes (20 par page), 9 tests | `f884b8b` |
 | 23/10/2026 | MVP | `npm run recette` : 7 contrôles en lecture seule du projet déployé, 9 tests | `dfcff54` |
+| 23/10/2026 | MVP | Écran 11 : `/rapports` (7/30/90 j, comparaison, export CSV) et `src/lib/reporting.ts`, 23 tests | `a9ea06a` |
+| 23/10/2026 | MVP | `scripts/db.mjs` : schéma et 123 contrôles SQL sur une base gérée (Neon), 15 tests | `74339b2` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

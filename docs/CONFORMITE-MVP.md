@@ -29,7 +29,7 @@ reste à faire.
 | 8 | Paiement / Caisse | `/payment/:orderId` | panneaux dans la fiche + `/caisse` + `/commandes/:orderId/recu` | `src/components/PaymentButton.tsx`, `CashPanel.tsx`, `src/pages/Caisse.tsx`, `Receipt.tsx` | ✅ livré |
 | 9 | Clients | `/clients` | `/clients` | `src/pages/Clients.tsx` | ✅ livré |
 | 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3), voir §4 |
-| 11 | Rapports et statistiques | — | `/tableau-de-bord` | `TableauDeBord.tsx` | 🟰 indicateurs livrés ; graphiques non faits |
+| 11 | Rapports et statistiques | — | `/rapports` | `src/pages/Rapports.tsx`, `src/lib/reporting.ts` | ✅ **livré** (courbes 7/30/90 j, comparaison de périodes, export CSV) |
 | 12 | Profil et paramètres | — | `/parametres` | `src/pages/Parametres.tsx` | ✅ **livré** (page basique, lecture seule) |
 
 Légende : ✅ conforme · ⚠️ conforme mais perfectible · 🟰 hors demande MVP mais
@@ -132,6 +132,23 @@ déjà livré · ❌ manquant.
   un panneau de la fiche commande : il y a toujours un contexte (client,
   articles, solde), ce qu'une page nue ferait perdre.
 
+### 11. Rapports et statistiques — `/rapports`
+
+- **Livré le 23/10 :** période de **7, 30 ou 90 jours** (bornes incluses), quatre
+  indicateurs — facturé, encaissé, commandes, panier moyen — **comparés à la
+  période précédente de même durée** (± %), série quotidienne du chiffre
+  d'affaires, répartition par statut (annulations comprises), activité par jour
+  de la semaine, top 5 des prestations, **export CSV** de la série quotidienne.
+- **Choix :** graphiques **SVG faits à la main**. Une librairie de graphiques
+  pèserait plus lourd que la page elle-même, pour trois courbes ; sur une
+  tablette d'entrée de gamme en 3G, c'est exactement ce qu'on cherche à éviter.
+- **Choix :** comparaison avec la période **précédente**, pas avec « le mois
+  dernier ». Comparer un 23 octobre à un 1er octobre mélangerait un jour ouvré
+  et une période complète.
+- **Limite affichée :** « encaissé » ne compte que les **espèces** ; le Mobile
+  Money vient du serveur et n'est pas journalisé localement. Un rapport qui
+  l'ignorerait en silence ferait croire à un trou de trésorerie.
+
 ### 12. Paramètres — `/parametres`
 
 - **Livré :** pressing et identifiant copiable, compte connecté et rôle, état de
@@ -162,6 +179,7 @@ déjà livré · ❌ manquant.
 | ~~2~~ | Formulaire de commande en **trois étapes** (écran 5) | ✅ **fait** — validation par étape, étape Paiement avec règlement différé ou caisse immédiate. |
 | ~~3~~ | Tableau des **5 dernières commandes** (écran 2) | ✅ **fait** — `recentOrders`, ordonné par date de création. |
 | ~~4~~ | **Pagination** de la liste (écran 3) | ✅ **fait** — 20 commandes par page, filtres portant sur la liste entière. |
+| ~~5~~ | **Rapports et statistiques** (écran 11) | ✅ **fait** — `/rapports` : période 7/30/90 j, comparaison, export CSV. |
 
 ### Mise en page
 

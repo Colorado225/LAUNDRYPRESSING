@@ -327,14 +327,36 @@ Changer de boutique recharge l'application : commandes hors ligne, caisse et
 abonnement sont propres à chaque pressing. Aucune donnée d'une boutique n'est
 visible depuis une autre.
 
-### 5.10 Écrire au support
+### 5.10 Lire les rapports
+
+Onglet **Rapports**, réservé au propriétaire. Trois durées : **7, 30 ou 90
+jours**, aujourd'hui compris.
+
+- **Facturé** : total des commandes créées sur la période, annulations exclues.
+  La variation entre parenthèses compare à la période précédente de même durée.
+- **Encaissé** : espèces reçues pendant la période, y compris le règlement
+  d'une commande plus ancienne.
+- **Commandes** et **panier moyen** : mêmes règles de calcul que le tableau de
+  bord.
+- **Chiffre d'affaires par jour** : une barre par jour ; survoler une barre
+  affiche le montant et le nombre de commandes. Sur 90 jours, une date sur
+  quatorze est écrite sous l'axe pour rester lisible.
+- **Répartition par statut**, **activité par jour de la semaine** (pour caler
+  les lessives) et **top 5 des prestations**.
+- **Exporter en CSV** télécharge la série quotidienne, prête pour un tableur.
+
+> Les montants « encaissé » ne comptent que les **espèces** : les paiements
+> Mobile Money viennent du serveur et ne sont pas stockés sur la tablette. Le
+> rapport l'indique en bas de page plutôt que d'afficher un total trompeur.
+
+### 5.11 Écrire au support
 
 Onglet **Support** : un sujet, une description, puis **Envoyer au support**. La
 réponse s'affiche sous la demande, avec son statut (Ouverte, En cours,
 Clôturée). Les demandes sont cloisonnées par pressing et nécessitent une
 connexion internet.
 
-### 5.11 Consulter les paramètres
+### 5.12 Consulter les paramètres
 
 Onglet **Paramètres**, ouvert à tous les rôles :
 
@@ -348,7 +370,7 @@ Le mot de passe se change depuis l'écran de connexion : **« Recevoir un lien d
 réinitialisation »** envoie un e-mail, dont le lien ouvre la page de choix du
 nouveau mot de passe. Un lien expiré affiche un message explicite.
 
-### 5.12 Console de supervision (éditeur uniquement)
+### 5.13 Console de supervision (éditeur uniquement)
 
 Onglet **Supervision** — visible seulement pour les comptes inscrits dans
 `platform_admins` :

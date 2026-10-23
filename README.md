@@ -211,12 +211,15 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (245 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, abonnement, pagination, langue, isolation, installation) |
+| `npm test` | Suite Vitest complète (283 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
 | `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
+| `npm run db:etat` | Inventaire **lecture seule** d'une base gérée (`DATABASE_URL`) : tables, RLS, migrations |
+| `npm run db:push` | Applique le socle, les migrations et le jeu de démonstration sur cette base |
+| `npm run db:verifier` | Rejoue les 123 contrôles SQL sur cette base (transaction annulée) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -260,6 +263,9 @@ pas en `npm run dev`).
 │   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
 │   │   ├── tenantContext.ts      # pressing courant (Zustand + persistance)
 │   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
+│   │   ├── pagination.ts         # découpe en pages (liste des commandes)
+│   │   ├── reporting.ts          # calculs purs des rapports (écran 11)
+│   │   ├── permissions.ts        # matrice des capacités par rôle
 │   │   └── ids.ts                # UUID côté client + code QR
 │   ├── pages/
 │   │   ├── Login.tsx             # connexion Supabase Auth (+ mode démonstration)
@@ -273,6 +279,7 @@ pas en `npm run dev`).
 │   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
 │   │   ├── Depenses.tsx          # dépenses du propriétaire (palier 3)
 │   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
+│   │   ├── Rapports.tsx          # courbes 7/30/90 j + export CSV (écran 11)
 │   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
 │   │   ├── Support.tsx           # demandes d'assistance (palier 4)
 │   │   ├── Supervision.tsx       # console de l'éditeur (palier 4)
@@ -300,6 +307,9 @@ pas en `npm run dev`).
 ├── scripts/
 │   ├── setup.mjs                 # installation complète depuis .env (npm run setup)
 │   ├── setup.test.mjs            # contrat du provisionnement (serveur HTTP simulé)
+│   ├── recette.mjs               # 7 contrôles lecture seule du projet déployé
+│   ├── db.mjs                    # schéma et contrôles SQL sur une base gérée
+│   ├── db.test.mjs               # fonctions pures de db.mjs (plan, masquage…)
 │   ├── config.test.mjs           # lecture et validation du .env
 │   └── lib/config.mjs            # analyse du .env, validation (logique pure)
 ├── supabase/
@@ -319,6 +329,7 @@ pas en `npm run dev`).
 │   ├── BACKLOG.md                # fonctionnalités explicitement hors périmètre
 │   ├── RAPPORT-FINAL.md          # bilan du MVP (fonctionne / V2 / coûts)
 │   ├── RECETTE-SUPABASE.md       # marche à suivre de recette sur un vrai projet
+│   ├── NEON.md                   # brancher une base gérée (db:push / db:verifier)
 │   └── USER_GUIDE.md             # parcours réceptionniste / artisan / propriétaire
 ├── CHANGELOG.md                  # historique des versions du MVP
 ├── vitest.config.ts              # configuration de la suite de tests

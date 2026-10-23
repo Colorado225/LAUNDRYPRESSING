@@ -6,6 +6,47 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.6.0] — 2026-10-23
+
+Écran 11 de la maquette (rapports) et branchement d'une base PostgreSQL gérée.
+
+### Ajouté
+
+- **Écran Rapport** (`/rapports`, propriétaire) : période de **7, 30 ou 90
+  jours**, facturé / encaissé / commandes / panier moyen **comparés à la
+  période précédente de même durée**, série quotidienne en barres, répartition
+  par statut (annulations comprises), activité par jour de la semaine, top 5 des
+  prestations et **export CSV** de la série.
+- **`src/lib/reporting.ts`** : calculs purs et testés (bornes de période,
+  séries sans trou de jour, variations, CSV). 23 tests.
+- **`npm run db:etat` / `db:push` / `db:verifier`** (`scripts/db.mjs`) :
+  inventaire en lecture seule, application des migrations puis rejeu des
+  **123 contrôles SQL** sur une base PostgreSQL gérée (Neon ou autre), sans
+  compte Supabase. Suivi par table `_pressing_migrations`, garde-fou sur une
+  base déjà initialisée, `--dry-run`, mot de passe toujours masqué. 15 tests.
+- **`docs/NEON.md`** : ce qui est branché, ce qui ne peut pas l'être et pourquoi.
+
+### Décidé
+
+- **Graphiques en SVG faits à la main.** Trois courbes ne justifient pas une
+  librairie de graphiques dans un bundle destiné à une tablette d'entrée de gamme
+  en 3G.
+- **Comparaison à la période précédente**, pas « au mois dernier » : comparer un
+  23 octobre à un 1er octobre mêlerait un jour ouvré et une période complète.
+- **Neon ne remplace pas Supabase pour l'application.** Un navigateur ne peut
+  pas détenir un mot de passe de base, et Neon ne fournit ni PostgREST, ni
+  GoTrue, ni les Edge Functions. La base gérée sert donc de **cible de schéma et
+  de vérification**, jamais de backend direct.
+- **`db:push` inclut `supabase/seed.sql`** et refuse de s'exécuter sur une base
+  déjà initialisée sans table de suivi : le risque d'écraser un client est
+  écarté par défaut, pas par la vigilance de l'opérateur.
+
+### Vérifié
+
+- 283 tests sur 16 fichiers, `tsc --noEmit`, ESLint et build de production.
+- `db:push` → `db:etat` → `db:verifier` de bout en bout sur PostgreSQL 16.2 :
+  20 tables, 66 politiques, 0 table sans RLS, **123 contrôles** réussis.
+
 ## [0.5.3] — 2026-10-23
 
 Dette technique close : la liste des commandes est paginée, et le projet déployé

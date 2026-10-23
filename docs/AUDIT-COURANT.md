@@ -27,9 +27,9 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Fonctions SQL | 31 (dont `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
-| Scripts d'installation et de recette | 4 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`) |
-| Fichiers de tests | 16 (11 sous `src/`, 3 pour les scripts, 2 fichiers SQL de tests) |
-| Tests automatisés | 245 |
+| Scripts d'installation, de recette et de base | 5 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`) |
+| Fichiers de tests | 18 (12 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
+| Tests automatisés | 283 |
 | Contrôles SQL exécutés | 123 (isolations, rôles, paliers 1 à 4) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
@@ -130,6 +130,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `scripts/sql-verify.sh` | rejoue migrations et tests SQL sur un PostgreSQL jetable |
 | `scripts/recette.mjs` | 7 contrôles **en lecture seule** sur un projet déployé (`npm run recette`) |
 | `src/lib/pagination.ts` | découpe de page pure, bornée, testée ; utilisée par la liste des commandes |
+| `src/lib/reporting.ts` | calculs purs des rapports : bornes de période, séries, variations, export CSV |
+| `scripts/db.mjs` | `db:etat` / `db:push` / `db:verifier` sur une base PostgreSQL gérée (Neon) — voir `docs/NEON.md` |
 | `.github/workflows/ci.yml` | job application (`npm ci`, types, style, tests, build) + job SQL réel |
 | `vitest.config.ts` | tests `src/` **et** `scripts/` |
 
