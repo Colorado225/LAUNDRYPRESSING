@@ -1,5 +1,12 @@
 # AUDIT.md — Phase 0 : audit du template LAUNDRYPRESSING
 
+> **🗄️ Document d'archive — ne décrit plus l'état du dépôt.**
+> Cet audit porte sur le commit `ae2903f`, **point de départ** de la reprise,
+> avant la phase 1. Tout ce qu'il décrit encore (Axios, pages JSX, backend
+> local, authentification cassée) a été supprimé depuis.
+> Pour l'état courant, voir [`AUDIT-COURANT.md`](AUDIT-COURANT.md) et
+> [`MAJ.md`](../MAJ.md).
+
 **Date de l'audit :** 23 octobre 2026
 **Commit audité :** `ae2903f` — *feat: setup socle technique Phase 1 (TypeScript, Supabase, PWA, tenant context, migration)*
 **Branche :** `arena/9283dd0f-laundrypressing`

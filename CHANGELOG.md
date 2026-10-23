@@ -63,7 +63,7 @@ Mobile Money).
 - **Socle technique** — React 19 + TypeScript 6 + Vite 8 + Tailwind v4,
   Supabase (Auth + RLS), PWA installable. Migration `001_init.sql` : schéma
   multi-tenant, fonctions `current_tenant_id()` / `current_tenant_role()`,
-  16 politiques RLS nommées, trigger d'historique des statuts.
+  13 politiques RLS nommées, trigger d'historique des statuts.
 - **Mode offline-first** — IndexedDB via Dexie (commandes, vêtements, paiements
   en attente), moteur de synchronisation idempotent (envoi à la reconnexion,
   toutes les 60 s et au retour au premier plan), indicateur d'état vert /
