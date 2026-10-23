@@ -14,6 +14,7 @@ import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
  * Phase 3 : page /atelier (scan QR + changement de statut).
  * Phase 4 : retour de paiement CinetPay (/paiement/retour).
  * Phase 5 : connexion Supabase (AuthGate), écran /offline, bouton Retour Android.
+ * Palier 3 : tableau de bord, clients, stock et dépenses (écrans de gestion).
  *
  * Les écrans sont chargés à la demande (`React.lazy`) : la librairie de scan
  * (`html5-qrcode`) pèse à elle seule plusieurs centaines de kilo-octets et ne
@@ -30,6 +31,10 @@ const Caisse = lazy(() => import('@/pages/Caisse'))
 const Receipt = lazy(() => import('@/pages/Receipt'))
 const PaymentReturn = lazy(() => import('@/pages/PaymentReturn'))
 const Offline = lazy(() => import('@/pages/Offline'))
+const TableauDeBord = lazy(() => import('@/pages/TableauDeBord'))
+const Clients = lazy(() => import('@/pages/Clients'))
+const Stock = lazy(() => import('@/pages/Stock'))
+const Depenses = lazy(() => import('@/pages/Depenses'))
 
 export default function App() {
   useEffect(() => {
@@ -64,6 +69,10 @@ export default function App() {
               <Route path="/atelier" element={<Atelier />} />
               <Route path="/catalogue" element={<Catalogue />} />
               <Route path="/caisse" element={<Caisse />} />
+              <Route path="/tableau-de-bord" element={<TableauDeBord />} />
+              <Route path="/clients" element={<Clients />} />
+              <Route path="/stock" element={<Stock />} />
+              <Route path="/depenses" element={<Depenses />} />
               <Route path="/commandes/:orderId/recu" element={<Receipt />} />
               <Route path="/offline" element={<Offline />} />
               {/* Retour CinetPay. L'alias anglais évite de casser un lien déjà partagé. */}

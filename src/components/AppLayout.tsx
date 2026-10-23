@@ -1,6 +1,17 @@
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { ClipboardList, LogOut, PlusCircle, ScanLine, Shirt, Tag, Wallet } from 'lucide-react'
+import {
+  Boxes,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  PlusCircle,
+  ScanLine,
+  Shirt,
+  Tag,
+  Users,
+  Wallet,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import OfflineBadge from './OfflineBadge'
 import { TENANT_ROLE_LABELS } from '@/constants/orders'
@@ -98,6 +109,30 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <NavLink to="/caisse" className={navLinkClass}>
               <Wallet size={18} aria-hidden />
               Caisse
+            </NavLink>
+          )}
+          {can(role, 'dashboard.view') && (
+            <NavLink to="/tableau-de-bord" className={navLinkClass}>
+              <LayoutDashboard size={18} aria-hidden />
+              Tableau de bord
+            </NavLink>
+          )}
+          {can(role, 'customers.manage') && (
+            <NavLink to="/clients" className={navLinkClass}>
+              <Users size={18} aria-hidden />
+              Clients
+            </NavLink>
+          )}
+          {can(role, 'stock.move') && (
+            <NavLink to="/stock" className={navLinkClass}>
+              <Boxes size={18} aria-hidden />
+              Stock
+            </NavLink>
+          )}
+          {can(role, 'expenses.manage') && (
+            <NavLink to="/depenses" className={navLinkClass}>
+              <Wallet size={18} aria-hidden />
+              Dépenses
             </NavLink>
           )}
           {can(role, 'catalog.manage') && (

@@ -19,7 +19,11 @@ import type { TenantRole } from '@/types/database'
  *  - seul le propriétaire supprime une commande, gère le pressing et fixe les
  *    tarifs du catalogue ;
  *  - le réceptionniste encaisse (Mobile Money et espèces), clôture la caisse
- *    et crée les commandes, comme le propriétaire.
+ *    et crée les commandes, comme le propriétaire ;
+ *  - le **stock** se consulte et se mouvemente au comptoir, mais seuls le
+ *    propriétaire crée les articles, les fournisseurs et les dépenses ;
+ *  - le **tableau de bord** est réservé au propriétaire : il expose la
+ *    trésorerie du pressing.
  */
 export type Capability =
   | 'orders.create'
@@ -29,6 +33,11 @@ export type Capability =
   | 'payments.initiate'
   | 'cash.manage'
   | 'catalog.manage'
+  | 'customers.manage'
+  | 'stock.manage'
+  | 'stock.move'
+  | 'expenses.manage'
+  | 'dashboard.view'
   | 'amounts.view'
   | 'tenant.manage'
 
@@ -41,6 +50,11 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'payments.initiate',
     'cash.manage',
     'catalog.manage',
+    'customers.manage',
+    'stock.manage',
+    'stock.move',
+    'expenses.manage',
+    'dashboard.view',
     'amounts.view',
     'tenant.manage',
   ],
@@ -50,6 +64,8 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'orders.editDetails',
     'payments.initiate',
     'cash.manage',
+    'customers.manage',
+    'stock.move',
     'amounts.view',
   ],
   artisan: ['orders.updateStatus'],

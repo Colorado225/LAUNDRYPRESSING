@@ -206,6 +206,86 @@ export type CashSessionRow = {
   closed_at: string
 }
 
+/** Fiche client (table `customers`, migration 006). */
+export type CustomerRow = {
+  id: string
+  tenant_id: string
+  name: string
+  phone: string
+  phone_key: string
+  email: string | null
+  address: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Fournisseur (table `suppliers`, migration 006). */
+export type SupplierRow = {
+  id: string
+  tenant_id: string
+  name: string
+  phone: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Article de stock (table `stock_items`, migration 006). */
+export type StockCategory = 'produit' | 'emballage' | 'consommable' | 'autre'
+export type StockUnit = 'pièce' | 'litre' | 'kg' | 'flacon' | 'rouleau'
+
+export type StockItemRow = {
+  id: string
+  tenant_id: string
+  name: string
+  category: StockCategory
+  unit: StockUnit
+  quantity: number
+  min_quantity: number
+  unit_cost: number | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Mouvement de stock (table `stock_movements`, migration 006). */
+export type StockMovementRow = {
+  id: string
+  tenant_id: string
+  item_id: string
+  kind: 'in' | 'out'
+  quantity: number
+  unit_cost: number | null
+  supplier_id: string | null
+  reason: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** Dépense (table `expenses`, migration 006). */
+export type ExpenseCategory =
+  | 'fournitures'
+  | 'loyer'
+  | 'salaire'
+  | 'eau_electricite'
+  | 'transport'
+  | 'autre'
+
+export type ExpenseRow = {
+  id: string
+  tenant_id: string
+  label: string
+  category: ExpenseCategory
+  amount: number
+  spent_on: string
+  supplier_id: string | null
+  note: string | null
+  created_by: string | null
+  created_at: string
+}
+
 /** Type `Insert` générique : les colonnes avec valeur par défaut deviennent optionnelles. */
 type InsertOf<Row, OptionalKeys extends keyof Row> = Omit<Row, OptionalKeys> &
   Partial<Pick<Row, OptionalKeys>>
@@ -314,6 +394,59 @@ export interface Database {
         Update: Partial<Omit<PaymentRefundRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
+      customers: {
+        Row: CustomerRow
+        Insert: InsertOf<
+          CustomerRow,
+          'id' | 'phone_key' | 'email' | 'address' | 'notes' | 'created_at' | 'updated_at'
+        >
+        Update: Partial<Omit<CustomerRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      suppliers: {
+        Row: SupplierRow
+        Insert: InsertOf<
+          SupplierRow,
+          'id' | 'phone' | 'notes' | 'is_active' | 'created_at' | 'updated_at'
+        >
+        Update: Partial<Omit<SupplierRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      stock_items: {
+        Row: StockItemRow
+        Insert: InsertOf<
+          StockItemRow,
+          | 'id'
+          | 'category'
+          | 'unit'
+          | 'quantity'
+          | 'min_quantity'
+          | 'unit_cost'
+          | 'is_active'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<StockItemRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      stock_movements: {
+        Row: StockMovementRow
+        Insert: InsertOf<
+          StockMovementRow,
+          'id' | 'unit_cost' | 'supplier_id' | 'reason' | 'created_by' | 'created_at'
+        >
+        Update: Partial<Omit<StockMovementRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      expenses: {
+        Row: ExpenseRow
+        Insert: InsertOf<
+          ExpenseRow,
+          'id' | 'category' | 'spent_on' | 'supplier_id' | 'note' | 'created_by' | 'created_at'
+        >
+        Update: Partial<Omit<ExpenseRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
       payment_transactions: {
         Row: PaymentTransactionRow
         Insert: InsertOf<
@@ -338,7 +471,18 @@ export interface Database {
         Relationships: []
       }
     }
-    Views: { [_ in never]: never }
+    Views: {
+      expense_totals: {
+        Row: {
+          tenant_id: string
+          month: string
+          category: ExpenseCategory
+          total_amount: number
+          entries: number
+        }
+        Relationships: []
+      }
+    }
     Functions: {
       current_tenant_id: {
         Args: Record<PropertyKey, never>
@@ -390,6 +534,11 @@ export interface Database {
 }
 
 /** Raccourcis pratiques. */
+export type Customer = CustomerRow
+export type Supplier = SupplierRow
+export type StockItem = StockItemRow
+export type StockMovement = StockMovementRow
+export type Expense = ExpenseRow
 export type Order = OrderRow
 export type OrderItem = OrderItemRow
 export type OrderIssue = OrderIssueRow

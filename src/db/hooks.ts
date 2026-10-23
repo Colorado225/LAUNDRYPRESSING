@@ -15,6 +15,7 @@ import {
   type LocalCashPayment,
   type LocalOrder,
   type LocalOrderIssue,
+  type LocalOrderItem,
   type LocalRefund,
 } from './localDb'
 
@@ -38,6 +39,16 @@ export function useLocalOrders(): LocalOrder[] | undefined {
     const orders = await db.orders.where('tenantId').equals(tenantId).toArray()
     return orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }, [tenantId])
+}
+
+/** Tous les encaissements espèces du pressing (tableau de bord). */
+export function useAllCashPayments(): LocalCashPayment[] {
+  return useLiveQuery(async () => db.cashPayments.toArray(), []) ?? []
+}
+
+/** Tous les vêtements du pressing (utilisé par le tableau de bord). */
+export function useAllLocalItems(): LocalOrderItem[] {
+  return useLiveQuery(async () => db.orderItems.toArray(), []) ?? []
 }
 
 /** Une commande et ses vêtements, réactifs aux écritures locales. */
