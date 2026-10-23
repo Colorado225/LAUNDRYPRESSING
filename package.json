@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "setup": "node scripts/setup.mjs",
+    "setup:check": "node scripts/setup.mjs --check",
+    "setup:dry": "node scripts/setup.mjs --dry-run",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
