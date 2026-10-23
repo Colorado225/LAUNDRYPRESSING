@@ -1,243 +1,246 @@
-# Mufti Laundry — Web Application & Order Management System
+# Pressing Pro — SaaS de gestion de pressing (Côte d'Ivoire)
 
-> A full-stack web application designed to streamline laundry and dry-cleaning service management. The platform allows customers to schedule home pickups, select custom treatment options, track order progress in real time, and manage payments, while providing business administrators with a centralized dashboard to process orders and track service workflows.
----
+> MVP multi-tenant destiné à être revendu en abonnement à des pressings d'Abidjan.
+> Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
+> et **résiliente aux coupures internet**.
 
-## Overview
-
-Traditional laundry and dry-cleaning services suffer from operational bottlenecks that disrupt service delivery and lower customer trust:
-
-* **Opaque Order Statuses:** Customers constantly call or visit branches to check if items are ready.
-* **Manual Tagging & Paper Receipts:** Garments are prone to loss due to handwritten tags and physical receipts.
-* **Fragmented Billing:** Cash handling, partial payments, and invoice tracking are difficult to audit across multiple locations.
-* **Administrative Blindspots:** Management lacks real-time visibility into active workloads, pending orders, and daily branch revenue.
-
-**Mufti Laundry** solves these friction points by uniting customer bookings, staff workflow controls, printable tags, automated receipts, and analytical dashboards into a single application.
+**État actuel : Phase 1 terminée** (socle technique). Les modules métier arrivent aux phases 2 à 6.
 
 ---
 
-## User & Operational Workflow
+## 1. Périmètre du MVP
 
-```text
-[Customer Booking / Drop-off]
-       ↓
-[Order Creation & Tagging (Staff Dashboard)]
-       ↓
-[Printable Garment Tags & Digital Receipt Generated]
-       ↓
-[Status Lifecycle: Received → In-Wash → Ironing → Ready]
-       ↓
-[Real-Time Customer Order Tracking (Unique Order Code)]
-       ↓
-[Billing Verification & Final Pickup / Delivery]
+Le MVP couvre **quatre modules**, et rien d'autre :
 
-```
+| # | Module | Statut |
+|---|--------|--------|
+| 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | à venir — phase 2 |
+| 2 | **QR Code** (génération par commande + scan atelier) | à venir — phase 3 |
+| 3 | **Offline-first** (création sans internet, synchronisation automatique) | à venir — phase 2 |
+| 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | à venir — phase 4 |
+
+Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
+statistiques avancées, gestion des stocks, gestion du personnel, facturation PDF, suivi client public.
+Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `AUDIT.md`.
 
 ---
 
-## Key Features
+## 2. Stack technique
 
-### Customer Experience
+| Couche | Technologie |
+|--------|-------------|
+| Frontend | React 19 + Vite 8 + TypeScript 6 (strict) + Tailwind CSS v4 |
+| État global | Zustand |
+| Base locale (offline) | Dexie.js (IndexedDB) — phase 2 |
+| Backend / DB | Supabase (PostgreSQL + Auth + RLS) |
+| Paiement | CinetPay API v2 via Supabase Edge Functions — phase 4 |
+| QR Code | `qrcode` (génération) / `html5-qrcode` (scan) — phase 3 |
+| PWA | `vite-plugin-pwa` (Workbox) |
+| Validation | Zod — phase 2 |
 
-* **Online Booking Engine:** Interactive service selector, pricing breakdown, and location-based booking.
-* **Real-Time Order Tracking:** Public tracking view (`/track-order`) allowing customers to monitor garment status using a unique reference code.
-* **Direct Communication Channels:** Floating WhatsApp integration and branch location directory for quick customer support.
-* **Interactive Pricing Calculator:** Live calculation of costs across dry cleaning, washing, folding, and ironing.
-
-### Staff & Operations
-
-* **Centralized Staff Portal:** Role-based workspace (`/staff-dashboard`) tailored for daily laundry processing and garment tracking.
-* **Modal-Driven Workflows:** Instant creation of new orders, billing modals, and payment reconciliation interfaces.
-* **Printable Garment Tags:** Auto-formatted layout for generating physical tags to prevent lost or mixed items.
-* **Status Management Engine:** Quick-action toggles to advance orders through cleaning stages (*Received*, *In Progress*, *Ready*, *Delivered*).
-
-### Administration & Analytics
-
-* **Executive Overview Dashboard:** Centralized metrics displaying active orders, total revenue, pending balances, and operational efficiency.
-* **Staff Management & Auditing:** Administrative controls to onboard staff members, manage roles, and review branch performance.
-* **Invoice & Receipt System:** Complete invoice view (`/invoice`) with breakdown of itemized charges, payments made, and outstanding balances.
+Contraintes respectées : pas de Firebase, pas de Redux, **aucune librairie UI lourde**
+(MUI, AntD, Bootstrap proscrits) — Tailwind + composants maison uniquement.
 
 ---
 
-## Tech Stack
+## 3. Démarrage
 
-### Client & Interface
+### Prérequis
 
-* **Framework:** React 19 + TypeScript
-* **Build Tool:** Vite
-* **Styling & UI:** Tailwind CSS v4, composants maison (pas de librairie UI lourde)
-* **State & Routing:** Zustand (état global), React Router v7
-* **HTTP / Backend:** Supabase (PostgreSQL + Auth + RLS), `@supabase/supabase-js`
-* **Base locale (offline-first):** Dexie.js (IndexedDB)
-* **Paiement:** CinetPay API v2 (Edge Functions Supabase)
-* **QR Code:** `qrcode` (génération), `html5-qrcode` (scan)
-* **Validation:** Zod
-* **PWA:** `vite-plugin-pwa`
+- Node.js ≥ 20 (testé avec Node 22.22.3)
+- npm ≥ 10
+- Un projet Supabase (Cloud) **ou** la CLI Supabase pour un environnement local
 
-### Infrastructure & Déploiement
+### 3.1 Installation
 
-* **Backend / DB cloud:** Supabase Cloud (multi-tenant natif via Row-Level Security)
-* **Déploiement front:** Vercel (`vercel.json` configuré pour SPA route rewrites)
-* **Code Quality & Tooling:** ESLint 9 (Flat Config), TypeScript
-
----
-
-## Application Architecture
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│                      Client Layer                        │
-│                                                          │
-│   Landing Page & Booking   │   Order Tracking View       │
-│   Staff Dashboard          │   Admin Overview & Audits   │
-└────────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-┌──────────────────────────────────────────────────────────┐
-│                    Application State                     │
-│                                                          │
-│   Auth Context (JWT/Session)  │  API Layer (Axios)       │
-└────────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-┌──────────────────────────────────────────────────────────┐
-│                    Operations Engine                     │
-│                                                          │
-│   Status Modals  │  Printable Tag Generator │ Invoice    │
-└──────────────────────────────────────────────────────────┘
-
-```
-
----
-
-## Project Structure
-
-```text
-mufti-laundry-website/
-├── public/
-│   ├── favicon.svg
-│   └── icons.svg
-├── src/
-│   ├── api/
-│   │   └── axios.js               # Global Axios instance with interceptors
-│   ├── assets/                    # Static images, hero banners, and vector assets
-│   ├── components/
-│   │   ├── AdminLayout.jsx        # Wrapper with navigation for admin pages
-│   │   ├── BillingModal.jsx       # Modal for processing client balances
-│   │   ├── CreateOrderModal.jsx   # Form modal for logging new laundry batches
-│   │   ├── PaymentModal.jsx       # Payment recording and verification
-│   │   ├── PrintableTag.jsx       # Physical garment tag template for printing
-│   │   ├── Receipt.jsx            # Dynamic customer receipt view
-│   │   ├── StatusUpdateModal.jsx  # Stage tracking controller
-│   │   └── protectedRoute.jsx     # Route guard enforcing authentication
-│   ├── context/
-│   │   └── AuthContext.jsx        # Auth state management & token persistence
-│   ├── muftiLandingpage/          # Public-facing brand presentation & booking UI
-│   │   ├── components/            # Hero, Booking, Services, Pricing, SEO Head
-│   │   ├── data/                  # Service catalogs, branch lists, testimonials
-│   │   ├── hooks/                 # Custom scroll and counter hooks
-│   │   └── utils/                 # Helper utilities
-│   ├── pages/
-│   │   ├── DashboardOverview.jsx  # Primary executive analytics dashboard
-│   │   ├── InvoiceView.jsx        # Itemized invoice document view
-│   │   ├── Login.jsx              # Secured staff/admin authentication portal
-│   │   ├── Orders.jsx             # Comprehensive order index and management
-│   │   ├── Services.jsx           # Service catalog and rate administration
-│   │   ├── StaffDashboard.jsx     # Daily operational workspace for laundry staff
-│   │   ├── StaffManagement.jsx    # System admin employee portal
-│   │   └── TrackOrder.jsx         # Public customer order lookup
-│   ├── App.jsx                    # Application routes and main layout router
-│   ├── main.jsx                   # React application entry point
-│   └── index.css                  # Tailwind directives and custom utility styles
-├── .env.example                   # Environment variable blueprint
-├── DEPLOYMENT_GUIDE.md            # Step-by-step production deployment guide
-├── eslint.config.js               # ESLint configuration
-├── package.json                   # Project scripts and dependencies
-├── vercel.json                    # Single-Page Application rewrite rules for Vercel
-└── vite.config.js                 # Vite bundler configuration
-
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-* **Node.js**: v18.0.0 or higher
-* **npm**: v9.0.0 or higher
-* **Supabase CLI** (optionnel, pour le local : `supabase start`) ou un projet Supabase Cloud
-
-### Installation & Setup
-
-1. **Clone the Repository**
 ```bash
 git clone https://github.com/Colorado225/LAUNDRYPRESSING.git
 cd LAUNDRYPRESSING
-```
-
-2. **Install Dependencies**
-```bash
 npm install
 ```
 
-3. **Configure Environment Variables**
-Create a local `.env` file from the example blueprint:
+### 3.2 Variables d'environnement
+
 ```bash
 cp .env.example .env
 ```
-Set your Supabase and CinetPay keys inside `.env`:
+
+Renseigner ensuite dans `.env` :
+
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-CINETPAY_API_KEY=your-cinetpay-api-key
-CINETPAY_SITE_ID=your-cinetpay-site-id
+VITE_SUPABASE_URL=https://<votre-projet>.supabase.co
+VITE_SUPABASE_ANON_KEY=<clé anon publique>
 ```
 
-4. **Apply the Supabase Schema**
-Run the migration `supabase/migrations/001_init.sql` in your Supabase project (SQL Editor) or via Supabase CLI:
+> ⚠️ **Toute variable préfixée `VITE_` est embarquée dans le bundle et donc publique.**
+> Les secrets (clé API CinetPay, `service_role`, secret webhook) se configurent
+> **côté Supabase**, jamais dans `.env` côté front : voir `.env.example` § 2.
+
+### 3.3 Base de données Supabase
+
+**Option A — projet Cloud (recommandé pour ce MVP)**
+
+1. Créer un projet sur [supabase.com](https://supabase.com).
+2. Ouvrir **SQL Editor**, coller le contenu de `supabase/migrations/001_init.sql`, exécuter.
+3. (Optionnel) Exécuter `supabase/seed.sql` pour deux pressings de démonstration.
+
+**Option B — Supabase local**
+
 ```bash
 supabase start
 supabase db push
+psql "$(supabase status -o env | grep DB_URL | cut -d= -f2-)" -f supabase/seed.sql
 ```
 
-5. **Set the current tenant** (via l'interface ou localStorage) — voir `src/lib/tenantContext.ts`.
+### 3.4 Provisionner un utilisateur
 
-6. **Run Local Development Server**
+Un utilisateur n'a accès à rien tant qu'il n'est pas rattaché à un pressing.
+Après avoir créé le compte dans **Authentication > Users** :
+
+```sql
+-- 1. Créer le pressing
+insert into public.tenants (name, phone)
+values ('Pressing Cocody', '+225 07 00 00 00 01')
+returning id;
+
+-- 2. Rattacher l'utilisateur (remplacer les deux UUID)
+insert into public.tenant_users (user_id, tenant_id, role)
+values ('<user-uuid>', '<tenant-uuid>', 'owner');
+-- role ∈ ('owner', 'receptionist', 'artisan')
+
+-- 3. (Recommandé) Poser les claims dans le JWT
+update auth.users
+set raw_app_meta_data =
+  coalesce(raw_app_meta_data, '{}'::jsonb)
+  || jsonb_build_object('tenant_id', '<tenant-uuid>', 'tenant_role', 'owner')
+where id = '<user-uuid>';
+```
+
+Sans l'étape 3, la fonction `current_tenant_id()` retombe automatiquement sur la table
+`tenant_users` (voir commentaire dans la migration). L'étape 3 est la voie officielle,
+la seconde n'existe que pour ne pas bloquer le développement.
+
+### 3.5 Lancer l'application
+
 ```bash
 npm run dev
 ```
-Open `http://localhost:5173` in your browser.
+
+Ouvrir <http://localhost:5173>. La page affichée est la **page de diagnostic du socle**
+(elle sera remplacée par la connexion en phase 5) : elle indique l'état de Supabase,
+du service worker, du pressing courant et le rendu des formats ivoiriens.
 
 ---
 
-## Available Scripts
+## 4. Scripts
 
-* `npm run dev`: Boots the Vite development server with Hot Module Replacement (HMR).
-* `npm run build`: Compiles minified HTML, CSS, and JS production bundles to `/dist` (runs `tsc --noEmit`).
-* `npm run preview`: Previews the production build locally.
-* `npm run lint`: Scans source code for potential errors using ESLint.
-* `npm run typecheck`: Runs TypeScript type checking without emitting files.
+| Commande | Rôle |
+|----------|------|
+| `npm run dev` | Serveur de développement (HMR), exposé sur `0.0.0.0:5173` |
+| `npm run build` | Vérification TypeScript **puis** build de production (PWA incluse) |
+| `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
+| `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
+| `npm run typecheck` | `tsc --noEmit` seul |
 
----
+### Vérifier la PWA
 
-## Engineering Highlights
-
-* **Dynamic Tag & Receipt Rendering:** Constructed specialized print-friendly DOM components (`PrintableTag.jsx`, `Receipt.jsx`) using pure CSS `@media print` rules, eliminating external heavy PDF dependencies.
-* **SPA Routing Resilience:** Configured a dedicated `vercel.json` file with fallback rewrites to ensure deep routes like `/track-order` and `/invoice` resolve cleanly without 404 errors on server reloads.
-* **Modular Component Isolation:** Separated the marketing/booking engine (`/muftiLandingpage`) from internal operations (`/pages`, `/components`) to enforce strict boundaries between public interactions and secure business logic.
-
----
-
-## Author
-
-**Oguntoke Emmanuel Omotayo**
-
-Full-Stack Web Developer focused on building practical, high-converting, and scalable web applications.
-
-* **GitHub:** [@GodWithUs17](https://www.google.com/search?q=https://github.com/GodWithUs17)
-* **LinkedIn:** [oguntoke-emmanuel](https://www.google.com/search?q=https://linkedin.com/in/oguntoke-emmanuel)
-
+```bash
+npm run build && npm run preview
 ```
 
+Le build doit produire `dist/manifest.webmanifest`, `dist/sw.js` et les icônes
+`pwa-192x192.png`, `pwa-512x512.png`, `maskable-512x512.png`.
+L'installation n'est proposée qu'une fois le service worker **actif** (donc en production/aperçu,
+pas en `npm run dev`).
+
+---
+
+## 5. Structure du projet
+
+```text
+.
+├── public/                       # icônes PWA (192/512/maskable/apple) + favicon
+├── src/
+│   ├── App.tsx                   # routeur + notifications globales
+│   ├── main.tsx                  # point d'entrée React
+│   ├── index.css                 # thème Tailwind v4 (@theme) + styles d'impression
+│   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
+│   ├── lib/
+│   │   ├── env.ts                # lecture des variables d'environnement
+│   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
+│   │   ├── tenantContext.ts      # pressing courant (Zustand + persistance)
+│   │   └── formatters.ts         # FCFA, dates et téléphones ivoiriens
+│   ├── pages/Socle.tsx           # page de diagnostic (temporaire)
+│   └── types/database.ts         # types alignés sur le schéma SQL
+├── supabase/
+│   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
+│   └── seed.sql                  # jeu de démonstration (2 pressings)
+├── AUDIT.md                      # rapport de la phase 0
+└── RESTRUCTURATION.md            # cahier des charges du MVP
 ```
+
+---
+
+## 6. Architecture multi-tenant et sécurité
+
+Chaque pressing est un `tenant`. **Toutes** les tables métier portent
+`tenant_id uuid not null`, et l'isolation est assurée **en PostgreSQL** par Row-Level Security —
+jamais uniquement par le frontend.
+
+Points clés de `supabase/migrations/001_init.sql` :
+
+1. **`current_tenant_id()`** lit `app_metadata.tenant_id` du JWT, avec repli documenté sur
+   `tenant_users` (évite l'erreur « more than one row » sur un utilisateur multi-pressing).
+2. **`tenant_users` en lecture seule** pour l'utilisateur : l'ancienne politique permettait
+   à n'importe qui de s'auto-inscrire comme propriétaire d'un pressing tiers.
+3. **Clés étrangères composites** `(order_id, tenant_id)` : une ligne de commande ne peut pas
+   pointer vers la commande d'un autre pressing.
+4. **Journal de statuts automatique** via trigger `security definer` — le client ne peut pas
+   réécrire l'historique.
+5. **Suppression physique interdite** sur les commandes : on passe en statut `cancelled`.
+
+### Vérifier l'isolation (phase 6)
+
+Créer deux tenants, deux utilisateurs, puis vérifier qu'un utilisateur de Cocody
+ne voit aucune commande de Yopougon (`select * from orders;` doit ne retourner que son tenant).
+
+---
+
+## 7. Décisions techniques et justifications
+
+Conformément à la règle « ne jamais modifier les fichiers de config globaux sans justification écrite » :
+
+| Décision | Justification |
+|----------|---------------|
+| **TypeScript épinglé 6.0.3** (au lieu de 7.0.2) | `typescript-eslint` 8.72.0 refuse TypeScript 7 (« does not support TS 7.0 », issue #10940). Épingler en 6.0.3 permet de conserver un lint complet des `.ts/.tsx`. À réévaluer dès que le support TS 7 sort. |
+| **`tsconfig.json` réécrit** | `allowJs` passé à `false` (100 % du code est désormais en `.ts/.tsx`), `noEmit: true` (le build est fait par Vite), `baseUrl` supprimé car déprécié en TS 6, `paths` conservé et **aligné** sur l'alias `@` de `vite.config.ts`. |
+| **`eslint.config.js` réécrit** | L'ancienne configuration n'analysait que `**/*.{js,jsx}` : les fichiers TypeScript n'étaient jamais lintés. |
+| **Suppression des écrans hors périmètre** | Landing page marketing (2 572 lignes), Services, StaffManagement, InvoiceView, TrackOrder, BillingModal, Receipt, PaymentModal. Code conservé dans Git (commit `ae2903f`). |
+| **Dépendances retirées** | `axios` (backend `localhost:5000` inexistant), `framer-motion`, `html2pdf.js`, `html2canvas-pro`, `react-to-print`, `react-helmet-async`, `react-icons` (doublon de `lucide-react`). |
+| **Montants en entiers XOF** | Le franc CFA n'a pas de sous-unité : aucun décimal, affichage `1 500 FCFA` via `Intl.NumberFormat('fr-CI')`. |
+| **Icônes PWA en PNG** | L'ancienne icône était un sprite SVG d'icônes sociales (`icons.svg`) : Chrome refusait l'installation. Génération de `pwa-192x192.png`, `pwa-512x512.png`, `maskable-512x512.png`, `apple-touch-icon.png`. |
+| **Types de lignes en `type` (et non `interface`)** | Les `interface` TypeScript ne satisfont pas `Record<string, unknown>` exigé par `postgrest-js` : le client Supabase retournait des types `never`. Les alias de type, eux, sont compatibles. |
+| **`server.host = 0.0.0.0` + `allowedHosts`** | Permet l'accès depuis une tablette du pressing et depuis une URL de prévisualisation distante. |
+
+---
+
+## 8. Feuille de route
+
+- [x] **Phase 0** — Audit (`AUDIT.md`)
+- [x] **Phase 1** — Socle technique (PWA, Supabase, tenant, migration RLS)
+- [ ] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
+- [ ] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
+- [ ] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
+- [ ] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
+- [ ] **Phase 6** — QA (Vitest, Lighthouse, test d'isolation, CHANGELOG, tag `v0.1.0-mvp`)
+
+---
+
+## 9. Sécurité — rappels
+
+- Ne jamais commiter `.env` (déjà couvert par `.gitignore`).
+- La clé `service_role` contourne la RLS : usage exclusif dans les Edge Functions.
+- Les montants sont vérifiés côté serveur (`check (total_amount >= 0)`) et devront l'être
+  à nouveau dans l'Edge Function CinetPay : un client malveillant peut appeler l'API directement.
+- Le webhook CinetPay devra être authentifié par signature HMAC avant toute mise à jour de
+  `payment_status`.

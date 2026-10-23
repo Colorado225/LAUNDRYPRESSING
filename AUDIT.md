@@ -555,3 +555,17 @@ Merci de me confirmer, en même temps que votre validation :
 3. le format d'affichage de la devise (§ 17.3).
 
 En l'absence de réponse sur ces trois points, j'appliquerai les propositions par défaut et je le signalerai au début de la Phase 1.
+
+---
+
+## 19. Suites données (mise à jour après validation)
+
+La Phase 0 a été validée et la Phase 1 exécutée. Les décisions du § 17 ont été appliquées par défaut :
+
+1. **TypeScript** : nouveau code 100 % `.tsx` strict (`allowJs: false`), ancien code JSX supprimé.
+2. **Périmètre** : écrans hors MVP supprimés dès la Phase 1 (code conservé dans l'historique Git).
+3. **Devise** : montants en entiers XOF, affichage `1 500 FCFA` via `Intl.NumberFormat('fr-CI')`.
+
+Deux écarts ont été constatés et documentés dans `README.md` § 7 : TypeScript est épinglé en
+**6.0.3** (et non 7.0.2) car `typescript-eslint` ne supporte pas encore TS 7, et les types de
+lignes Supabase sont déclarés en `type` et non `interface` (incompatibilité avec `postgrest-js`).
