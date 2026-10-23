@@ -4,7 +4,7 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : Phase 2 terminée** (socle technique + couche offline-first).
+**État actuel : Phase 3 terminée** (socle, offline-first et module QR Code).
 
 ---
 
@@ -15,7 +15,7 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | # | Module | Statut |
 |---|--------|--------|
 | 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | ✅ phase 2 (base locale) |
-| 2 | **QR Code** (génération par commande + scan atelier) | à venir — phase 3 |
+| 2 | **QR Code** (génération par commande + scan atelier) | ✅ phase 3 |
 | 3 | **Offline-first** (création sans internet, synchronisation automatique) | ✅ phase 2 |
 | 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | à venir — phase 4 |
 
@@ -173,6 +173,8 @@ pas en `npm run dev`).
 │   ├── components/
 │   │   ├── AppLayout.tsx         # en-tête, navigation, bandeau de synchro
 │   │   ├── OfflineBadge.tsx      # vert / orange / rouge + envoi manuel
+│   │   ├── QrCodeDisplay.tsx     # étiquette 80 mm imprimable
+│   │   ├── QrScanner.tsx         # scan caméra (html5-qrcode)
 │   │   └── TenantGate.tsx        # sélection du pressing (temporaire, phase 5)
 │   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
 │   ├── db/
@@ -188,7 +190,9 @@ pas en `npm run dev`).
 │   ├── pages/
 │   │   ├── Orders.tsx            # liste (recherche + filtres)
 │   │   ├── OrderForm.tsx         # création hors ligne
-│   │   └── OrderDetail.tsx       # fiche + avancement du statut
+│   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
+│   │   └── Atelier.tsx           # scan QR → changement de statut
+│   ├── services/qrService.ts     # génération / analyse des codes QR
 │   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
 │   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
 │   ├── sync/syncEngine.ts        # envoi des commandes en attente
@@ -242,6 +246,9 @@ Conformément à la règle « ne jamais modifier les fichiers de config globaux 
 | **Icônes PWA en PNG** | L'ancienne icône était un sprite SVG d'icônes sociales (`icons.svg`) : Chrome refusait l'installation. Génération de `pwa-192x192.png`, `pwa-512x512.png`, `maskable-512x512.png`, `apple-touch-icon.png`. |
 | **Types de lignes en `type` (et non `interface`)** | Les `interface` TypeScript ne satisfont pas `Record<string, unknown>` exigé par `postgrest-js` : le client Supabase retournait des types `never`. Les alias de type, eux, sont compatibles. |
 | **`server.host = 0.0.0.0` + `allowedHosts`** | Permet l'accès depuis une tablette du pressing et depuis une URL de prévisualisation distante. |
+| **Routes en `React.lazy`** | `html5-qrcode` pèse 112 Ko gzip à lui seul. Sans découpage, le bundle initial passait de 201 à 324 Ko. Avec le découpage : **61 Ko** au démarrage, la librairie de scan n'arrivant qu'à l'ouverture de l'atelier. |
+| **Index Dexie `qrCode` (schéma v2)** | Rechercher une commande scannée sans index parcourrait toute la table. Dexie réindexe automatiquement les données existantes lors de la montée de version. |
+| **Portail `#print-root`** | Imprimer uniquement l'étiquette : `window.print()` sur la page entière produirait une sortie illisible sur une imprimante thermique 80 mm. |
 
 ---
 
@@ -314,12 +321,75 @@ La commande doit apparaître **dans les 60 secondes** suivant le retour de la co
 
 ---
 
+## 7ter. Module QR Code (phase 3)
+
+### Format du code
+
+```text
+TENANTID-ORDERID-TIMESTAMP
+11111111-1111-4111-8111-111111111111-3f2a…-1750000000000
+```
+
+Les deux UUID mesurent 36 caractères et sont suivis d'un horodatage numérique :
+l'analyse ne fait donc **jamais** un `split('-')` (ambigu), mais s'appuie sur des
+groupes de longueur fixe. Un QR Code étranger (affiche publicitaire, code-barres
+d'un concurrent) est ignoré proprement, sans faire planter l'atelier.
+
+### Où le QR apparaît
+
+| Écran | Usage |
+|-------|-------|
+| Fiche commande | Aperçu du QR + bouton **Imprimer l'étiquette** |
+| Atelier | Bouton **Scanner un vêtement** → détail + sélecteur de statut |
+
+### Impression de l'étiquette (80 mm)
+
+Le bouton n'imprime pas la page : il monte une étiquette dédiée dans un portail
+`#print-root` et bascule le `<body>` en mode `impression-etiquette`. Les règles
+`@media print` de `src/index.css` masquent alors l'application et n'impriment que
+l'étiquette, au format **80 mm** (imprimante thermique de comptoir).
+
+### Test manuel imposé par le cahier des charges
+
+> « imprimer une étiquette, la scanner depuis une tablette, changer le statut »
+
+1. Créer une commande, ouvrir sa fiche, cliquer **Imprimer l'étiquette**
+   (ou « Enregistrer au format PDF » pour tester sans imprimante).
+2. Ouvrir **Atelier** sur une tablette (ou un ordinateur avec webcam), cliquer
+   **Scanner un vêtement**, autoriser la caméra.
+3. Présenter le QR imprimé : la commande s'affiche avec son détail.
+4. Choisir un nouveau statut → il est écrit **localement**, puis synchronisé.
+
+**Si la caméra est indisponible**, deux secours sont prévus :
+- saisie du code complet de l'étiquette ;
+- saisie de la référence courte imprimée sous le QR (`CMD-7F3A2B`).
+
+### Sécurité et isolation
+
+- Une étiquette appartenant à **un autre pressing** est détectée et refusée :
+  aucune donnée client n'est affichée (la RLS reste la sécurité de référence).
+- `parseQrString()` retourne `null` sur toute chaîne non conforme.
+
+### Notes techniques
+
+- Index Dexie `qrCode` ajouté en **version 2** du schéma : Dexie réindexe
+  automatiquement les commandes déjà présentes, sans perte de données.
+- `html5-qrcode` (~112 Ko gzip) est chargé **uniquement** à l'ouverture de
+  l'atelier, grâce au découpage `React.lazy` : le bundle initial reste à 61 Ko.
+- La génération d'image utilise `qrcode` (DataURL PNG, correction d'erreur `M`).
+- Vérifications exécutées : **19/19** sur le service QR — dont un **décodage réel**
+  de l'image PNG par un lecteur QR indépendant (`jsQR`) — et **13/13** en DOM simulé
+  sur l'atelier et l'étiquette imprimable. Le passage au vert de la caméra elle-même
+  reste un test manuel (matériel requis).
+
+---
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`AUDIT.md`)
 - [x] **Phase 1** — Socle technique (PWA, Supabase, tenant, migration RLS)
 - [x] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
-- [ ] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
+- [x] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
 - [ ] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
 - [ ] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
 - [ ] **Phase 6** — QA (Vitest, Lighthouse, test d'isolation, CHANGELOG, tag `v0.1.0-mvp`)
