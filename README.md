@@ -198,10 +198,11 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (111 tests, dont les scripts d'installation) |
+| `npm test` | Suite Vitest complète (130 tests : synchronisation, rôles, langue, isolation, installation) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
+| `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -794,6 +795,57 @@ python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
 
 ---
 
+## 7septies. Rôles, conflits et paiements (palier 1)
+
+Trois mécanismes ajoutés après l'audit externe (voir `MAJ.md`).
+
+### Rôles
+
+| Action | Propriétaire | Réceptionniste | Artisan |
+| --- | :---: | :---: | :---: |
+| Créer une commande | ✅ | ✅ | ❌ |
+| Faire avancer une commande | ✅ | ✅ | ✅ |
+| Modifier montant / coordonnées | ✅ | ✅ | ❌ |
+| Encaisser (Mobile Money) | ✅ | ✅ | ❌ |
+| Voir les montants | ✅ | ✅ | ❌ |
+| Supprimer une commande | ✅ | ❌ | ❌ |
+| Gérer le pressing et les accès | ✅ | ❌ | ❌ |
+
+L'interface masque ce qui est interdit, mais la décision est **serveur** :
+politiques RLS pour l'insertion et la suppression, trigger `guard_order_update`
+pour les colonnes (migration `003`), et contrôle du rôle dans `cinetpay-init`.
+
+Les mêmes règles sont **exécutées** sur un vrai PostgreSQL, sans Supabase :
+
+```bash
+npm run sql:verify
+```
+
+Le script crée une base jetable, y applique `001`→`003` et le jeu de
+démonstration, puis rejoue 29 contrôles (isolation, rôles, verrou optimiste,
+guichet unique). Il est aussi lancé par l'intégration continue (job « SQL réel »).
+
+### Conflits de synchronisation
+
+Chaque commande porte un numéro de version serveur. Une tablette n'écrit que si
+ce numéro correspond encore : sinon la commande est marquée **en conflit**, elle
+n'est plus renvoyée, et la fiche propose deux issues explicites — *garder mes
+modifications* (écrase l'autre tablette) ou *prendre la version du serveur*
+(remplace le contenu local). Aucun écrasement silencieux.
+
+### Paiement
+
+- Un seul guichet ouvert par commande : une tentative de moins de 15 minutes est
+  réutilisée, un index unique partiel empêche la création d'un second guichet
+  même en cas de double clic simultané.
+- La notification CinetPay doit être signée (HMAC) **en production** : sans
+  `CINETPAY_SECRET_KEY`, le webhook répond 503. Le mode sans signature exige
+  `APP_ENV=development`.
+- Deux notifications simultanées ne peuvent pas marquer la commande payée deux
+  fois (compare-and-set sur le statut).
+
+---
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`docs/AUDIT.md`)
@@ -810,7 +862,9 @@ python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
 
 - Ne jamais commiter `.env` (déjà couvert par `.gitignore`).
 - La clé `service_role` contourne la RLS : usage exclusif dans les Edge Functions.
-- Les montants sont vérifiés côté serveur (`check (total_amount >= 0)`) et devront l'être
-  à nouveau dans l'Edge Function CinetPay : un client malveillant peut appeler l'API directement.
-- Le webhook CinetPay devra être authentifié par signature HMAC avant toute mise à jour de
-  `payment_status`.
+- Les montants sont relus en base dans `cinetpay-init` : un client malveillant peut appeler
+  l'API directement, il ne peut pas imposer le montant.
+- Le webhook CinetPay est authentifié par signature HMAC en production ; l'absence de clé
+  secrète provoque un refus (503) au lieu d'une validation silencieuse.
+- `payment_status` n'est modifiable que par le serveur : le trigger `guard_order_update`
+  rejette toute écriture provenant d'un utilisateur authentifié (42501).

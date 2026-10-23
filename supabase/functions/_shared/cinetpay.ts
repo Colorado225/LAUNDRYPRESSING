@@ -18,6 +18,12 @@ export interface CinetPayConfig {
   siteId: string
   secretKey: string | null
   baseUrl: string
+  /**
+   * Environnement d'exécution. Vaut `production` par défaut : une installation
+   * incomplète doit échouer côté sécurité, pas s'ouvrir silencieusement.
+   * La valeur `development` est la seule qui autorise un webhook sans HMAC.
+   */
+  appEnv: 'production' | 'development'
 }
 
 export function readConfig(): CinetPayConfig {
@@ -25,6 +31,9 @@ export function readConfig(): CinetPayConfig {
   const siteId = Deno.env.get('CINETPAY_SITE_ID') ?? ''
   const secretKey = Deno.env.get('CINETPAY_SECRET_KEY') ?? null
   const baseUrl = Deno.env.get('CINETPAY_BASE_URL') ?? 'https://api-checkout.cinetpay.com'
+  const appEnv = (Deno.env.get('APP_ENV') ?? 'production').toLowerCase() === 'development'
+    ? 'development'
+    : 'production'
 
   if (!apiKey || !siteId) {
     throw new Error(
@@ -32,7 +41,13 @@ export function readConfig(): CinetPayConfig {
     )
   }
 
-  return { apiKey, siteId, secretKey: secretKey && secretKey.length > 0 ? secretKey : null, baseUrl }
+  return {
+    apiKey,
+    siteId,
+    secretKey: secretKey && secretKey.length > 0 ? secretKey : null,
+    baseUrl,
+    appEnv,
+  }
 }
 
 export interface InitPaymentParams {

@@ -19,7 +19,11 @@ import {
  *  3. Le MONTANT N'EST JAMAIS celui envoyé par le client : il est relu dans la
  *     table `orders`. Le client peut donc omettre `amount`, il sera ignoré.
  *  4. Une commande déjà payée ne peut pas être repayée.
- *  5. Chaque tentative crée une ligne `payment_transactions` (traçabilité).
+ *  5. Un artisan ne peut pas encaisser (rôle vérifié côté serveur).
+ *  6. Un seul guichet ouvert par commande : une tentative récente est
+ *     réutilisée au lieu d'en créer une seconde (protection contre le double
+ *     paiement, renforcée par un index unique partiel en base).
+ *  7. Chaque tentative crée une ligne `payment_transactions` (traçabilité).
  *
  * Entrée  : { orderId, amount?, customerName?, customerPhone? }
  * Sortie  : { payment_url, transaction_id, amount }
@@ -113,6 +117,15 @@ Deno.serve(async (request: Request): Promise<Response> => {
     )
   }
 
+  if (membership.role === 'artisan') {
+    return apiError(
+      'forbidden',
+      'Un artisan ne peut pas encaisser : demandez au comptoir.',
+      403,
+      origin,
+    )
+  }
+
   if (order.payment_status === 'paid') {
     return apiError('already_paid', 'Cette commande est déjà réglée.', 409, origin)
   }
@@ -151,6 +164,47 @@ Deno.serve(async (request: Request): Promise<Response> => {
     `${Deno.env.get('SUPABASE_URL') ?? ''}/functions/v1/cinetpay-webhook`
   const returnUrl = `${appUrl}/paiement/retour?order=${encodeURIComponent(order.id)}`
 
+  // --- 6. Un seul guichet ouvert par commande -------------------------------
+  // Sans cette étape, deux clics (ou deux tablettes) créent deux transactions
+  // valides chez CinetPay : le client peut payer deux fois, sans remboursement
+  // automatique. La fenêtre de réutilisation couvre le temps de saisie normal.
+  const REUSE_WINDOW_MS = 15 * 60 * 1000
+  const { data: openRows } = await admin
+    .from('payment_transactions')
+    .select('id, transaction_id, amount, payment_url, status, created_at')
+    .eq('order_id', order.id)
+    .in('status', ['pending', 'initiated'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  const open = openRows?.[0]
+
+  if (open) {
+    const age = Date.now() - new Date(open.created_at as string).getTime()
+    const sameAmount = open.amount === chargeableAmount
+
+    if (sameAmount && open.payment_url && age < REUSE_WINDOW_MS) {
+      return json(
+        {
+          payment_url: open.payment_url,
+          transaction_id: open.transaction_id,
+          amount: open.amount,
+          order_amount: order.total_amount,
+          reused: true,
+        },
+        200,
+        origin,
+      )
+    }
+
+    // Guichet trop ancien, montant modifié ou tentative interrompue : on le
+    // clôture avant d'en ouvrir un nouveau (l'index unique l'exigerait).
+    await admin
+      .from('payment_transactions')
+      .update({ status: 'cancelled' })
+      .eq('id', open.id)
+  }
+
   // Identifiant court et unique (CinetPay recommande ≤ 30 caractères).
   const transactionId = `PP${Date.now().toString(36).toUpperCase()}${crypto
     .randomUUID()
@@ -171,6 +225,42 @@ Deno.serve(async (request: Request): Promise<Response> => {
   })
 
   if (insertError) {
+    // 23505 : une autre requête a ouvert son guichet entre-temps (index
+    // unique partiel `uniq_payment_open_per_order`). On renvoie le gagnant
+    // plutôt que d'échouer, pour que les deux appels aboutissent au même
+    // paiement.
+    if (insertError.code === '23505') {
+      const { data: winner } = await admin
+        .from('payment_transactions')
+        .select('transaction_id, amount, payment_url')
+        .eq('order_id', order.id)
+        .in('status', ['pending', 'initiated'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (winner?.payment_url) {
+        return json(
+          {
+            payment_url: winner.payment_url,
+            transaction_id: winner.transaction_id,
+            amount: winner.amount,
+            order_amount: order.total_amount,
+            reused: true,
+          },
+          200,
+          origin,
+        )
+      }
+
+      return apiError(
+        'payment_in_progress',
+        'Un paiement est déjà en cours pour cette commande. Réessayez dans un instant.',
+        409,
+        origin,
+      )
+    }
+
     return apiError(
       'trace_failed',
       "Impossible d'enregistrer la tentative de paiement.",

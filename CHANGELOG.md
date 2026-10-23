@@ -6,6 +6,58 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.2.0] — 2026-10-23
+
+Palier 1 de la feuille de route (`MAJ.md`) : les trois risques majeurs relevés
+lors de l'audit externe sont traités — double paiement, écrasement silencieux
+entre tablettes, droits trop larges du rôle « artisan ».
+
+### Ajouté
+
+- **Migration `003_palier1.sql`** — colonne `orders.version`, trigger
+  `bump_order_version` (incrément limité aux champs métier), historique enrichi
+  (`previous_status`, `reason`), garde-fou `guard_order_update`, index unique
+  partiel `uniq_payment_open_per_order`.
+- **Arbitrage des conflits** — bandeau dans la fiche commande avec deux issues
+  explicites (garder la version locale, adopter celle du serveur), badge
+  « Conflit » dans la liste, service `orderConflictService`.
+- **Matrice d'autorisations** (`src/lib/permissions.ts`) — propriétaire,
+  réceptionniste, artisan ; navigation, création et montants masqués selon le
+  rôle. L'artisan ne voit plus les prix et ne peut plus encaisser.
+- **`APP_ENV`** — variable poussée dans les secrets des Edge Functions
+  (`production` par défaut).
+
+### Modifié
+
+- **Synchronisation** : l'`upsert` inconditionnel est remplacé par un `insert`
+  idempotent (doublon 23505 = réponse perdue, on relit la version) puis un
+  `update … eq('version', n)` en compare-and-set. Le statut de paiement n'est
+  plus envoyé par la tablette.
+- **`cinetpay-init`** : un guichet ouvert de moins de 15 minutes est réutilisé
+  tel quel ; un guichet périmé ou d'un autre montant est clôturé avant d'en
+  ouvrir un nouveau. Un artisan reçoit 403.
+- **`cinetpay-webhook`** : sans `CINETPAY_SECRET_KEY`, refus 503 en production ;
+  la bascule vers `paid` est un compare-and-set (notifications simultanées).
+- **`scripts/setup.mjs`** : `APP_ENV` transmis aux secrets ; une production sans
+  clé secrète CinetPay est refusée au lieu d'être seulement signalée.
+- **Interface** : `--color-brand-teal` assombri (`#0f766e`) pour dépasser le
+  ratio de contraste AA sur le texte blanc.
+
+### Limites connues
+
+- Le **motif** d'une dérogation (colonne `reason`) n'est pas encore saisi par
+  l'interface : la colonne existe, l'écran viendra avec le module caisse.
+- La recette sur un projet Supabase réel reste à faire (aucun identifiant dans
+  l'environnement de développement).
+
+### Tests
+
+130 tests (9 fichiers), dont 15 sur la synchronisation (conflit, doublon,
+échec partiel), 8 sur la matrice de rôles et 2 sur la langue du dépôt. Nouveau script SQL
+`supabase/tests/roles.sql` (11 contrôles serveur).
+
+---
+
 ## [0.1.1] — 2026-10-23
 
 Installation automatisée : après avoir rempli `.env`, `npm run setup` laisse

@@ -27,6 +27,10 @@
 ## 1. Document source (verbatim)
 
 *Texte fourni le 23 octobre 2026, reproduit **sans modification du contenu**.
+Seule entorse : six liens d'images parasites (titres en japonais, espagnol,
+indonésien et anglais, adresses `images.openai.com` sans rapport avec le
+projet), introduits par le copier-coller, ont été retirés le 23 octobre 2026.
+Aucun mot du texte d'audit n'a été modifié.
 Seuls les niveaux de titres ont été décalés de deux crans (`#` → `###`) pour
 que le document s'imbrique dans celui-ci et n'entre pas en collision avec son
 sommaire.
@@ -150,7 +154,6 @@ Le cahier des charges actuel limite volontairement le MVP aux commandes, aux QR 
 
 Priorités fonctionnelles proposées pour le marché ivoirien.
 
-[Qué Hacer con la Ropa No Reclamada en tu Tintorería - DARK │ Mejor software POS para lavanderías](https://images.openai.com/static-rsc-4/BpNv8rZjvoSkYWH-tLwfuvnPcANkz-fIZYOc_Tgmxh-BYpDGw-KLXsD6AmICO7G_7sZKZZcY6QK6FFpj2be4oxULCx77Z0AfYV4pmoi_zBGzUh31KjmlnY012IYZRD45gqjsHx8lMcMObE6XDf3qxMhjKU_NdA93OAo5CNQbhZc?purpose=inline)
 
 V1.1 — Priorité maximale
 
@@ -163,7 +166,6 @@ Aujourd’hui, la création de commande permet de saisir les articles et leurs p
 - Prix par article et prestation, avec tarif personnalisé autorisé uniquement aux rôles habilités.
 - Enregistrement du prix appliqué à la commande afin que les modifications futures du catalogue ne changent jamais les anciennes factures.
 
-[Aplikasi POS Lengkap Pendukung UMKM Lebih Maju](https://images.openai.com/static-rsc-4/XlTqvWftT_jYpKRV_RhlL9pkphY2P4tnENE9httkCOXOC5dzDmL79Nv_VdmDUZPERtmQ1jbYk49MZXBupXOoOa8_8FvcJSBiwdWISYTNutrEBAyKQyHmyytw3BrjLM4k_iUwblY8BQezlIRywBfsaL0I5KZd8fES9Us3BFXaFQ4?purpose=inline)
 
 V1.1 — Priorité maximale
 
@@ -180,7 +182,6 @@ Le paiement Mobile Money ne remplace pas un véritable suivi de caisse.
 
 Le paiement en espèces peut être ajouté sans dépendre d’une API de paiement.
 
-[クリーニングチェリー　吉祥寺南町店のアルバイト・バイト求人情報｜【タウンワーク】でバイトやパートのお仕事探し](https://images.openai.com/static-rsc-4/ZSEHIDEH4rSIi2-vLrkjm0fkVfXniFYN_VFSlCVslqs59yEX_PJuEQxthB4GIhNLNevzXNQ8uem8e3jOEZMImQrCNs94Fr45axkbUJy_tp69nX4_9RYrDUAXabxEU2nmuZ1viB3_rsv1gdI_Hw011cSY-uzeSDp66-RjalqlR-4?purpose=inline)
 
 V1.1 — Priorité maximale
 
@@ -196,7 +197,6 @@ Réception → Tri → Lavage → Séchage → Repassage → Contrôle qualité 
 - Contrôle des vêtements abîmés ou des réclamations à la réception.
 - Interdiction des transitions incohérentes, sauf dérogation autorisée.
 
-[VRO OS — Run Your Entire Business in One Platform](https://images.openai.com/static-rsc-4/6jezH2Ddk1IhbupegsR1RnWQ1RC6hL_FDAXdupMz-fbQNPlAvyR_uP-lwFMQBVnpuSZr0eiQ8BgM5DjKQH7kBAWE3x5_jXFtI-Z8YxmmYn8MlsFDaH-1UEdWrA6ZXK_VAlPme4Y1tPleOkWOawojWTiIB7oy47UnCTmEIcCkDJg?purpose=inline)
 
 V1.2
 
@@ -210,7 +210,6 @@ V1.2
 
 Le téléphone doit être normalisé selon les formats utilisés en Côte d’Ivoire, sans supposer qu’il identifie toujours un client de manière unique.
 
-[Fresh Clean Laundry | Experience Easy Laundry Service](https://images.openai.com/static-rsc-4/JyQLu9_0Y6JOgw3YvUUNWn3SNvc2NLaMHhcxc-TDNTsaGP0o7hxfZF8YF6OjYpLGv68Qyn3oWKfSCBb0a3zmEaTY0aAKrW1tTG9DvIxnBfOEsEs_8hjQ20u6y5nFm1brPXA_v6LIX9pB_GW_xewfpk3FhS2xOxXF7exP_MnNxlI?purpose=inline)
 
 V1.2
 
@@ -224,7 +223,6 @@ V1.2
 
 Cela permettra de mesurer une marge estimée, plutôt que de confondre encaissements et bénéfices.
 
-[How to Scale a Laundry Business Using Software in 2026 | Ezer Business Suite](https://images.openai.com/static-rsc-4/UX9dYx5VSGZf77FHT17nVJi9_SPrGZwSEz1VgSUC4uDXEiZ5ezXcI3fkuaMwL4ohG-mHUQwoHXkLrPyXyMdLtnl5up7_kCjXWY_llaLEPnyw02BqrD8evf8m-lFr38GdsZDjoFEYA_bTRxO5LkJvDVlTJKrCkmtONZU2A0MHjZU?purpose=inline)
 
 V1.2
 
@@ -453,19 +451,43 @@ n'est pas versionné.
 
 **Objectif :** aucun risque financier ou opérationnel silencieux.
 
-- [ ] **Paiement** — réutiliser une transaction `pending` de moins de 15 min
-      pour la même commande ; annuler les précédentes ; refuser l'initiation si
-      le montant a changé ; HMAC **obligatoire** hors développement.
-- [ ] **Synchronisation** — colonne `version` (verrou optimiste), refus
-      d'écrasement, conflit visible dans l'interface, transitions enrichies de
-      `previous_status` et d'un motif.
-- [ ] **Rôles** — matrice d'autorisations (SQL + RLS + tests), navigation
-      restreinte, montants masqués à l'artisan.
+- [x] **Paiement — un seul guichet ouvert** : une transaction `pending` ou
+      `initiated` de moins de 15 min est réutilisée ; sinon elle est clôturée
+      avant d'en ouvrir une autre. Un index unique partiel
+      (`uniq_payment_open_per_order`) rend la règle infalsifiable, y compris
+      en cas de requêtes concurrentes (réponse 23505 → on renvoie le guichet
+      gagnant au lieu d'échouer).
+- [x] **Paiement — signature obligatoire** : en production (défaut), le
+      webhook refuse (503) toute notification si `CINETPAY_SECRET_KEY` manque.
+      Le mode sans HMAC exige `APP_ENV=development`.
+- [x] **Paiement — notifications concurrentes** : la bascule vers `paid` est un
+      compare-and-set sur le statut lu ; la seconde notification ne touche
+      aucune ligne et s'arrête.
+- [x] **Synchronisation — verrou optimiste** : colonne `version`, trigger
+      d'incrémentation limité aux champs métier, `update … eq('version', n)`.
+      Zéro ligne touchée = conflit.
+- [x] **Synchronisation — conflit visible et arbitrable** : bandeau dans la
+      fiche commande, deux issues explicites (« garder mes modifications » /
+      « prendre la version du serveur »), et badge « Conflit » dans la liste.
+      Une commande en conflit n'est plus renvoyée automatiquement.
+- [x] **Historique** : `previous_status` renseigné par le trigger.
+- [ ] **Historique — motif de dérogation** : la colonne `reason` existe mais
+      l'interface ne demande pas encore de motif (aucun écran de saisie).
+- [x] **Rôles** : matrice `src/lib/permissions.ts`, garde-fou serveur
+      `guard_order_update` (artisan interdit sur montants et coordonnées,
+      `payment_status` réservé au serveur, réouverture d'une commande livrée
+      réservée au propriétaire), navigation et montants masqués.
+- [x] **Tests** : 128 tests, dont 15 sur le moteur de synchronisation (conflit,
+      doublon 23505, échec partiel) et 8 sur la matrice de rôles.
 - [ ] **Recette réelle** — projet Supabase de test : migrations, deux pressings,
       plusieurs rôles, paiement de bout en bout, mode avion prolongé.
 
 **Critère de sortie :** les scénarios de l'étape 3 du document passent sur une
 préproduction, sans double paiement ni écrasement silencieux.
+
+État : les trois défauts de code sont corrigés et couverts par des tests
+locaux ; la recette sur une base réelle reste à faire, faute d'identifiants
+Supabase dans cet environnement.
 
 ### Palier 2 — Cœur ERP (V1.1)
 
@@ -494,6 +516,12 @@ préproduction, sans double paiement ni écrasement silencieux.
 | --- | --- | --- | --- |
 | 23/10/2026 | 0 | `MAJ.md`, archivage de `docs/AUDIT.md`, `docs/AUDIT-COURANT.md`, correction du décompte de politiques RLS | `1726cf7` |
 | 23/10/2026 | 0 | Intégration continue : `npm ci`, types, style, tests, build sur chaque PR | `cc390d1` |
+| 23/10/2026 | 0 | Imbrication du texte source dans le sommaire | `98e7bbf` |
+| 23/10/2026 | 1 | Paiement : guichet unique, HMAC obligatoire en production, notifications concurrentes (`003_palier1.sql`, `cinetpay-init`, `cinetpay-webhook`) | à compléter |
+| 23/10/2026 | 1 | Synchronisation : verrou optimiste, conflits arbitrables, `previous_status` | à compléter |
+| 23/10/2026 | 1 | Rôles : matrice, garde-fou serveur, navigation et montants masqués | à compléter |
+| 23/10/2026 | 1 | Vérification SQL réelle : `scripts/sql-verify.sh` + 29 contrôles rejoués sur PostgreSQL 16, job CI dédié | à compléter |
+| 23/10/2026 | 1 | Retrait d'un lien d'image en japonais introduit par le copier-coller du texte source ; contrôle automatique de langue ajouté | à compléter |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

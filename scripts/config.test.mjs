@@ -26,6 +26,7 @@ const VALID_ENV = {
   APP_URL: 'https://pressing-pro.vercel.app',
   CINETPAY_API_KEY: 'cle-cinetpay',
   CINETPAY_SITE_ID: '123456',
+  CINETPAY_SECRET_KEY: 'secret-cinetpay',
   SEED_OWNER_EMAIL: 'patron@pressing.ci',
   SEED_OWNER_PASSWORD: 'motdepasse123',
   SEED_TENANT_NAME: 'Pressing Cocody',
@@ -134,11 +135,10 @@ describe('validateConfig — configuration complète', () => {
     expect(validateConfig(buildConfig(VALID_ENV)).errors).toEqual([])
   })
 
-  it('signale seulement l’absence de clé secrète CinetPay', () => {
+  it('n’émet aucun avertissement quand tout est renseigné', () => {
     const { warnings } = validateConfig(buildConfig(VALID_ENV))
 
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0].key).toBe('CINETPAY_SECRET_KEY')
+    expect(warnings).toEqual([])
   })
 })
 
@@ -202,6 +202,39 @@ describe('validateConfig — erreurs bloquantes', () => {
     )
 
     expect(errors.map((error) => error.key)).toContain('VITE_SUPABASE_SERVICE_ROLE_KEY')
+  })
+})
+
+describe('validateConfig — environnement et signature CinetPay', () => {
+  it('refuse une production sans clé secrète alors que CinetPay est configuré', () => {
+    const { errors } = validateConfig(
+      buildConfig({ ...VALID_ENV, CINETPAY_SECRET_KEY: '', APP_ENV: 'production' }),
+    )
+
+    expect(errors.map((error) => error.key)).toContain('CINETPAY_SECRET_KEY')
+  })
+
+  it('accepte la même configuration en développement, avec avertissement', () => {
+    const { errors, warnings } = validateConfig(
+      buildConfig({ ...VALID_ENV, CINETPAY_SECRET_KEY: '', APP_ENV: 'development' }),
+    )
+
+    expect(errors).toEqual([])
+    expect(warnings.map((warning) => warning.key)).toContain('CINETPAY_SECRET_KEY')
+  })
+
+  it('considère la production comme l’environnement par défaut', () => {
+    const config = buildConfig({ ...VALID_ENV, CINETPAY_SECRET_KEY: '' })
+
+    expect(config.appEnv).toBe('production')
+  })
+
+  it('refuse une valeur d’environnement inconnue', () => {
+    const { errors } = validateConfig(
+      buildConfig({ ...VALID_ENV, APP_ENV: 'recette' }),
+    )
+
+    expect(errors.map((error) => error.key)).toContain('APP_ENV')
   })
 })
 

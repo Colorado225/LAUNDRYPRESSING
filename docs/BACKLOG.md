@@ -25,7 +25,9 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | --- | --- |
 | Tarification / grille de prix par type de vêtement | Le MVP saisit un montant libre ; une grille paramétrable exige un module de catalogue. |
 | Gestion des clients (fiche, historique, fidélité) | Le MVP ne conserve que le nom et le téléphone saisis sur la commande. |
-| Gestion des employés (rôles, pointage, plannings) | Le contrôle d'accès se limite à l'appartenance à un pressing. |
+| Gestion des employés (pointage, plannings) | Hors périmètre. Les **rôles**, eux, existent depuis le palier 1 (propriétaire, réceptionniste, artisan). |
+| Écran de gestion des accès | Les rôles sont fixés par `app_metadata` lors du provisionnement ; une interface d'invitation viendra avec le module SaaS (palier 4). |
+| Motif obligatoire lors d'une dérogation | La colonne `order_status_history.reason` existe et est alimentée par le trigger, mais aucun écran ne demande le texte : à brancher avec le module caisse (palier 2). |
 | Gestion de stock (produits, consommables) | Hors des quatre modules imposés. |
 | Livraison / tournées | Hors périmètre. |
 | Impression de reçus de caisse | Seule l'étiquette QR 80 mm est imprimée. |
@@ -44,7 +46,6 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Journal d'audit consultable dans l'interface | Les données existent (`order_status_history`) mais l'écran est reporté. |
 | Réinitialisation du mot de passe par e-mail | En MVP, le propriétaire recrée un mot de passe depuis Supabase. Un flux « mot de passe oublié » demande un écran dédié et un modèle d'e-mail personnalisé. |
 | Sélecteur multi-pressing | `resolveTenantForUser` retient le premier rattachement ; un utilisateur ne gère qu'une boutique en V1. |
-| Navigation restreinte par rôle | Le rôle est affiché mais tous les onglets restent visibles ; la RLS bloque déjà les écritures interdites. |
 | Verrouillage de la tablette après inactivité | Utile pour un appareil partagé en atelier : nécessite une gestion de session avancée. |
 
 ## 4. Marquage QR
@@ -58,9 +59,7 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
 | Sujet | Détail |
 | --- | --- |
-| Exécution des tests en intégration continue | 58 tests Vitest existent (`npm test`) mais aucun workflow CI n'est encore branché : à faire lors de la mise en production. |
-| Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | Couverture de code | Pas encore mesurée (pas de `@vitest/coverage-v8`) ; à activer avec un seuil minimum. |
+| Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
-| Authentification complète | `TenantGate` permet de choisir un pressing à la main ; la connexion Supabase réelle arrive en phase 5. |
 | Pagination de la liste des commandes | Chargement local complet via Dexie ; à revoir au‑delà de quelques centaines de commandes. |

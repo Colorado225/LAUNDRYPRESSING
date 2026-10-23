@@ -267,6 +267,7 @@ function stepSecrets(config) {
     CINETPAY_BASE_URL: config.cinetpay.baseUrl,
     CINETPAY_NOTIFY_URL: config.cinetpay.notifyUrl,
     APP_URL: config.appUrl,
+    APP_ENV: config.appEnv,
   }).filter(([, value]) => Boolean(value))
 
   if (entries.length === 0) {

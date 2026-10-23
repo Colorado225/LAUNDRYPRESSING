@@ -111,6 +111,13 @@ export function buildConfig(values) {
 
     appUrl: read('APP_URL').replace(/\/+$/, ''),
 
+    /**
+     * Environnement des Edge Functions. `production` par défaut : en cas
+     * d'oubli, le webhook refuse les notifications non signées au lieu de les
+     * accepter silencieusement.
+     */
+    appEnv: (read('APP_ENV') || 'production').toLowerCase(),
+
     cinetpay: {
       apiKey: optional('CINETPAY_API_KEY'),
       siteId: optional('CINETPAY_SITE_ID'),
@@ -225,6 +232,14 @@ export function validateConfig(config) {
     })
   }
 
+  // --- Environnement --------------------------------------------------------
+  if (!['production', 'development'].includes(config.appEnv)) {
+    errors.push({
+      key: 'APP_ENV',
+      message: 'Valeur attendue : « production » ou « development ».',
+    })
+  }
+
   // --- Paiement (facultatif) -----------------------------------------------
   if (!config.cinetpay.apiKey || !config.cinetpay.siteId) {
     warnings.push({
@@ -234,11 +249,21 @@ export function validateConfig(config) {
     })
   }
   if (config.cinetpay.apiKey && !config.cinetpay.secretKey) {
-    warnings.push({
-      key: 'CINETPAY_SECRET_KEY',
-      message:
-        'Clé secrète CinetPay absente : le webhook fonctionnera en mode « vérification seule », sans authentification HMAC.',
-    })
+    if (config.appEnv === 'production') {
+      // Refus bloquant : le webhook rejetterait de toute façon les
+      // notifications (503), donc aucun paiement n'aboutirait.
+      errors.push({
+        key: 'CINETPAY_SECRET_KEY',
+        message:
+          'Clé secrète CinetPay requise en production : sans elle, le webhook refuse toutes les notifications (passez APP_ENV=development pour un test local).',
+      })
+    } else {
+      warnings.push({
+        key: 'CINETPAY_SECRET_KEY',
+        message:
+          'Clé secrète absente : en développement, le webhook valide uniquement par l’API CinetPay (aucune vérification HMAC).',
+      })
+    }
   }
 
   // --- Compte de départ (facultatif) ---------------------------------------

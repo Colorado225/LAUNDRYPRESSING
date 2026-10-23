@@ -18,16 +18,18 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 
 | Élément | Valeur |
 | --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 39 (dont 6 de test) |
-| Lignes de code applicatif | 5 697 |
+| Fichiers TypeScript / TSX dans `src/` | 43 (dont 6 de test) |
+| Lignes de code applicatif | 5 457 (hors tests) |
+| Migrations | 3 (`001_init`, `002_payments`, `003_palier1`) |
 | Tables PostgreSQL | 6 |
 | Politiques RLS | 13 (12 dans `001_init.sql`, 1 dans `002_payments.sql`) |
-| Fonctions SQL | 4 (`current_tenant_id`, `current_tenant_role`, `update_updated_at_column`, `log_order_status_change`) |
-| Déclencheurs | 3 (deux sur `orders`, un sur `payment_transactions`) |
+| Fonctions SQL | 6 (`current_tenant_id`, `current_tenant_role`, `update_updated_at_column`, `log_order_status_change`, `bump_order_version`, `guard_order_update`) |
+| Déclencheurs | 5 (quatre sur `orders`, un sur `payment_transactions`) |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
-| Scripts d'installation | 2 (`scripts/setup.mjs`, `scripts/lib/config.mjs`) |
-| Fichiers de tests | 7 |
-| Tests automatisés | 111 |
+| Scripts d'installation | 3 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`) |
+| Fichiers de tests | 9 (7 sous `src/`, 2 pour les scripts) |
+| Tests automatisés | 130 |
+| Contrôles SQL exécutés | 29 (9 isolation, 9 palier 1, 11 rôles) |
 | Intégration continue | 1 workflow (ajouté au palier 0) |
 | Code mort | 0 fichier (voir §3) |
 
@@ -55,19 +57,25 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 
 | Fichier | Rôle |
 | --- | --- |
-| `src/db/localDb.ts` | schéma Dexie : `orders`, `orderItems`, `pendingPayments` (version 2) |
-| `src/db/ordersRepository.ts` | CRUD local, mapping vers les lignes Supabase |
+| `src/db/localDb.ts` | schéma Dexie v3 : `orders` (avec `serverVersion`, `syncConflict`), `orderItems`, `pendingPayments` |
+| `src/db/ordersRepository.ts` | CRUD local, mapping vers Supabase **sans les champs de paiement** |
 | `src/db/hooks.ts` | `useLocalOrders`, `useCreateOrder`, `useUpdateOrderStatus` |
-| `src/sync/syncEngine.ts` | envoi idempotent (`upsert` sur `id`), verrou `runId`, reprise |
-| `src/stores/syncStore.ts` | état de synchronisation (Zustand) |
+| `src/sync/syncEngine.ts` | `insert` idempotent (23505 = réponse perdue) puis `update … eq('version')` ; verrou `runId` |
+| `src/services/orderConflictService.ts` | arbitrage : garder la version locale ou adopter celle du serveur |
+| `src/components/ConflictBanner.tsx` | bandeau d'arbitrage dans la fiche commande |
+| `src/stores/syncStore.ts` | état de synchronisation, dont le nombre de conflits (Zustand) |
 
 ### 2.3 Sécurité et multi-tenant
 
 | Fichier | Rôle |
 | --- | --- |
-| `supabase/migrations/001_init.sql` | 5 tables, 12 politiques RLS, 4 fonctions, clés composites |
+| `supabase/migrations/001_init.sql` | 5 tables, 12 politiques RLS, clés composites |
 | `supabase/migrations/002_payments.sql` | `payment_transactions`, index, 1 politique de lecture |
+| `supabase/migrations/003_palier1.sql` | `version`, `previous_status`/`reason`, `guard_order_update`, index de guichet unique |
 | `supabase/tests/isolation.sql` | rejoue PostgREST (`request.jwt.claims`) et exige `42501` |
+| `supabase/tests/roles.sql` | 11 contrôles de la matrice de rôles côté serveur |
+| `supabase/tests/palier1.sql` | verrou optimiste, historique, guichet unique |
+| `src/lib/permissions.ts` | matrice `Capability` / `can` / `canSeeAmounts` |
 | `src/lib/tenantContext.ts` | pressing courant (Zustand + persistance) |
 | `src/components/AuthGate.tsx` | restauration de session, mode hors ligne |
 | `src/services/authService.ts` | connexion, déconnexion, messages d'erreur en français |
@@ -76,8 +84,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 
 | Fichier | Rôle |
 | --- | --- |
-| `supabase/functions/cinetpay-init/index.ts` | initiation : montant relu en base, montant multiple de 5 |
-| `supabase/functions/cinetpay-webhook/index.ts` | notification : HMAC si configuré, **toujours** reconfirmée auprès de CinetPay |
+| `supabase/functions/cinetpay-init/index.ts` | initiation : montant relu en base, multiple de 5, **guichet unique** (réutilisation 15 min), artisan refusé |
+| `supabase/functions/cinetpay-webhook/index.ts` | notification : HMAC **obligatoire en production**, **toujours** reconfirmée auprès de CinetPay, mise à jour compare-and-set |
 | `supabase/functions/_shared/cinetpay.ts` | client HTTP, signature, vérification, arrondi |
 | `src/services/paymentService.ts` | appel de la fonction, redirection, lecture du statut |
 
@@ -86,8 +94,9 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | Fichier | Rôle |
 | --- | --- |
 | `scripts/setup.mjs` | provisionnement complet depuis `.env` (6 étapes, idempotent) |
-| `scripts/lib/config.mjs` | lecture et validation pure du `.env` |
-| `.github/workflows/ci.yml` | `npm ci`, `typecheck`, `lint`, `test`, `build` |
+| `scripts/lib/config.mjs` | lecture et validation pure du `.env` (`APP_ENV` inclus) |
+| `scripts/sql-verify.sh` | rejoue migrations et tests SQL sur un PostgreSQL jetable |
+| `.github/workflows/ci.yml` | job application (`npm ci`, types, style, tests, build) + job SQL réel |
 | `vitest.config.ts` | tests `src/` **et** `scripts/` |
 
 ---
@@ -129,18 +138,25 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 
 | # | Gravité | Constat | Référence | Traitement |
 | --- | --- | --- | --- | --- |
-| 1 | **Élevée** | Double paiement possible : chaque appel d'initiation crée un `transaction_id` neuf ; la garde `already_paid` n'agit qu'après encaissement | `cinetpay-init/index.ts:116` | Palier 1 |
-| 2 | **Élevée** | Écrasement silencieux entre deux tablettes : `upsert` sans comparaison de version | `syncEngine.ts:98` | Palier 1 |
-| 3 | Moyenne | Signature HMAC facultative si `CINETPAY_SECRET_KEY` est absente | `cinetpay-webhook/index.ts:70` | Palier 1 |
-| 4 | Moyenne | Aucun rôle appliqué à la navigation ni aux actions | `tenantContext.ts:22` | Palier 1 |
-| 5 | Moyenne | Historique sans ancien statut ni motif | `001_init.sql:86-97` | Palier 1 |
+| 1 | **Élevée** | Double paiement possible : chaque appel d'initiation crée un `transaction_id` neuf ; la garde `already_paid` n'agit qu'après encaissement | `cinetpay-init` | **Corrigé** (guichet unique + index partiel) |
+| 2 | **Élevée** | Écrasement silencieux entre deux tablettes : `upsert` sans comparaison de version | `syncEngine` | **Corrigé** (verrou optimiste + arbitrage) |
+| 3 | Moyenne | Signature HMAC facultative si `CINETPAY_SECRET_KEY` est absente | `cinetpay-webhook` | **Corrigé** (refus 503 en production) |
+| 4 | Moyenne | Aucun rôle appliqué à la navigation ni aux actions | `tenantContext` | **Corrigé** (matrice + garde-fou SQL) |
+| 5 | Moyenne | Historique sans ancien statut ni motif | `001_init.sql:86-97` | **Partiel** : `previous_status` ✅, saisie du motif ❌ |
 | 6 | Faible | Documentation : 16 politiques annoncées pour 13 réelles | `CHANGELOG.md` | **Corrigé** |
 | 7 | Faible | Audit de phase 0 présenté comme l'état courant | `docs/AUDIT.md` | **Archivé** |
 | 8 | Faible | Aucun contrôle automatique avant fusion | `.github/` absent | **Corrigé** |
 
-Aucun défaut bloquant n'a été trouvé dans le code applicatif : `typecheck`,
-`lint`, `test` et `build` passent, et l'analyse d'imports ne révèle aucun code
-mort.
+Les trois défauts de gravité élevée ou moyenne sont corrigés et couverts par
+des tests locaux. Le seul reste est la **saisie du motif** d'une dérogation :
+la colonne `reason` existe, aucun écran ne la remplit encore (prévu avec le
+module caisse du palier 2).
+
+La **recette sur un projet Supabase réel** (provisionnement, Edge Functions,
+paiement de bout en bout) n'a pas pu être faite : aucun identifiant dans
+l'environnement de développement. En revanche, le schéma, les 13 politiques
+RLS, les 5 déclencheurs et les 11 règles de rôle ont été **réellement exécutés**
+sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 
 ---
 
@@ -150,19 +166,27 @@ mort.
 | --- | --- | --- |
 | Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 111 tests : QR, synchronisation, création de commande, isolation, configuration, provisionnement |
-| Build | `npm run build` | compilation TypeScript + PWA (précache 39 fichiers) |
-| Intégration continue | GitHub Actions | les quatre contrôles sur chaque PR et sur `main` |
+| Tests | `npm test` | 130 tests : QR, synchronisation, rôles, langue, création de commande, isolation statique, configuration, provisionnement |
+| Build | `npm run build` | compilation TypeScript + PWA (précache 41 fichiers) |
+| SQL réel | `npm run sql:verify` | migrations `001`→`003`, jeu de démonstration, 29 contrôles (isolation, rôles, verrou optimiste, guichet unique) sur un PostgreSQL 16 jetable |
+| Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
-**Ce que ces contrôles ne couvrent pas :** exécution réelle des migrations,
-RLS sur une base vivante, webhook de bout en bout, comportement sur tablette
-Android physique.
+`sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`
+(qui recrée les rôles et le schéma `auth` de Supabase), puis rejoue les tests.
+Il ne demande ni Supabase ni Docker ; seul `psql` 15+ est nécessaire.
+
+**Ce que ces contrôles ne couvrent pas :** provisionnement d'un vrai projet
+Supabase, Edge Functions déployées, webhook CinetPay de bout en bout,
+comportement sur tablette Android physique.
 
 ---
 
 ## 7. Ce qui n'est pas vérifiable dans cet environnement
 
 1. Provisionnement réel d'un projet Supabase (aucun identifiant disponible).
-2. Paiement CinetPay réel (aucun compte marchand).
+2. Déploiement des Edge Functions et appel réel de l'API CinetPay (aucun compte marchand).
 3. Lighthouse (aucun navigateur Chrome/Chromium installable).
 4. Installation PWA sur un appareil Android physique.
+
+Les migrations et la sécurité **ne sont plus dans cette liste** : elles sont
+exécutées à chaque intégration continue sur PostgreSQL 16 (§6).
