@@ -613,7 +613,7 @@ instance**. C'est fait, sur le projet Supabase de recette :
 | 23/10/2026 | MVP | Mode essai CinetPay (`CINETPAY_MODE`), refus d'une clé d'essai en production, 6 tests | `f4541a1` |
 | 23/10/2026 | MVP | Simulateur CinetPay local (`npm run simulateur`) : guichet, notification HMAC, redirection, 15 tests | `55071bd` |
 | 23/10/2026 | MVP | Assemblage et déploiement des Edge Functions sans CLI (`npm run deploy:fonctions`), 14 tests | `b90369b` |
-| 23/10/2026 | MVP | `docs/DEPLOIEMENT-FONCTIONS.md`, CHANGELOG 0.12.0 (477 tests, 167 contrôles SQL) | `dda26c0` |
+| 23/10/2026 | MVP | `docs/DEPLOIEMENT-FONCTIONS.md`, CHANGELOG 0.12.0 (481 tests, 167 contrôles SQL) | `dda26c0` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

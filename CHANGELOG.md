@@ -48,7 +48,7 @@ attendant les identifiants marchands.
 
 ### Vérifié
 
-- 477 tests sur 32 fichiers, **167 contrôles SQL** sur 10 fichiers, `tsc`,
+- 481 tests sur 32 fichiers, **167 contrôles SQL** sur 10 fichiers, `tsc`,
   ESLint, build. Le parcours d'essai est exercé de bout en bout contre le vrai
   serveur du simulateur (initialisation, notification HMAC, redirection,
   vérification, webhook injoignable).
