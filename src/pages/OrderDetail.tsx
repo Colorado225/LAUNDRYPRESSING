@@ -8,7 +8,9 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import QrCodeDisplay from '@/components/QrCodeDisplay'
 import { useLocalOrder, useUpdateOrderStatus } from '@/db/hooks'
+import { useTenantStore } from '@/lib/tenantContext'
 import {
   ORDER_FLOW,
   ORDER_STATUSES,
@@ -27,6 +29,7 @@ export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>()
   const data = useLocalOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
+  const tenantName = useTenantStore((state) => state.tenantName)
 
   if (data === undefined) {
     return (
@@ -155,6 +158,9 @@ export default function OrderDetail() {
           ))}
         </ul>
       </section>
+
+      {/* Étiquette QR — impression 80 mm */}
+      <QrCodeDisplay order={order} items={items} tenantName={tenantName} />
 
       {/* Progression */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">

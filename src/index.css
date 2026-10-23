@@ -58,6 +58,12 @@
 /* ============================================================
    Impression — étiquettes QR (80 mm) et rapports atelier
    ============================================================ */
+
+/* Conteneur d'impression : présent dans le DOM mais invisible à l'écran. */
+#print-root {
+  display: none;
+}
+
 @media print {
   @page {
     size: 80mm auto;
@@ -66,6 +72,16 @@
 
   body {
     background: #ffffff;
+  }
+
+  /* Mode « impression d'étiquette » : on masque l'application entière et on
+     n'imprime que le contenu monté dans #print-root. */
+  body.impression-etiquette #root {
+    display: none !important;
+  }
+
+  body.impression-etiquette #print-root {
+    display: block !important;
   }
 
   /* Les éléments d'interface ne doivent jamais apparaître sur une étiquette */
