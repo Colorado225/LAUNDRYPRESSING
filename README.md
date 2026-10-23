@@ -4,10 +4,10 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : palier 2 terminé** (catalogue, caisse, reçus, workflow complet,
-réclamations et remboursements). Les phases 1 à 6 et les paliers 0 à 2 de
-`MAJ.md` sont livrés ; le palier 3 (clients, stocks, tableau de bord) reste à
-ouvrir.
+**État actuel : palier 3 terminé** (clients et historique, stocks et
+fournisseurs, dépenses, tableau de bord propriétaire). Les phases 1 à 6 et les
+paliers 0 à 3 de `MAJ.md` sont livrés ; le palier 4 (SaaS multi-pressing) n'est
+pas ouvert.
 
 ---
 
@@ -23,9 +23,12 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | ✅ phase 4 |
 | 5 | **Catalogue et caisse** (prix historisé, acomptes, reçu 80 mm, clôture) | ✅ palier 2 |
 | 6 | **Workflow complet** (8 étapes, attribution, livraison promise, réclamations) | ✅ palier 2 |
+| 7 | **Clients et historique** (fiche par téléphone, total dépensé, coordonnées) | ✅ palier 3 |
+| 8 | **Stocks, fournisseurs et dépenses** (seuils d'alerte, mouvements, dépenses du propriétaire) | ✅ palier 3 |
+| 9 | **Tableau de bord propriétaire** (activité, chiffre d'affaires, encours, alertes) | ✅ palier 3 |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
-statistiques avancées, gestion des stocks, gestion du personnel, facturation PDF, suivi client public.
+statistiques avancées, gestion du personnel, facturation PDF, suivi client public.
 Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `docs/AUDIT.md`.
 
 ---
@@ -118,7 +121,7 @@ npm run setup:dry      # affiche les commandes sans rien exécuter
 | Étape | Action | Idempotence |
 |-------|--------|-------------|
 | 1 | `supabase link` sur le projet | sans effet si déjà lié |
-| 2 | `supabase db push` : `001_init.sql` puis `002_payments.sql` | migration déjà appliquée ignorée |
+| 2 | `supabase db push` : migrations `001` à `006` dans l'ordre | migration déjà appliquée ignorée |
 | 3 | Déploiement de `cinetpay-init` (JWT requis) et `cinetpay-webhook` (public) | redéploie la même version |
 | 4 | Secrets `CINETPAY_*` et `APP_URL` côté Edge Functions | écrasés par les valeurs du `.env` |
 | 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` | pressing retrouvé par son nom, compte réutilisé |
@@ -203,7 +206,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (179 tests : synchronisation, rôles, caisse, langue, isolation, installation) |
+| `npm test` | Suite Vitest complète (203 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, langue, isolation, installation) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
@@ -259,10 +262,18 @@ pas en `npm run dev`).
 │   │   ├── OrderForm.tsx         # création hors ligne
 │   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
 │   │   ├── PaymentReturn.tsx     # retour CinetPay (lecture seule)
-│   │   └── Atelier.tsx           # scan QR → changement de statut
+│   │   ├── Atelier.tsx           # scan QR → changement de statut
+│   │   ├── Clients.tsx           # fiche client + historique (palier 3)
+│   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
+│   │   ├── Depenses.tsx          # dépenses du propriétaire (palier 3)
+│   │   └── TableauDeBord.tsx     # indicateurs du jour (palier 3)
 │   ├── services/
 │   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
+│   │   ├── customerService.ts     # clients, historique, fiche serveur
+│   │   ├── stockService.ts        # articles, mouvements, seuils, fournisseurs
+│   │   ├── expenseService.ts      # dépenses catégorisées (propriétaire)
+│   │   ├── dashboardService.ts    # calculs locaux du tableau de bord
 │   │   └── qrService.ts          # génération / analyse des codes QR
 │   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
 │   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
@@ -288,8 +299,10 @@ pas en `npm run dev`).
 │   │   └── cinetpay-webhook/     # notification serveur (sans JWT)
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
+│   ├── migrations/006_palier3.sql # clients, stock, dépenses, vue des totaux
 │   ├── seed.sql                  # jeu de démonstration (2 pressings)
-│   └── tests/isolation.sql       # preuve d'isolation sur une vraie base
+│   ├── tests/isolation.sql       # preuve d'isolation sur une vraie base
+│   └── tests/palier3.sql         # 17 contrôles clients / stock / dépenses
 ├── docs/
 │   ├── AUDIT.md                  # rapport de la phase 0
 │   ├── BACKLOG.md                # fonctionnalités explicitement hors périmètre
@@ -906,6 +919,68 @@ tout employé d'un autre pressing (`guard_order_assignment`).
 
 ---
 
+## 7nonies. Clients, stock, dépenses et tableau de bord (palier 3)
+
+### Clients et historique
+
+Le client n'a pas de compte : il est identifié par son **téléphone**. La fiche
+est créée automatiquement par la commande (`attach_customer_to_order`) et
+regroupée sur le numéro normalisé — « +225 07 00 00 00 21 » et « 0700000021 »
+désignent la même personne. `normalize_phone` (SQL) et `normalisePhone` (TS)
+appliquent la même règle : chiffres seuls, indicatif `225` retiré.
+
+- **hors ligne** : la liste, l'historique, le total dépensé et les retards sont
+  calculés à partir des commandes présentes dans IndexedDB ;
+- **en ligne** : la fiche enrichie (adresse, préférences, notes) est lue et
+  mise à jour sur le serveur (`customers`).
+
+La fiche n'est **jamais insérée par le client** : seule la fonction
+`attach_customer_to_order` (security definer) la crée, au moment de la commande.
+Le comptoir et le propriétaire peuvent modifier les coordonnées, pas le numéro.
+
+### Stock et fournisseurs
+
+Les articles consommables (produit, emballage, consommable, autre) portent une
+quantité, une unité (pièce, litre, kg, flacon, rouleau) et un **seuil d'alerte**.
+
+> **Décision structurante.** La quantité n'est **jamais écrite directement** par
+> le client : elle découle d'un **grand livre** de mouvements (`stock_movements`,
+> entrée ou sortie). Une sortie supérieure au stock est refusée par la fonction
+> `apply_stock_movement` (code `22023`), et le journal est **immuable** — ni
+> `update` ni `delete`. Un stock faux se corrige par un mouvement, pas par une
+> réécriture silencieuse.
+
+La quantité initiale se saisit à la création de l'article : elle produit un
+mouvement « Stock initial ». Le réceptionniste peut mouvementer (sortie de
+lessive, entrée de livraison) ; seul le propriétaire crée les articles et les
+fournisseurs.
+
+### Dépenses
+
+Dépenses catégorisées (fournitures, loyer, salaires, eau et électricité,
+transport, autre), **réservées au propriétaire** : la RLS refuse la lecture aux
+autres rôles, et l'écran affiche « Accès réservé ». Une dépense est un fait
+comptable daté ; elle n'est pas saisie hors ligne, pour éviter deux vérités dans
+la trésorerie.
+
+### Tableau de bord
+
+Ouvert au propriétaire (`dashboard.view`). Il répond aux questions du matin :
+
+- **activité du jour** : commandes créées, en atelier, prêtes, en retard ;
+- **chiffre d'affaires** : espèces du jour et de la semaine, Mobile Money du
+  jour, panier moyen ;
+- **encours** : reste à encaisser sur les commandes actives (même calcul que la
+  caisse, via `computeBalance`) ;
+- **alertes de stock** : articles au seuil ou en dessous ;
+- **dépenses du mois**.
+
+Les indicateurs d'activité sont calculés **localement**, donc consultables hors
+connexion. Les encaissements Mobile Money et les dépenses viennent du serveur :
+ils affichent « hors ligne » quand la lecture échoue, plutôt qu'un zéro trompeur.
+
+---
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`docs/AUDIT.md`)
@@ -915,6 +990,11 @@ tout employé d'un autre pressing (`guard_order_assignment`).
 - [x] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
 - [x] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
 - [x] **Phase 6** — QA (Vitest, isolation multi-tenant, CHANGELOG, tag `v0.1.0-mvp`) — *Lighthouse à relever sur un déploiement réel*
+- [x] **Palier 0** — Rendre l'état fiable (audit, feuille de route, CI)
+- [x] **Palier 1** — Stabilisation technique (paiement, sync `version`, HMAC, rôles)
+- [x] **Palier 2** — Cœur ERP (catalogue, caisse, reçus, workflow, réclamations)
+- [x] **Palier 3** — V1.2 (clients, stock, fournisseurs, dépenses, tableau de bord)
+- [ ] **Palier 4** — SaaS (abonnements, plusieurs pressings par compte)
 
 ---
 
@@ -928,3 +1008,9 @@ tout employé d'un autre pressing (`guard_order_assignment`).
   secrète provoque un refus (503) au lieu d'une validation silencieuse.
 - `payment_status` n'est modifiable que par le serveur : le trigger `guard_order_update`
   rejette toute écriture provenant d'un utilisateur authentifié (42501).
+- `stock_movements` est un **journal immuable** : la RLS refuse `update` et `delete`,
+  même au propriétaire. Seule la fonction `apply_stock_movement` écrit la quantité.
+- `expenses` est lisible et modifiable **uniquement par le propriétaire** du pressing ;
+  un réceptionniste ne voit strictement rien, pas même les totaux agrégés.
+- La vue `expense_totals` est en `security_invoker` : elle hérite de la RLS des
+  dépenses au lieu de la contourner.

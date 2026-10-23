@@ -506,9 +506,15 @@ Supabase dans cet environnement.
 
 ### Palier 3 — V1.2
 
-- [ ] Clients et historique.
-- [ ] Stocks, fournisseurs et dépenses.
-- [ ] Tableau de bord propriétaire.
+- [x] Clients et historique — `006_palier3.sql` (`customers`,
+      `normalize_phone`, `attach_customer_to_order`), écran Clients, historique
+      et total dépensé calculés hors ligne depuis les commandes locales.
+- [x] Stocks, fournisseurs et dépenses — `stock_items`, grand livre
+      `stock_movements` + `apply_stock_movement`, `suppliers`, `expenses`
+      (propriétaire seul), vue `expense_totals`, écrans Stock et Dépenses.
+- [x] Tableau de bord propriétaire — activité du jour, chiffre d'affaires,
+      encours, retards, alertes de stock et dépenses du mois ; calculs locaux,
+      compléments serveur marqués « hors ligne ».
 
 ### Palier 4 — SaaS
 
@@ -533,6 +539,10 @@ Supabase dans cet environnement.
 | 23/10/2026 | 2 | Encaissements et relecture distante couverts par 37 tests supplémentaires | `1c4e78b` |
 | 23/10/2026 | 2 | Guichet Mobile Money : ne facturer que le reste à payer | `790f863` |
 | 23/10/2026 | 2 | Attribution, réclamations, remboursements, tarif dérogatoire, motif de transition (`005_palier2_complement.sql`, 24 contrôles SQL) | à compléter |
+| 23/10/2026 | 3 | Clients : fiche par téléphone, `normalize_phone`, rattachement automatique à la commande (`006_palier3.sql`, 17 contrôles SQL) | à compléter |
+| 23/10/2026 | 3 | Stock : articles, seuils, grand livre immuable des mouvements, fournisseurs | à compléter |
+| 23/10/2026 | 3 | Dépenses catégorisées réservées au propriétaire, vue `expense_totals` | à compléter |
+| 23/10/2026 | 3 | Écrans Clients, Stock, Dépenses et Tableau de bord, capacités et navigation par rôle | à compléter |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

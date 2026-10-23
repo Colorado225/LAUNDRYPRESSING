@@ -6,6 +6,69 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.4.0] — 2026-10-23
+
+Palier 3 de la feuille de route (`MAJ.md`) : la **gestion** du pressing —
+clients, stock, fournisseurs, dépenses — et le **tableau de bord du
+propriétaire**.
+
+### Ajouté
+
+- **Clients et historique** (`customers`, `/clients`) : fiche identifiée par le
+  téléphone, historique des commandes, total dépensé, reste à encaisser,
+  retards, coordonnées et notes modifiables. Le rapprochement se fait sur le
+  numéro normalisé (`normalize_phone` en SQL, `normalisePhone` en TS) :
+  « +225 07 00 00 00 21 » et « 0700000021 » sont la même personne.
+- **Création automatique de la fiche** : `attach_customer_to_order`
+  (`security definer`) crée ou complète le client à chaque commande ; le nom le
+  plus récent l'emporte, une correction de faute de frappe au comptoir profite
+  donc à la fiche.
+- **Stock** (`stock_items`, `stock_movements`, `/stock`) : articles
+  consommables catégorisés (produit, emballage, consommable, autre), unités
+  (pièce, litre, kg, flacon, rouleau), **seuil d'alerte**, entrées et sorties.
+  La quantité découle d'un **grand livre immuable** : `apply_stock_movement`
+  refuse une sortie supérieure au stock (code `22023`). La quantité initiale
+  crée un mouvement « Stock initial ».
+- **Fournisseurs** (`suppliers`) : nom, téléphone, notes ; création réservée au
+  propriétaire, lecture au comptoir.
+- **Dépenses** (`expenses`, `/depenses`) : six catégories, date, fournisseur
+  facultatif, note ; **réservées au propriétaire** (RLS). Vue `expense_totals`
+  en `security_invoker` pour les agrégations.
+- **Tableau de bord** (`/tableau-de-bord`) : commandes du jour, en atelier,
+  prêtes et en retard ; espèces du jour et de la semaine ; Mobile Money du
+  jour ; panier moyen ; reste à encaisser ; série des sept derniers jours ;
+  répartition par statut ; top des prestations ; alertes de stock ; dépenses du
+  mois.
+- **Rôles** : nouvelles capacités `customers.manage`, `stock.manage`,
+  `stock.move`, `expenses.manage` et `dashboard.view`. Le propriétaire a tout ;
+  le réceptionniste gère les clients et mouvemente le stock ; l'artisan ne
+  change que le statut des commandes.
+
+### Modifié
+
+- **`useAllLocalItems` et `useAllCashPayments`** : lecture Dexie complète pour
+  les agrégats du tableau de bord, réactive aux écritures de synchronisation.
+- **Navigation** : entrées « Tableau de bord », « Clients », « Stock » et
+  « Dépenses », chacune conditionnée par la capacité du rôle.
+- **Migrations SQL** : `006_palier3.sql` ajoute clients, fournisseurs, stock,
+  dépenses et la vue des totaux ; `scripts/sql-verify.sh` la rejoue avec ses 17
+  contrôles.
+
+### Limites connues
+
+- Les modules de **gestion** (stock, dépenses, fiches clients enrichies) sont
+  **en ligne** : ils supposent le bureau connecté. L'historique client reste
+  consultable hors ligne car il est dérivé des commandes locales.
+- Une **dépense** ne peut pas être saisie hors ligne : deux sources de vérité
+  rendraient la trésorerie incohérente.
+- Le tableau de bord n'affiche pas les encaissements **Mobile Money** hors
+  connexion : la tablette n'en garde aucune trace locale (le webhook écrit côté
+  serveur). Le montant est marqué « hors ligne », jamais remplacé par zéro.
+- Pas de **recette Supabase réelle** : la migration et les 17 contrôles SQL sont
+  joués sur un PostgreSQL jetable, pas sur un projet provisionné.
+
+---
+
 ## [0.3.0] — 2026-10-23
 
 Palier 2 de la feuille de route (`MAJ.md`) : le cœur ERP — catalogue, caisse,

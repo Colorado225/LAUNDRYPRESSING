@@ -52,12 +52,18 @@ haut de l'écran.
 1. Onglet **Commandes** → bouton **Nouvelle commande**
    (ou appui long sur l'icône de l'application → **Nouvelle commande**).
 2. Renseigner le **nom** et le **téléphone** du client.
-3. Ajouter chaque vêtement (bouton **Ajouter**) avec :
-   - son **libellé** (ex. « Costume 3 pièces »),
-   - le **tissu** si utile (Bazin, Wax, laine…),
+3. Ajouter chaque vêtement (bouton **Ajouter**) :
+   - choisir l'**article** et la **prestation** au catalogue : le prix se remplit
+     tout seul ;
+   - préciser le **tissu** si utile (Bazin, Wax, laine…),
    - les **instructions** particulières (ex. « Empèsage fort »),
-   - son **prix** en francs CFA.
+   - un **prix différent** du catalogue est possible, mais il exige un **motif**
+     d'au moins 10 caractères (tarif dérogatoire).
 4. Vérifier le **total** affiché en bas, puis **Enregistrer**.
+
+Le **téléphone** suffit à retrouver le client : les commandes passées avec le
+même numéro — avec ou sans indicatif `+225` — sont regroupées dans son
+historique.
 
 La commande est immédiatement visible dans la liste, **même sans réseau**. Un
 badge orange indique qu'elle attend l'envoi vers le serveur.
@@ -90,7 +96,43 @@ message explicite : la commande reste enregistrée, le règlement se fera plus t
 > 8 503 FCFA est débitée **8 505 FCFA** ; le montant exact est rappelé au moment
 > du paiement. L'écart ne dépasse jamais 4 FCFA.
 
-### 3.4 Remettre le linge
+### 3.4 Encaisser en espèces
+
+1. Ouvrir la commande → **Encaisser**.
+2. Saisir le montant remis (acompte ou solde). Le **reste à payer** est recalculé
+   à partir des encaissements réels : il ne se saisit jamais à la main.
+3. Un **reçu 80 mm** est disponible via **Reçu** : référence, téléphone,
+   articles, montant reçu et **reste à payer**.
+4. Le reçu s'imprime même hors ligne, puisque les données sont sur la tablette.
+
+### 3.5 Clôturer la caisse
+
+1. Onglet **Caisse** → le montant **attendu** est recalculé par le serveur à
+   partir des encaissements du jour (les remboursements sont déduits).
+2. Compter les espèces du tiroir et déclarer le montant.
+3. Valider : l'écart est conservé et reste consultable. Une clôture par jour.
+
+### 3.6 Consulter un client
+
+Onglet **Clients** → rechercher par nom ou par numéro. La fiche affiche le
+nombre de commandes, le **total dépensé**, le **reste à encaisser** et les
+**retards**. L'historique s'ouvre commande par commande.
+
+La liste et l'historique fonctionnent **hors ligne** : ils sont calculés à
+partir des commandes de la tablette. Les coordonnées (adresse, préférences,
+notes) se modifient en ligne.
+
+### 3.7 Mouvementer le stock
+
+Onglet **Stock** → choisir l'article → **Entrée** ou **Sortie**. Une sortie
+supérieure au stock restant est refusée : le stock ne devient jamais négatif.
+Le journal des mouvements est définitif ; une erreur se corrige par un mouvement
+inverse, pas en réécrivant l'histoire.
+
+> Le stock et les dépenses sont des écrans de **bureau** : ils demandent une
+> connexion.
+
+### 3.8 Remettre le linge
 
 Quand le client se présente, ouvrir la commande et la faire passer en **Livrée**
 (voir le parcours artisan, §4.3 : le réceptionniste peut aussi le faire).
@@ -169,12 +211,21 @@ pressing.
 
 ### 5.2 Suivre l'activité
 
+- **Tableau de bord** : commandes du jour, en atelier, prêtes, en retard ;
+  espèces du jour et de la semaine ; Mobile Money du jour ; panier moyen ; reste
+  à encaisser ; série des sept derniers jours ; top des prestations ; alertes de
+  stock et dépenses du mois.
 - **Commandes** : liste complète, avec recherche par nom ou téléphone et filtres
   par statut.
 - Chaque fiche indique le **statut de paiement** (Non payée / Payée) et le
   **moyen utilisé** (Wave, Orange Money, MTN MoMo, Moov Money).
 - Le badge de synchronisation signale les tablettes qui n'ont pas encore envoyé
   leurs commandes.
+
+Les indicateurs d'activité sont calculés **sur la tablette** : ils restent
+consultables hors connexion. Les encaissements Mobile Money et les dépenses
+viennent du serveur et s'affichent « hors ligne » quand ils ne peuvent pas être
+lus — jamais « 0 ».
 
 ### 5.3 Retirer un accès
 
@@ -194,6 +245,32 @@ Bouton **Quitter** en haut à droite → confirmation.
 > Les commandes **non synchronisées restent sur la tablette** après la
 > déconnexion : elles ne sont pas perdues. Elles ne sont visibles que par le
 > pressing qui les a créées.
+
+### 5.5 Tenir le catalogue
+
+Onglet **Prestations** (propriétaire uniquement) : créer les couples
+**article × prestation** avec leur tarif. Modifier un tarif ne change **jamais**
+une facture déjà émise : le prix est recopié sur la ligne au moment de la vente.
+
+### 5.6 Créer les articles de stock et les fournisseurs
+
+Onglet **Stock** → **Nouvel article** : nom, catégorie (produit, emballage,
+consommable, autre), unité (pièce, litre, kg, flacon, rouleau), **seuil
+d'alerte** et quantité initiale. La quantité initiale produit un mouvement
+« Stock initial », visible dans le journal.
+
+Le même écran permet d'ajouter un **fournisseur** (nom, téléphone, notes). Le
+réceptionniste peut mouvementer le stock et choisir un fournisseur ; seul le
+propriétaire crée les articles et les fournisseurs.
+
+### 5.7 Enregistrer les dépenses
+
+Onglet **Dépenses** (propriétaire uniquement) : libellé, catégorie (fournitures,
+loyer, salaires, eau et électricité, transport, autre), montant, date,
+fournisseur facultatif et note.
+
+Le total du mois s'affiche en haut de l'écran et alimente le tableau de bord. Un
+autre rôle ne voit ni l'écran ni les montants : la base refuse la lecture.
 
 ---
 

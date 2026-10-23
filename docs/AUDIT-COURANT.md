@@ -1,7 +1,8 @@
 # Audit courant — Pressing Pro
 
 **Date :** 23 octobre 2026
-**Révision auditée :** `main` à `23551c7` (fusion de la PR #1)
+**Révision auditée :** branche `arena/17b0abba-laundrypressing`, palier 3
+(après fusion de la PR #1 et des paliers 0 à 3)
 **Méthode :** inventaire automatisé du code (analyse des imports, comptage des
 tables, politiques et tests), puis lecture ciblée des zones sensibles
 (authentification, synchronisation, paiement, RLS).
@@ -18,19 +19,19 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 
 | Élément | Valeur |
 | --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 43 (dont 6 de test) |
-| Lignes de code applicatif | 5 457 (hors tests) |
-| Migrations | 3 (`001_init`, `002_payments`, `003_palier1`) |
-| Tables PostgreSQL | 6 |
-| Politiques RLS | 13 (12 dans `001_init.sql`, 1 dans `002_payments.sql`) |
-| Fonctions SQL | 6 (`current_tenant_id`, `current_tenant_role`, `update_updated_at_column`, `log_order_status_change`, `bump_order_version`, `guard_order_update`) |
-| Déclencheurs | 5 (quatre sur `orders`, un sur `payment_transactions`) |
+| Fichiers TypeScript / TSX dans `src/` | 66 (dont 9 de test) |
+| Lignes de code applicatif | 11 663 (hors dossier `src/test/`) |
+| Migrations | 6 (`001_init` → `006_palier3`) |
+| Tables PostgreSQL | 16 + 1 vue (`expense_totals`) |
+| Politiques RLS | 33 (12 + 1 + 3 + 8 + 9) |
+| Fonctions SQL | 22 (dont `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`) |
+| Déclencheurs | 14 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation | 3 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`) |
-| Fichiers de tests | 9 (7 sous `src/`, 2 pour les scripts) |
-| Tests automatisés | 130 |
-| Contrôles SQL exécutés | 29 (9 isolation, 9 palier 1, 11 rôles) |
-| Intégration continue | 1 workflow (ajouté au palier 0) |
+| Fichiers de tests | 11 (9 sous `src/`, 2 pour les scripts) |
+| Tests automatisés | 203 |
+| Contrôles SQL exécutés | 93 (isolations, rôles, paliers 1 à 3) |
+| Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
 
 ---
@@ -50,6 +51,13 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `/commandes/:orderId` | `OrderDetail.tsx` — fiche, QR, statut, paiement | différé |
 | `/atelier` | `Atelier.tsx` — scan caméra | différé (html5-qrcode) |
 | `/offline` | `Offline.tsx` — écran de repli | différé |
+| `/catalogue` | `Catalogue.tsx` — prestations et tarifs (propriétaire) | différé |
+| `/caisse` | `Caisse.tsx` — encaissements et clôture journalière | différé |
+| `/commandes/:orderId/recu` | `Receipt.tsx` — reçu 80 mm imprimable | différé |
+| `/tableau-de-bord` | `TableauDeBord.tsx` — indicateurs du propriétaire | différé |
+| `/clients` | `Clients.tsx` — fiches et historique (offline pour l'historique) | différé |
+| `/stock` | `Stock.tsx` — articles, mouvements, fournisseurs | différé |
+| `/depenses` | `Depenses.tsx` — dépenses du propriétaire | différé |
 | `/paiement/retour` | `PaymentReturn.tsx` — retour CinetPay, lecture seule | différé |
 | `/payment/return` | alias redirigé (anciens liens) | — |
 
@@ -57,9 +65,9 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 
 | Fichier | Rôle |
 | --- | --- |
-| `src/db/localDb.ts` | schéma Dexie v3 : `orders` (avec `serverVersion`, `syncConflict`), `orderItems`, `pendingPayments` |
+| `src/db/localDb.ts` | schéma Dexie : `orders` (version serveur, conflits), `orderItems`, `payments`, `cashSessions`, `issues`, `refunds`, catalogue local |
 | `src/db/ordersRepository.ts` | CRUD local, mapping vers Supabase **sans les champs de paiement** |
-| `src/db/hooks.ts` | `useLocalOrders`, `useCreateOrder`, `useUpdateOrderStatus` |
+| `src/db/hooks.ts` | `useLocalOrders`, `useCreateOrder`, `useUpdateOrderStatus` et lectures d'agrégats (`useAllLocalItems`, `useAllCashPayments`) |
 | `src/sync/syncEngine.ts` | `insert` idempotent (23505 = réponse perdue) puis `update … eq('version')` ; verrou `runId` |
 | `src/services/orderConflictService.ts` | arbitrage : garder la version locale ou adopter celle du serveur |
 | `src/components/ConflictBanner.tsx` | bandeau d'arbitrage dans la fiche commande |
@@ -72,15 +80,32 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `supabase/migrations/001_init.sql` | 5 tables, 12 politiques RLS, clés composites |
 | `supabase/migrations/002_payments.sql` | `payment_transactions`, index, 1 politique de lecture |
 | `supabase/migrations/003_palier1.sql` | `version`, `previous_status`/`reason`, `guard_order_update`, index de guichet unique |
+| `supabase/migrations/004_palier2.sql` | catalogue, prix historisé, caisse, clôture, 22 contrôles associés |
+| `supabase/migrations/005_palier2_complement.sql` | attribution, réclamations, remboursements, motif de transition |
+| `supabase/migrations/006_palier3.sql` | clients, fournisseurs, stock + grand livre, dépenses, vue `expense_totals` |
 | `supabase/tests/isolation.sql` | rejoue PostgREST (`request.jwt.claims`) et exige `42501` |
 | `supabase/tests/roles.sql` | 11 contrôles de la matrice de rôles côté serveur |
 | `supabase/tests/palier1.sql` | verrou optimiste, historique, guichet unique |
+| `supabase/tests/palier3.sql` | 17 contrôles clients, stock et dépenses |
 | `src/lib/permissions.ts` | matrice `Capability` / `can` / `canSeeAmounts` |
 | `src/lib/tenantContext.ts` | pressing courant (Zustand + persistance) |
 | `src/components/AuthGate.tsx` | restauration de session, mode hors ligne |
 | `src/services/authService.ts` | connexion, déconnexion, messages d'erreur en français |
 
-### 2.4 Paiement
+### 2.4 Gestion (palier 2 et 3)
+
+| Fichier | Rôle |
+| --- | --- |
+| `src/pages/Catalogue.tsx` + `src/services/catalogService.ts` | prestations, tarifs, prix historisé |
+| `src/pages/Caisse.tsx` + `src/services/cashService.ts` | encaissements, solde, clôture |
+| `src/pages/Receipt.tsx` | reçu 80 mm |
+| `src/pages/Clients.tsx` + `src/services/customerService.ts` | fiche par téléphone, historique local, coordonnées serveur |
+| `src/pages/Stock.tsx` + `src/services/stockService.ts` | articles, seuils, mouvements, fournisseurs |
+| `src/pages/Depenses.tsx` + `src/services/expenseService.ts` | dépenses catégorisées (propriétaire) |
+| `src/pages/TableauDeBord.tsx` + `src/services/dashboardService.ts` | agrégats locaux, compléments serveur |
+| `src/lib/permissions.ts` | 14 capacités, matrice propriétaire / réceptionniste / artisan |
+
+### 2.5 Paiement
 
 | Fichier | Rôle |
 | --- | --- |
@@ -89,7 +114,7 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `supabase/functions/_shared/cinetpay.ts` | client HTTP, signature, vérification, arrondi |
 | `src/services/paymentService.ts` | appel de la fonction, redirection, lecture du statut |
 
-### 2.5 Outillage
+### 2.6 Outillage
 
 | Fichier | Rôle |
 | --- | --- |
@@ -106,8 +131,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 Analyse de reachability depuis `src/main.tsx`, imports statiques **et** différés
 (`React.lazy`) inclus :
 
-- 32 fichiers atteignables ;
-- 6 fichiers de test (exécutés par Vitest, non importés) ;
+- 56 fichiers atteignables (tous les écrans `lazy` compris) ;
+- 9 fichiers de test sous `src/` (exécutés par Vitest, non importés) ;
 - 1 fichier de déclarations de types (`src/vite-env.d.ts`).
 
 **Aucun composant, service ou utilitaire orphelin.** Les seuls fichiers non
@@ -124,11 +149,11 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 | Reçus imprimables, clôture de caisse | **Livré** — reçu 80 mm, clôture quotidienne, remboursements déduits | Fait |
 | Workflow complet (tri, séchage, contrôle qualité) | **Livré** — 8 étapes, transitions contrôlées, attribution, réclamations | Fait |
 | Date de livraison promise, alertes de retard | **Livré** — `orders.due_date`, badge « En retard » | Fait |
-| Clients (fiche, historique) | Absent — nom et téléphone sont recopiés sur chaque commande | Palier 3 |
-| Stocks, fournisseurs, dépenses | Absent | Palier 3 |
-| Tableau de bord propriétaire | Absent | Palier 3 |
+| Clients (fiche, historique) | **Livré** — fiche par téléphone, historique, total dépensé, coordonnées | Fait |
+| Stocks, fournisseurs, dépenses | **Livré** — articles, seuils, grand livre immuable, fournisseurs, dépenses propriétaire | Fait |
+| Tableau de bord propriétaire | **Livré** — activité, chiffre d'affaires, encours, retards, alertes, dépenses | Fait |
 | Abonnement, multi-boutiques | Absent | Palier 4 |
-| Navigation et actions par rôle | Absent — rôle stocké mais non exploité | Palier 1 |
+| Navigation et actions par rôle | **Livré** — 14 capacités, navigation filtrée, garde-fou SQL | Fait |
 | Verrou optimiste sur les commandes | Absent — `upsert` sans `version` | Palier 1 |
 | Journal d'audit des actions sensibles | Absent | Palier 1 |
 | Intégration continue | **Ajoutée** au palier 0 | Fait |
@@ -167,9 +192,9 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | --- | --- | --- |
 | Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 179 tests : QR, synchronisation, rôles, caisse, soldes, retard, langue, création de commande, isolation statique, configuration, provisionnement |
-| Build | `npm run build` | compilation TypeScript + PWA (précache 41 fichiers) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`005`, jeu de démonstration, 76 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements) sur un PostgreSQL 16 jetable |
+| Tests | `npm test` | 203 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, langue, création de commande, isolation statique, configuration, provisionnement |
+| Build | `npm run build` | compilation TypeScript + PWA (précache 72 fichiers, 1 331 KiB) |
+| SQL réel | `npm run sql:verify` | migrations `001`→`006`, jeu de démonstration, 93 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`
@@ -180,6 +205,11 @@ Il ne demande ni Supabase ni Docker ; seul `psql` 15+ est nécessaire.
 Supabase, Edge Functions déployées, webhook CinetPay de bout en bout,
 comportement sur tablette Android physique, relecture multi-appareil des
 réclamations et des remboursements (seul l'état des commandes est rapatrié).
+
+Les modules du palier 3 ont une limite supplémentaire **assumée** : le stock et
+les dépenses sont des écrans de bureau, utilisables **en ligne** uniquement.
+L'historique client, lui, reste consultable hors ligne car il est dérivé des
+commandes locales.
 
 ---
 
