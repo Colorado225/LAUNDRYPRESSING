@@ -29,6 +29,7 @@ import ConflictBanner from '@/components/ConflictBanner'
 import CashPanel from '@/components/CashPanel'
 import AssignmentPanel from '@/components/AssignmentPanel'
 import IssuePanel from '@/components/IssuePanel'
+import NotifyPanel from '@/components/NotifyPanel'
 import { useState } from 'react'
 
 /**
@@ -217,6 +218,9 @@ export default function OrderDetail() {
 
       {/* Réclamations et vêtements abîmés */}
       <IssuePanel order={order} items={items} />
+
+      {/* Prévenir le client : WhatsApp ou appel, message pré-rempli */}
+      <NotifyPanel order={order} />
 
       {/* Caisse : espèces, acompte, solde et reçu */}
       {seeAmounts && <CashPanel order={order} autoOpen={reglerMaintenant} />}

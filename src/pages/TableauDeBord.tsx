@@ -15,7 +15,12 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react'
-import { useAllCashPayments, useAllLocalItems, useLocalOrders } from '@/db/hooks'
+import {
+  useAllCashPayments,
+  useAllLocalItems,
+  useLocalOrders,
+  useRecentNotifications,
+} from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
 import { formatDateFr, formatFcfa } from '@/lib/formatters'
@@ -29,6 +34,7 @@ import {
 } from '@/services/dashboardService'
 import { ORDER_STATUSES } from '@/constants/orders'
 import { shortOrderReference } from '@/services/qrService'
+import { MOTIFS, clientsAPrevenir } from '@/lib/notifications'
 import { isLowStock, listStockItems, STOCK_UNIT_LABELS } from '@/services/stockService'
 import { sumExpensesSince, sumMobileMoneySince } from '@/services/expenseService'
 import type { StockItemRow } from '@/types/database'
@@ -49,6 +55,8 @@ export default function TableauDeBord() {
   const orders = useLocalOrders()
   const items = useAllLocalItems()
   const cashPayments = useAllCashPayments()
+  const notifications = useRecentNotifications()
+  const pressing = useTenantStore((state) => state.tenantName)
 
   const [stock, setStock] = useState<StockItemRow[]>([])
   const [depensesMois, setDepensesMois] = useState<number | null>(null)
@@ -107,6 +115,10 @@ export default function TableauDeBord() {
   }
 
   const alertes = stock.filter(isLowStock)
+  const aPrevenir = clientsAPrevenir(orders ?? [], notifications, {
+    today: snapshot.today,
+    pressing: pressing ?? '',
+  }).slice(0, 5)
   const dernieres = recentOrders(orders ?? [], 5)
   const maximumSerie = Math.max(1, ...snapshot.series.map((point) => point.cash))
 
@@ -232,6 +244,56 @@ export default function TableauDeBord() {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      {/* À prévenir : le geste le plus rentable de la journée. Une commande
+          prête que le client ignore immobilise le rayon et l'argent. */}
+      <section className="rounded-2xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+            À prévenir
+            {aPrevenir.length > 0 && (
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                {aPrevenir.length}
+              </span>
+            )}
+          </h2>
+        </div>
+
+        {aPrevenir.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-slate-500 sm:px-5">
+            Personne à prévenir : tous les clients concernés ont été joints depuis le dernier
+            changement.
+          </p>
+        ) : (
+          <ul className="mt-2 divide-y divide-slate-100">
+            {aPrevenir.map((proposition) => (
+              <li
+                key={proposition.order.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800">
+                    {proposition.order.customerName}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {shortOrderReference(proposition.order.id)} · {MOTIFS[proposition.motif].label}
+                    {proposition.order.dueDate
+                      ? ` · prévue le ${formatDateFr(proposition.order.dueDate)}`
+                      : ''}
+                  </p>
+                </div>
+                <Link
+                  to={`/commandes/${proposition.order.id}`}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Prévenir
+                  <ArrowRight size={15} aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

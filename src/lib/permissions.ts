@@ -24,6 +24,8 @@ import type { TenantRole } from '@/types/database'
  *    propriétaire crée les articles, les fournisseurs et les dépenses ;
  *  - le **tableau de bord** est réservé au propriétaire : il expose la
  *    trésorerie du pressing ;
+ *  - **prévenir le client** appartient au comptoir (propriétaire et
+ *    réceptionniste) : c'est un geste commercial, pas une décision de gestion ;
  *  - l'**abonnement** se consulte chez le propriétaire ; le **support** est
  *    ouvert au comptoir, qui constate les pannes matérielles les premiers ;
  *  - le **journal d'audit** est réservé au propriétaire : il expose qui a
@@ -47,6 +49,7 @@ export type Capability =
   | 'support.contact'
   | 'subscription.view'
   | 'audit.view'
+  | 'notifications.send'
   | 'amounts.view'
   | 'tenant.manage'
 
@@ -67,6 +70,7 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'support.contact',
     'subscription.view',
     'audit.view',
+    'notifications.send',
     'amounts.view',
     'tenant.manage',
   ],
@@ -79,6 +83,7 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'customers.manage',
     'stock.move',
     'support.contact',
+    'notifications.send',
     'amounts.view',
   ],
   artisan: ['orders.updateStatus'],
