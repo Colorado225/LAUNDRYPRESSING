@@ -51,6 +51,8 @@ export type OrderRow = {
   created_at: string
   updated_at: string
   synced_from_local: boolean
+  /** Verrou optimiste : incrémenté par trigger à chaque changement métier. */
+  version: number
 }
 
 export type OrderItemRow = {
@@ -68,6 +70,10 @@ export type OrderStatusHistoryRow = {
   order_id: string
   tenant_id: string
   status: OrderStatus
+  /** Statut précédent, renseigné par le trigger depuis la migration 003. */
+  previous_status: OrderStatus | null
+  /** Motif éventuel d'une dérogation (annulation, correction). */
+  reason: string | null
   changed_by: string | null
   changed_at: string
 }
@@ -132,6 +138,7 @@ export interface Database {
           | 'created_at'
           | 'updated_at'
           | 'synced_from_local'
+          | 'version'
         >
         Update: Partial<Omit<OrderRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -144,7 +151,10 @@ export interface Database {
       }
       order_status_history: {
         Row: OrderStatusHistoryRow
-        Insert: InsertOf<OrderStatusHistoryRow, 'id' | 'changed_by' | 'changed_at'>
+        Insert: InsertOf<
+          OrderStatusHistoryRow,
+          'id' | 'previous_status' | 'reason' | 'changed_by' | 'changed_at'
+        >
         Update: Partial<Omit<OrderStatusHistoryRow, 'id' | 'tenant_id'>>
         Relationships: []
       }

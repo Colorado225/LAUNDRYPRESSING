@@ -34,8 +34,20 @@ export interface LocalOrder {
   updatedAt: string
   synced: SyncFlag
   syncedAt: string | null
+  /**
+   * Version connue côté serveur (0 tant que la commande n'a jamais été
+   * synchronisée). Sert de jeton au verrou optimiste : une mise à jour n'est
+   * acceptée que si le serveur est toujours à cette version.
+   */
+  serverVersion: number
   /** Dernière erreur de synchronisation, affichée dans le bandeau d'état. */
   syncError: string | null
+  /**
+   * Renseigné quand le serveur a refusé une mise à jour parce que la commande
+   * avait été modifiée ailleurs. La commande reste en file et n'est plus
+   * renvoyée tant que l'utilisateur n'a pas choisi quelle version garder.
+   */
+  syncConflict: string | null
 }
 
 /** Vêtement d'une commande. */
@@ -90,6 +102,28 @@ export class PressingDatabase extends Dexie {
     this.version(2).stores({
       orders: 'id, tenantId, status, synced, createdAt, qrCode, [tenantId+status], [tenantId+synced]',
     })
+
+    // v3 (palier 1) : verrou optimiste et marqueur de conflit. Aucun index
+    // nouveau — ces champs ne servent pas de critère de requête — mais les
+    // enregistrements existants doivent recevoir une valeur par défaut, sinon
+    // `serverVersion` resterait `undefined` et la première mise à jour
+    // partirait avec un jeton invalide.
+    this.version(3)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table('orders')
+          .toCollection()
+          .modify((order: LocalOrder & Record<string, unknown>) => {
+            // Une commande déjà synchronisée existait forcément côté serveur
+            // en version ≥ 1 ; on suppose 1, et un éventuel décalage sera
+            // détecté comme un conflit à la première mise à jour.
+            if (order.serverVersion === undefined) {
+              order.serverVersion = order.synced === 1 ? 1 : 0
+            }
+            if (order.syncConflict === undefined) order.syncConflict = null
+          })
+      })
   }
 }
 

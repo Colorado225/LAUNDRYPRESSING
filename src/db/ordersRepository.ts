@@ -57,7 +57,9 @@ export async function createOrderLocal(
     // Une commande neuve n'existe pas encore côté serveur.
     synced: 0,
     syncedAt: null,
+    serverVersion: 0,
     syncError: null,
+    syncConflict: null,
   }
 
   await db.transaction('rw', db.orders, db.orderItems, async () => {
@@ -89,6 +91,8 @@ export async function updateOrderStatusLocal(
     updatedAt: nowIso(),
     synced: 0,
     syncError: null,
+    // Un changement local ne résout pas un conflit : il le laisse ouvert.
+    syncConflict: existing.syncConflict ?? null,
   }
 
   await db.orders.put(updated)
@@ -113,15 +117,49 @@ export async function countPendingOrders(tenantId: string): Promise<number> {
   return db.orders.where('[tenantId+synced]').equals([tenantId, 0]).count()
 }
 
-/** Marque une commande comme synchronisée avec succès. */
-export async function markOrderSynced(orderId: string): Promise<void> {
+/** Marque une commande comme synchronisée et mémorise la version serveur. */
+export async function markOrderSynced(orderId: string, serverVersion: number): Promise<void> {
   const syncedAt = nowIso()
-  await db.orders.update(orderId, { synced: 1 satisfies SyncFlag, syncedAt, syncError: null })
+  await db.orders.update(orderId, {
+    synced: 1 satisfies SyncFlag,
+    syncedAt,
+    serverVersion,
+    syncError: null,
+    syncConflict: null,
+  })
+}
+
+/** Mémorise la version serveur sans marquer la commande comme synchronisée. */
+export async function updateOrderServerVersion(orderId: string, version: number): Promise<void> {
+  await db.orders.update(orderId, { serverVersion: version })
 }
 
 /** Conserve la commande en file et mémorise la raison de l'échec. */
 export async function markOrderSyncError(orderId: string, message: string): Promise<void> {
   await db.orders.update(orderId, { synced: 0, syncError: message })
+}
+
+/**
+ * Le serveur a refusé la mise à jour : la commande a été modifiée ailleurs.
+ * On conserve la version locale intacte et on arrête les tentatives jusqu'à ce
+ * que l'utilisateur choisisse (voir `orderConflictService`).
+ */
+export async function markOrderSyncConflict(orderId: string, message: string): Promise<void> {
+  await db.orders.update(orderId, { synced: 0, syncError: message, syncConflict: message })
+}
+
+/** Rouvre une commande après arbitrage d'un conflit (jeton serveur à jour). */
+export async function reopenOrderForSync(
+  orderId: string,
+  serverVersion: number | null,
+): Promise<void> {
+  const patch: Partial<LocalOrder> = {
+    synced: 0,
+    syncConflict: null,
+    syncError: null,
+  }
+  if (serverVersion !== null) patch.serverVersion = serverVersion
+  await db.orders.update(orderId, patch)
 }
 
 /** Récupère les vêtements d'une commande (usage interne au moteur de synchro). */
@@ -149,6 +187,9 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
     updated_at: order.updatedAt,
     // Trace explicite : la ligne provient du mode hors ligne.
     synced_from_local: true,
+    // À l'insertion, la version serveur est 1 ; en mise à jour, le trigger
+    // `bump_order_version` écrase cette valeur, elle n'est donc qu'indicative.
+    version: order.serverVersion > 0 ? order.serverVersion : 1,
   }
 }
 
