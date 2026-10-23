@@ -128,15 +128,22 @@ la seconde n'existe que pour ne pas bloquer le développement.
 npm run dev
 ```
 
-Ouvrir <http://localhost:5173>. Au premier lancement, l'application demande
-l'**identifiant du pressing** (UUID) : c'est un écran temporaire, la connexion
-Supabase Auth arrivant en phase 5. Utilisez l'UUID créé par `supabase/seed.sql` :
+Ouvrir <http://localhost:5173>.
+
+Au premier lancement, l'application affiche l'**écran de connexion**.
+
+- **Supabase configuré** : se connecter avec l'e-mail et le mot de passe du compte
+  créé en §3.4. Le pressing est déduit de `tenant_users` — aucun UUID n'est saisi.
+- **Supabase non configuré** : l'écran bascule en **mode démonstration** et demande
+  l'identifiant du pressing. Utilisez celui de `supabase/seed.sql` :
 
 ```text
 11111111-1111-4111-8111-111111111111
 ```
 
-ou définissez `VITE_DEMO_TENANT_ID` dans `.env` pour le pré-remplir.
+ou définissez `VITE_DEMO_TENANT_ID` dans `.env` pour le pré-remplir. Ce mode
+permet de tester l'offline-first sans backend, mais **ne vérifie aucun mot de
+passe** : il est inutilisable en production.
 
 ---
 
@@ -174,16 +181,18 @@ pas en `npm run dev`).
 │   ├── index.css                 # thème Tailwind v4 (@theme) + styles d'impression
 │   ├── components/
 │   │   ├── AppLayout.tsx         # en-tête, navigation, bandeau de synchro
+│   │   ├── AuthGate.tsx          # restauration de session + garde d'accès
 │   │   ├── OfflineBadge.tsx      # vert / orange / rouge + envoi manuel
 │   │   ├── PaymentButton.tsx     # bouton Mobile Money + badges opérateurs
 │   │   ├── QrCodeDisplay.tsx     # étiquette 80 mm imprimable
-│   │   ├── QrScanner.tsx         # scan caméra (html5-qrcode)
-│   │   └── TenantGate.tsx        # sélection du pressing (temporaire, phase 5)
+│   │   └── QrScanner.tsx         # scan caméra (html5-qrcode)
 │   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
 │   ├── db/
 │   │   ├── localDb.ts            # schéma Dexie (orders, orderItems, pendingPayments)
 │   │   ├── ordersRepository.ts   # CRUD local + mapping Supabase
 │   │   └── hooks.ts              # useLocalOrders, useCreateOrder, useUpdateOrderStatus
+│   ├── hooks/
+│   │   └── useAndroidBackButton.ts # bouton Retour Android (sentinelle d'historique)
 │   ├── lib/
 │   │   ├── env.ts                # lecture des variables d'environnement
 │   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
@@ -191,12 +200,15 @@ pas en `npm run dev`).
 │   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
 │   │   └── ids.ts                # UUID côté client + code QR
 │   ├── pages/
+│   │   ├── Login.tsx             # connexion Supabase Auth (+ mode démonstration)
+│   │   ├── Offline.tsx           # écran de repli hors ligne
 │   │   ├── Orders.tsx            # liste (recherche + filtres)
 │   │   ├── OrderForm.tsx         # création hors ligne
 │   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
 │   │   ├── PaymentReturn.tsx     # retour CinetPay (lecture seule)
 │   │   └── Atelier.tsx           # scan QR → changement de statut
 │   ├── services/
+│   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
 │   │   └── qrService.ts          # génération / analyse des codes QR
 │   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
@@ -212,6 +224,8 @@ pas en `npm run dev`).
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
 │   └── seed.sql                  # jeu de démonstration (2 pressings)
+├── docs/
+│   └── USER_GUIDE.md             # parcours réceptionniste / artisan / propriétaire
 ├── AUDIT.md                      # rapport de la phase 0
 ├── BACKLOG.md                    # fonctionnalités explicitement hors périmètre
 └── RESTRUCTURATION.md            # cahier des charges du MVP
@@ -520,6 +534,100 @@ automatiquement par Supabase — ne pas les définir manuellement.
 
 ---
 
+## 7quinquies. PWA, connexion et ergonomie tablette (phase 5)
+
+### Installation
+
+Le manifeste est généré par `vite-plugin-pwa` à partir de `vite.config.ts` :
+nom, `short_name`, icônes **192 px**, **512 px** et **maskable**, `display:
+standalone`, `theme_color` navy, `id` stable (sans quoi Chrome considère un
+changement d'URL comme une autre application) et deux **raccourcis** d'appui long
+(« Nouvelle commande », « Atelier »).
+
+L'installation n'est proposée qu'en production ou en aperçu : en `npm run dev`,
+le service worker est désactivé. Sur Android, elle passe par
+**⋮ → Installer l'application**.
+
+> ⚠️ **Choix assumé.** Pas de service worker en développement : il servirait des
+> fichiers périmés et rendrait le rechargement à chaud incompréhensible. Le test
+> d'installation se fait donc sur `npm run build && npm run preview`.
+
+### Écran hors ligne
+
+`/offline` n'est pas un simple message d'erreur : il rappelle ce qui reste
+utilisable sans réseau, ce qui exige une connexion, et affiche le nombre de
+commandes en attente. Il est accessible par le lien **Aide** qui apparaît à côté
+du badge orange.
+
+Il n'y a **pas** de `offline.html` statique : la coquille de l'application est
+précachée par Workbox, donc `index.html` est toujours disponible hors ligne. Un
+fichier de secours séparé n'aurait été servi qu'avant la première visite — c'est-
+à-dire jamais, puisque rien n'aurait été mis en cache.
+
+### Bouton « Retour » Android
+
+En PWA installée, Android ne « ferme » pas la page comme un onglet : sans
+historique, il quitte l'application brutalement, au milieu d'une saisie.
+
+`useAndroidBackButton` pousse une **sentinelle** dans l'historique au démarrage :
+
+1. un appui depuis un écran interne remonte normalement ;
+2. arrivé à la sentinelle, un message « Appuyez à nouveau sur Retour » s'affiche ;
+3. un second appui en moins de **2 s** laisse Android fermer l'application.
+
+La sentinelle est poussée via `navigate()` et non `history.pushState` brut :
+react-router conserve ainsi ses index internes et les boutons précédent/suivant du
+navigateur continuent de fonctionner.
+
+### Connexion
+
+`AuthGate` remplace l'ancien écran de sélection d'UUID. Trois chemins :
+
+| Situation | Comportement |
+| --- | --- |
+| Session valide en cache | Ouverture directe, **y compris hors ligne** |
+| Aucune session | Écran `Login` (e-mail + mot de passe) |
+| Supabase non configuré | `Login` en mode démonstration (UUID), avec avertissement |
+
+Le pressing n'est jamais saisi : il est lu dans `tenant_users` pour l'utilisateur
+connecté. Un compte valide mais non rattaché est **immédiatement déconnecté** avec
+un message explicite.
+
+**Pourquoi ignorer `SIGNED_OUT` hors ligne ?** Un rafraîchissement de jeton qui
+échoue faute de réseau émet parfois cet événement. Déconnecter la tablette à ce
+moment-là priverait l'atelier de toutes ses commandes locales — exactement le
+scénario que l'offline-first doit couvrir. L'événement n'est donc traité que si le
+réseau est présent ; la RLS bloque de toute façon toute requête tant que le jeton
+n'est pas rafraîchi.
+
+**Déconnexion.** Le bouton **Quitter** demande confirmation (tablette partagée).
+Les données Dexie ne sont **pas** effacées : elles peuvent contenir des commandes
+non synchronisées, et les écrans filtrent par `tenantId`, donc aucun autre
+pressing ne les voit.
+
+### Ergonomie tablette
+
+- Toutes les actions tactiles font **au moins 48 px** de haut (`min-h-12`) :
+  filtres, liens de retour, boutons de scan, bouton de synchronisation.
+- Les champs de saisie passent en `text-base` : lisibles à bout de bras, au
+  comptoir.
+- Chaque survol (`hover:`) est doublé d'un état `active:` : sur un écran tactile,
+  `hover` ne se déclenche jamais.
+- Contrastes : texte `slate-600` minimum sur fond blanc ; les états ne reposent
+  jamais sur la seule couleur (icône + libellé).
+
+### Limites connues de cette phase
+
+- Pas de réinitialisation de mot de passe par e-mail (reporté en V2, `BACKLOG.md`).
+- Un utilisateur = un pressing : `resolveTenantForUser` retient le premier
+  rattachement. Le sélecteur multi-pressing est en V2.
+- Le rôle est affiché mais ne restreint pas encore la navigation : un artisan voit
+  l'onglet comptoir. La RLS empêche en revanche toute écriture non autorisée.
+- Le critère « installation sur téléphone Android » n'a pas pu être rejoué dans
+  cet environnement (pas de terminal Android) : à valider sur l'appareil cible.
+
+---
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`AUDIT.md`)
@@ -527,7 +635,7 @@ automatiquement par Supabase — ne pas les définir manuellement.
 - [x] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
 - [x] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
 - [x] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
-- [ ] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
+- [x] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
 - [ ] **Phase 6** — QA (Vitest, Lighthouse, test d'isolation, CHANGELOG, tag `v0.1.0-mvp`)
 
 ---

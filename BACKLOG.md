@@ -42,6 +42,10 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Synchronisation temps réel entre appareils (Realtime) | Le MVP synchronise à la demande et au retour du réseau. |
 | Import / export CSV | Hors périmètre. |
 | Journal d'audit consultable dans l'interface | Les données existent (`order_status_history`) mais l'écran est reporté. |
+| Réinitialisation du mot de passe par e-mail | En MVP, le propriétaire recrée un mot de passe depuis Supabase. Un flux « mot de passe oublié » demande un écran dédié et un modèle d'e-mail personnalisé. |
+| Sélecteur multi-pressing | `resolveTenantForUser` retient le premier rattachement ; un utilisateur ne gère qu'une boutique en V1. |
+| Navigation restreinte par rôle | Le rôle est affiché mais tous les onglets restent visibles ; la RLS bloque déjà les écritures interdites. |
+| Verrouillage de la tablette après inactivité | Utile pour un appareil partagé en atelier : nécessite une gestion de session avancée. |
 
 ## 4. Marquage QR
 
