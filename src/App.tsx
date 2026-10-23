@@ -44,6 +44,7 @@ const Support = lazy(() => import('@/pages/Support'))
 const Supervision = lazy(() => import('@/pages/Supervision'))
 const Rapports = lazy(() => import('@/pages/Rapports'))
 const Parametres = lazy(() => import('@/pages/Parametres'))
+const Audit = lazy(() => import('@/pages/Audit'))
 const Reinitialisation = lazy(() => import('@/pages/Reinitialisation'))
 
 export default function App() {
@@ -113,6 +114,7 @@ function RootRoutes() {
             <Route path="/support" element={<Support />} />
             <Route path="/supervision" element={<Supervision />} />
             <Route path="/parametres" element={<Parametres />} />
+            <Route path="/audit" element={<Audit />} />
             <Route path="/commandes/:orderId/recu" element={<Receipt />} />
             <Route path="/commandes/:orderId/facture" element={<Facture />} />
             <Route path="/offline" element={<Offline />} />

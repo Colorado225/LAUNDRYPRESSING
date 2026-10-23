@@ -6,6 +6,7 @@ import {
   Building2,
   ClipboardList,
   CreditCard,
+  History,
   LayoutDashboard,
   LifeBuoy,
   LogOut,
@@ -93,6 +94,10 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
 
   if (can(role, 'subscription.view')) {
     items.push({ to: '/abonnement', label: 'Abonnement', icon: CreditCard })
+  }
+
+  if (can(role, 'audit.view')) {
+    items.push({ to: '/audit', label: 'Journal d’audit', icon: History })
   }
 
   if (can(role, 'support.contact')) {

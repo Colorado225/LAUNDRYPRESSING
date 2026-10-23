@@ -28,6 +28,7 @@ const EXPECTED: Record<TenantRole, Capability[]> = {
     'dashboard.view',
     'support.contact',
     'subscription.view',
+    'audit.view',
     'amounts.view',
     'tenant.manage',
   ],
@@ -60,6 +61,7 @@ const ALL: Capability[] = [
   'dashboard.view',
   'support.contact',
   'subscription.view',
+  'audit.view',
   'amounts.view',
   'tenant.manage',
 ]
