@@ -42,7 +42,7 @@ désormais l'intégralité du périmètre de l'audit.
   proche, de grâce ou de lecture seule.
 - **Installation** : `PLATFORM_ADMIN=true` dans `.env` inscrit le compte
   propriétaire dans `platform_admins` au moment de `npm run setup`.
-- **Tests** : 18 nouveaux tests (221 au total) et 28 contrôles SQL
+- **Tests** : 19 nouveaux tests (222 au total) et 28 contrôles SQL
   supplémentaires (123 au total).
 
 ### Décisions

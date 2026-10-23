@@ -209,7 +209,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (221 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, abonnement, langue, isolation, installation) |
+| `npm test` | Suite Vitest complète (222 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, abonnement, langue, isolation, installation) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
