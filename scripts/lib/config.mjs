@@ -130,6 +130,13 @@ export function buildConfig(values) {
       email: optional('SEED_OWNER_EMAIL'),
       password: optional('SEED_OWNER_PASSWORD'),
     },
+
+    /**
+     * Compte de supervision (palier 4). Facultatif : `true` inscrit le compte
+     * propriétaire créé ci-dessus dans `platform_admins`, ce qui ouvre la
+     * console `/supervision`. À réserver à l'éditeur de la plateforme.
+     */
+    platformAdmin: read('PLATFORM_ADMIN').toLowerCase() === 'true',
     tenant: {
       name: optional('SEED_TENANT_NAME') || 'Mon pressing',
       phone: optional('SEED_TENANT_PHONE'),

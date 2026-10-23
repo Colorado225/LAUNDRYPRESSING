@@ -330,6 +330,7 @@ export async function stepAccount(config) {
     info(`POST ${base}/rest/v1/tenants`)
     info(`POST ${base}/auth/v1/admin/users`)
     info(`POST ${base}/rest/v1/tenant_users`)
+    if (config.platformAdmin) info(`POST ${base}/rest/v1/platform_admins`)
     info('(ignoré : --dry-run)')
     return { tenantId: '(simulé)', userId: '(simulé)' }
   }
@@ -442,6 +443,28 @@ export async function stepAccount(config) {
       throw new Error(`Rattachement impossible (HTTP ${link.status}).`)
     }
     ok('Compte rattaché au pressing (rôle propriétaire)')
+  }
+
+  // --- Supervision de la plateforme (facultatif) ---------------------------
+  // `platform_admins` n'a aucune politique RLS : seule la clé service_role
+  // peut l'écrire, d'où ce passage par l'API REST d'administration.
+  if (config.platformAdmin) {
+    const admin = await request(`${base}/rest/v1/platform_admins?on_conflict=user_id`, {
+      method: 'POST',
+      key,
+      body: { user_id: userId, display_name: 'Éditeur' },
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    })
+
+    if (!admin.ok) {
+      // La table n'existe pas encore si 007 n'a pas été appliquée : on le dit
+      // sans faire échouer l'installation du pressing.
+      warn(
+        `Compte éditeur non enregistré (HTTP ${admin.status}). Appliquez 007_palier4.sql puis relancez.`,
+      )
+    } else {
+      ok('Compte éditeur autorisé sur la console de supervision')
+    }
   }
 
   return { tenantId, userId }
