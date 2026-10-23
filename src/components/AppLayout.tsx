@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { ClipboardList, PlusCircle, Shirt } from 'lucide-react'
+import { ClipboardList, PlusCircle, ScanLine, Shirt } from 'lucide-react'
 import OfflineBadge from './OfflineBadge'
 import { useTenantStore } from '@/lib/tenantContext'
 
@@ -47,6 +47,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <NavLink to="/commandes/nouvelle" className={navLinkClass}>
             <PlusCircle size={18} aria-hidden />
             Nouvelle commande
+          </NavLink>
+          <NavLink to="/atelier" className={navLinkClass}>
+            <ScanLine size={18} aria-hidden />
+            Atelier
           </NavLink>
         </nav>
       </header>
