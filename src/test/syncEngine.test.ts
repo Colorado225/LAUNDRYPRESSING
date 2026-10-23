@@ -90,6 +90,11 @@ vi.mock('@/lib/supabaseClient', () => {
       select: () => finish(),
       single: () => finish(),
       maybeSingle: () => finish(),
+      // Sans `then`, un `await supabase.from(...).insert(...)` renverrait le
+      // constructeur lui-même : `error` serait `undefined` et le test croirait
+      // à un succès. Le vrai client est « thenable ».
+      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+        Promise.resolve(finish()).then(resolve, reject),
     }
     return builder
   }
@@ -140,6 +145,7 @@ vi.mock('@/lib/supabaseClient', () => {
 })
 
 const { queueCashPayment } = await import('@/db/cashRepository')
+const { queueNotification } = await import('@/db/notificationRepository')
 const { syncPendingOrders } = await import('@/sync/syncEngine')
 
 function setOnline(online: boolean) {
@@ -168,6 +174,7 @@ beforeEach(async () => {
   remote.cashError = null
   remote.cashRemaining = 0
   await db.cashPayments.clear()
+  await db.notifications.clear()
   useTenantStore.setState({ tenantId: TENANT, tenantName: 'Pressing Cocody', role: 'owner' })
   useSyncStore.getState().reset()
   setOnline(true)
@@ -559,5 +566,75 @@ describe('syncPendingOrders — lecture des modifications distantes', () => {
     expect(result.pulled).toBe(0)
     const local = await db.orders.get(order.id)
     expect(local?.status).toBe('received')
+  })
+})
+
+describe('syncPendingOrders — clients prévenus', () => {
+  it('transmet le journal des sollicitations après les commandes', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    const notification = await queueNotification(TENANT, {
+      orderId: order.id,
+      channel: 'whatsapp',
+      reason: 'pret',
+      customerName: 'Awa Koné',
+      customerPhone: '+2250700000001',
+      message: 'Bonjour Awa, votre linge est prêt.',
+    })
+
+    remote.calls.length = 0
+    const result = await syncPendingOrders()
+
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toContain(
+      'notifications:insert',
+    )
+    expect(result.notificationsSucceeded).toBe(1)
+
+    const local = await db.notifications.get(notification.id)
+    expect(local?.synced).toBe(1)
+  })
+
+  it('considère un doublon comme déjà transmis au lieu de le renvoyer sans fin', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    const notification = await queueNotification(TENANT, {
+      orderId: order.id,
+      channel: 'appel',
+      reason: 'retard',
+      customerName: 'Awa Koné',
+      customerPhone: '+2250700000001',
+      message: 'Bonjour Awa, nous avons pris du retard.',
+    })
+
+    remote.calls.length = 0
+    remote.duplicateOnInsert = true
+
+    const result = await syncPendingOrders()
+
+    expect(result.notificationsSucceeded).toBe(1)
+    const local = await db.notifications.get(notification.id)
+    expect(local?.synced).toBe(1)
+  })
+
+  it('compte les notifications en attente dans le badge', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    await queueNotification(TENANT, {
+      orderId: order.id,
+      channel: 'whatsapp',
+      reason: 'pret',
+      customerName: 'Awa Koné',
+      customerPhone: '+2250700000001',
+      message: 'Bonjour Awa, votre linge est prêt.',
+    })
+
+    remote.failure = (table) => (table === 'notifications' ? 'Failed to fetch' : null)
+    const result = await syncPendingOrders()
+
+    expect(result.notificationsSucceeded).toBe(0)
+    expect(useSyncStore.getState().pendingCount).toBe(1)
   })
 })
