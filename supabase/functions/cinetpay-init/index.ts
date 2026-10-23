@@ -312,7 +312,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       .update({
         status: 'initiated',
         payment_url: result.paymentUrl,
-        provider_payload: { init: result.raw },
+        // `mode` accompagne la réponse du prestataire : un encaissement d'essai
+        // doit rester reconnaissable dans le registre, même des mois plus tard.
+        provider_payload: { init: result.raw, mode: config.mode },
       })
       .eq('transaction_id', transactionId)
 

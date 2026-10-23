@@ -266,6 +266,9 @@ function stepSecrets(config) {
     CINETPAY_SECRET_KEY: config.cinetpay.secretKey,
     CINETPAY_BASE_URL: config.cinetpay.baseUrl,
     CINETPAY_NOTIFY_URL: config.cinetpay.notifyUrl,
+    // Sans ce secret, l'Edge Function retombe sur « production » et refuse une
+    // clé d'essai : le mode doit voyager avec les identifiants.
+    CINETPAY_MODE: config.cinetpay.mode,
     APP_URL: config.appUrl,
     APP_ENV: config.appEnv,
   }).filter(([, value]) => Boolean(value))
@@ -579,6 +582,7 @@ function report(config) {
     ['SUPABASE_SERVICE_ROLE_KEY', redact(config.serviceRoleKey)],
     ['APP_URL', config.appUrl],
     ['CINETPAY_SITE_ID', config.cinetpay.siteId ?? '(non configuré)'],
+    ['CINETPAY_MODE', config.cinetpay.mode ?? 'production'],
     ['CINETPAY_SECRET_KEY', redact(config.cinetpay.secretKey)],
     ['Compte propriétaire', config.owner.email ?? '(non configuré)'],
   ]

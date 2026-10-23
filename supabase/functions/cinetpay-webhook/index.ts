@@ -84,9 +84,15 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return apiError('invalid_signature', 'Signature de la notification invalide.', 401)
     }
     signatureVerified = true
-  } else if (config.appEnv === 'development') {
+  } else if (config.appEnv === 'development' || config.mode === 'test') {
+    // Deux cas distincts, un même comportement : soit on développe sans clé
+    // secrète, soit on joue contre le simulateur ou un compte d'essai, qui ne
+    // signent pas leurs notifications. Dans les deux cas le statut reste
+    // reconfirmé auprès de l'API (point 3 ci-dessous), donc une notification
+    // forgée ne suffit pas à marquer une commande payée.
     console.warn(
-      '[cinetpay-webhook] CINETPAY_SECRET_KEY absent : mode développement, validation par l’API uniquement.',
+      '[cinetpay-webhook] notification non signée acceptée (mode %s) : statut reconfirmé auprès de l’API.',
+      config.mode === 'test' ? 'test' : 'développement',
     )
   } else {
     // Refus net plutôt que dégradation silencieuse : sans HMAC, une

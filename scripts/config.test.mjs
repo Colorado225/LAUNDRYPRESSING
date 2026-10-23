@@ -276,6 +276,58 @@ describe('validateConfig — avertissements non bloquants', () => {
   })
 })
 
+describe('validateConfig — mode essai CinetPay', () => {
+  it('vaut production par défaut', () => {
+    expect(buildConfig(VALID_ENV).cinetpay.mode).toBe('production')
+  })
+
+  it('accepte test, en avertissant que les paiements sont fictifs', () => {
+    const config = buildConfig({ ...VALID_ENV, CINETPAY_MODE: 'test' })
+    const { errors, warnings } = validateConfig(config)
+
+    expect(config.cinetpay.mode).toBe('test')
+    expect(errors).toEqual([])
+    expect(warnings.map((warning) => warning.key)).toContain('CINETPAY_MODE')
+  })
+
+  it('accepte la valeur en majuscules', () => {
+    expect(buildConfig({ ...VALID_ENV, CINETPAY_MODE: 'TEST' }).cinetpay.mode).toBe('test')
+  })
+
+  it('refuse une valeur inconnue', () => {
+    const { errors } = validateConfig(buildConfig({ ...VALID_ENV, CINETPAY_MODE: 'recette' }))
+
+    expect(errors.map((error) => error.key)).toContain('CINETPAY_MODE')
+  })
+
+  it('refuse une clé d’essai restée en mode production', () => {
+    // Le cas qui compte : un `.env` de recette recopié en production
+    // encaisserait des paiements fictifs sans que personne ne le voie.
+    const { errors } = validateConfig(
+      buildConfig({
+        ...VALID_ENV,
+        CINETPAY_API_KEY: 'simulateur-test-key',
+        CINETPAY_SITE_ID: '123456',
+      }),
+    )
+
+    expect(errors.map((error) => error.key)).toContain('CINETPAY_MODE')
+  })
+
+  it('accepte les identifiants du simulateur en mode test', () => {
+    const { errors } = validateConfig(
+      buildConfig({
+        ...VALID_ENV,
+        CINETPAY_MODE: 'test',
+        CINETPAY_API_KEY: 'simulateur-test-key',
+        CINETPAY_SITE_ID: '123456',
+      }),
+    )
+
+    expect(errors).toEqual([])
+  })
+})
+
 describe('isPlaceholder', () => {
   it('reconnaît les valeurs du fichier d’exemple', () => {
     expect(isPlaceholder('https://abcdefghijklmnop.supabase.co')).toBe(true)

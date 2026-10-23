@@ -124,6 +124,12 @@ export function buildConfig(values) {
       secretKey: optional('CINETPAY_SECRET_KEY'),
       baseUrl: optional('CINETPAY_BASE_URL'),
       notifyUrl,
+      /**
+       * `test` ou `production`. L'API Checkout v2 n'a pas d'hôte de bac à sable :
+       * le mode sert à refuser une clé d'essai en production et à marquer les
+       * transactions d'essai. Défaut `production` — même logique que `APP_ENV`.
+       */
+      mode: (read('CINETPAY_MODE') || 'production').toLowerCase(),
     },
 
     owner: {
@@ -255,6 +261,38 @@ export function validateConfig(config) {
         'Identifiants CinetPay absents : les commandes fonctionneront, mais le bouton « Payer par Mobile Money » restera inopérant.',
     })
   }
+  // --- Mode de paiement -----------------------------------------------------
+  if (!['test', 'production'].includes(config.cinetpay.mode)) {
+    errors.push({
+      key: 'CINETPAY_MODE',
+      message: 'Valeur attendue : « test » ou « production ».',
+    })
+  }
+
+  // Une clé d'essai en production encaisserait de faux paiements : on bloque
+  // ici plutôt que de laisser l'Edge Function échouer au premier client.
+  if (config.cinetpay.mode === 'production' && config.cinetpay.apiKey) {
+    const ressembleAEssai = /(test|demo|exemple|example|fake|dummy|simul)/i
+    if (
+      ressembleAEssai.test(config.cinetpay.apiKey.slice(0, 12)) ||
+      ressembleAEssai.test(String(config.cinetpay.siteId ?? ''))
+    ) {
+      errors.push({
+        key: 'CINETPAY_MODE',
+        message:
+          'Identifiants CinetPay d’essai détectés en mode production : passez CINETPAY_MODE=test, ou installez les identifiants réels.',
+      })
+    }
+  }
+
+  if (config.cinetpay.mode === 'test') {
+    warnings.push({
+      key: 'CINETPAY_MODE',
+      message:
+        'Mode essai : les paiements sont fictifs. Les transactions sont marquées « test » dans le registre.',
+    })
+  }
+
   if (config.cinetpay.apiKey && !config.cinetpay.secretKey) {
     if (config.appEnv === 'production') {
       // Refus bloquant : le webhook rejetterait de toute façon les
