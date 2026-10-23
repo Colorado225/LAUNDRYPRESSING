@@ -16,7 +16,7 @@ import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
  * Phase 5 : connexion Supabase (AuthGate), écran /offline, bouton Retour Android.
  * Palier 3 : tableau de bord, clients, stock et dépenses (écrans de gestion).
  * Palier 4 : abonnement, support et console de supervision de l'éditeur.
- * MVP : page Paramètres et réinitialisation du mot de passe.
+ * MVP : page Paramètres, réinitialisation du mot de passe et rapports (écran 11).
  *
  * Les écrans sont chargés à la demande (`React.lazy`) : la librairie de scan
  * (`html5-qrcode`) pèse à elle seule plusieurs centaines de kilo-octets et ne
@@ -40,6 +40,7 @@ const Depenses = lazy(() => import('@/pages/Depenses'))
 const Abonnement = lazy(() => import('@/pages/Abonnement'))
 const Support = lazy(() => import('@/pages/Support'))
 const Supervision = lazy(() => import('@/pages/Supervision'))
+const Rapports = lazy(() => import('@/pages/Rapports'))
 const Parametres = lazy(() => import('@/pages/Parametres'))
 const Reinitialisation = lazy(() => import('@/pages/Reinitialisation'))
 
@@ -102,6 +103,7 @@ function RootRoutes() {
             <Route path="/catalogue" element={<Catalogue />} />
             <Route path="/caisse" element={<Caisse />} />
             <Route path="/tableau-de-bord" element={<TableauDeBord />} />
+            <Route path="/rapports" element={<Rapports />} />
             <Route path="/clients" element={<Clients />} />
             <Route path="/stock" element={<Stock />} />
             <Route path="/depenses" element={<Depenses />} />

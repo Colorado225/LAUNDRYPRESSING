@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import {
+  BarChart3,
   Boxes,
   Building2,
   ClipboardList,
@@ -71,6 +72,7 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
 
   if (can(role, 'dashboard.view')) {
     items.push({ to: '/tableau-de-bord', label: 'Tableau de bord', icon: LayoutDashboard })
+    items.push({ to: '/rapports', label: 'Rapports', icon: BarChart3 })
   }
 
   if (can(role, 'customers.manage')) {
