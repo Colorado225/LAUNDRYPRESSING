@@ -27,10 +27,10 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Fonctions SQL | 32 (dont `create_tenant_for_user`,  `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
-| Scripts d'installation, de recette et de base | 5 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`) |
-| Fichiers de tests | 32 (26 sous `src/`, 4 pour les scripts, 2 fichiers SQL de tests) |
-| Tests automatisés | 442 |
-| Contrôles SQL exécutés | 123 (isolations, rôles, paliers 1 à 4) |
+| Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
+| Fichiers de tests | 32 Vitest (26 sous `src/`, 6 pour les scripts) + 10 fichiers SQL |
+| Tests automatisés | 477 |
+| Contrôles SQL exécutés | 167 (isolations, rôles, paliers 1 à 4, inscription, audit, recette réelle) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
 

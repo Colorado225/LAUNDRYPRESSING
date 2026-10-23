@@ -608,8 +608,12 @@ instance**. C'est fait, sur le projet Supabase de recette :
 | 23/10/2026 | MVP | Refonte visuelle de la page d'authentification (verre dépoli, halos animés, panneau photo) | `7b84d06` |
 | 23/10/2026 | MVP | Provisionnement réel du projet Supabase (migrations 001→008, `site_url`, révocation `anon`) | `9c8a33c` |
 | 23/10/2026 | 5 | Journal d'audit : table `audit_log`, 7 déclencheurs, écran `/audit`, 37 tests et 17 contrôles SQL | `7de1b1b` puis `0256577` |
-| 23/10/2026 | 1 | Recette réelle à deux pressings (`recette_reelle.sql`, 16 contrôles) exécutée sur le projet Supabase | à venir |
-| 23/10/2026 | MVP | Page de connexion : hauteur bornée, liseré d'accent, zoom lent de la photo, transition d'onglet | à venir |
+| 23/10/2026 | 1 | Recette réelle à deux pressings (`recette_reelle.sql`, 16 contrôles) exécutée sur le projet Supabase | `066fb6d` |
+| 23/10/2026 | MVP | Page de connexion : hauteur bornée, liseré d'accent, zoom lent de la photo, transition d'onglet | `1b10221` |
+| 23/10/2026 | MVP | Mode essai CinetPay (`CINETPAY_MODE`), refus d'une clé d'essai en production, 6 tests | `f4541a1` |
+| 23/10/2026 | MVP | Simulateur CinetPay local (`npm run simulateur`) : guichet, notification HMAC, redirection, 15 tests | `55071bd` |
+| 23/10/2026 | MVP | Assemblage et déploiement des Edge Functions sans CLI (`npm run deploy:fonctions`), 14 tests | `b90369b` |
+| 23/10/2026 | MVP | `docs/DEPLOIEMENT-FONCTIONS.md`, CHANGELOG 0.12.0 (477 tests, 167 contrôles SQL) | `dda26c0` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.
