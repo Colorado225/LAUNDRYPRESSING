@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Banknote, CloudOff, Loader2, Printer, ReceiptText, Undo2, Wifi } from 'lucide-react'
+import { Banknote, CloudOff, FileText, Loader2, Printer, ReceiptText, Undo2, Wifi } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCashPayments, useOrderRefunds, useQueueCashPayment } from '@/db/hooks'
 import type { LocalOrder } from '@/db/localDb'
@@ -129,13 +129,22 @@ export default function CashPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Encaissement</h2>
 
-        <Link
-          to={`/commandes/${order.id}/recu`}
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
-        >
-          <Printer size={14} aria-hidden />
-          Reçu
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/commandes/${order.id}/recu`}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
+          >
+            <Printer size={14} aria-hidden />
+            Reçu
+          </Link>
+          <Link
+            to={`/commandes/${order.id}/facture`}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
+          >
+            <FileText size={14} aria-hidden />
+            Facture
+          </Link>
+        </div>
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
