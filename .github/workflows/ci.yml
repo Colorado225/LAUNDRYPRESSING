@@ -1,0 +1,64 @@
+# Intégration continue — Pressing Pro
+#
+# Objectif : aucun commit ne peut être fusionné dans `main` si les types, le
+# style, les tests ou le build échouent.
+#
+# Choix techniques :
+#  - `npm ci` (et non `npm install`) : installation strictement conforme à
+#    `package-lock.json`, reproductible, et échec immédiat si le verrou est
+#    désynchronisé de `package.json` ;
+#  - Node 22 : même version majeure que le poste de développement ;
+#  - un seul job : chaque étape est courte, et réinstaller les dépendances dans
+#    plusieurs jobs coûterait plus cher que de les enchaîner ;
+#  - `concurrency` : une nouvelle poussée annule la vérification précédente de
+#    la même branche, inutile dès qu'elle est obsolète.
+#
+# ⚠ Ce workflow ne remplace pas les vérifications qui exigent un vrai projet
+#   Supabase (migrations, RLS, webhook CinetPay) : elles restent manuelles et
+#   sont décrites dans docs/AUDIT-COURANT.md §6.
+
+name: Intégration continue
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualite:
+    name: Types, style, tests et build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier les types
+        run: npm run typecheck
+
+      - name: Vérifier le style
+        run: npm run lint
+
+      - name: Exécuter les tests
+        run: npm test
+
+      - name: Construire l'application
+        run: npm run build
