@@ -1,243 +1,816 @@
-# Mufti Laundry — Web Application & Order Management System
+# Pressing Pro — SaaS de gestion de pressing (Côte d'Ivoire)
 
-> A full-stack web application designed to streamline laundry and dry-cleaning service management. The platform allows customers to schedule home pickups, select custom treatment options, track order progress in real time, and manage payments, while providing business administrators with a centralized dashboard to process orders and track service workflows.
----
+> MVP multi-tenant destiné à être revendu en abonnement à des pressings d'Abidjan.
+> Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
+> et **résiliente aux coupures internet**.
 
-## Overview
-
-Traditional laundry and dry-cleaning services suffer from operational bottlenecks that disrupt service delivery and lower customer trust:
-
-* **Opaque Order Statuses:** Customers constantly call or visit branches to check if items are ready.
-* **Manual Tagging & Paper Receipts:** Garments are prone to loss due to handwritten tags and physical receipts.
-* **Fragmented Billing:** Cash handling, partial payments, and invoice tracking are difficult to audit across multiple locations.
-* **Administrative Blindspots:** Management lacks real-time visibility into active workloads, pending orders, and daily branch revenue.
-
-**Mufti Laundry** solves these friction points by uniting customer bookings, staff workflow controls, printable tags, automated receipts, and analytical dashboards into a single application.
+**État actuel : Phase 3 terminée** (socle, offline-first et module QR Code).
 
 ---
 
-## User & Operational Workflow
+## 1. Périmètre du MVP
 
-```text
-[Customer Booking / Drop-off]
-       ↓
-[Order Creation & Tagging (Staff Dashboard)]
-       ↓
-[Printable Garment Tags & Digital Receipt Generated]
-       ↓
-[Status Lifecycle: Received → In-Wash → Ironing → Ready]
-       ↓
-[Real-Time Customer Order Tracking (Unique Order Code)]
-       ↓
-[Billing Verification & Final Pickup / Delivery]
+Le MVP couvre **quatre modules**, et rien d'autre :
 
-```
+| # | Module | Statut |
+|---|--------|--------|
+| 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | ✅ phase 2 (base locale) |
+| 2 | **QR Code** (génération par commande + scan atelier) | ✅ phase 3 |
+| 3 | **Offline-first** (création sans internet, synchronisation automatique) | ✅ phase 2 |
+| 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | à venir — phase 4 |
+
+Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
+statistiques avancées, gestion des stocks, gestion du personnel, facturation PDF, suivi client public.
+Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `docs/AUDIT.md`.
 
 ---
 
-## Key Features
+## 2. Stack technique
 
-### Customer Experience
+| Couche | Technologie |
+|--------|-------------|
+| Frontend | React 19 + Vite 8 + TypeScript 6 (strict) + Tailwind CSS v4 |
+| État global | Zustand |
+| Base locale (offline) | Dexie.js (IndexedDB) — phase 2 |
+| Backend / DB | Supabase (PostgreSQL + Auth + RLS) |
+| Paiement | CinetPay API v2 via Supabase Edge Functions — phase 4 |
+| QR Code | `qrcode` (génération) / `html5-qrcode` (scan) — phase 3 |
+| PWA | `vite-plugin-pwa` (Workbox) |
+| Validation | Zod — phase 2 |
 
-* **Online Booking Engine:** Interactive service selector, pricing breakdown, and location-based booking.
-* **Real-Time Order Tracking:** Public tracking view (`/track-order`) allowing customers to monitor garment status using a unique reference code.
-* **Direct Communication Channels:** Floating WhatsApp integration and branch location directory for quick customer support.
-* **Interactive Pricing Calculator:** Live calculation of costs across dry cleaning, washing, folding, and ironing.
-
-### Staff & Operations
-
-* **Centralized Staff Portal:** Role-based workspace (`/staff-dashboard`) tailored for daily laundry processing and garment tracking.
-* **Modal-Driven Workflows:** Instant creation of new orders, billing modals, and payment reconciliation interfaces.
-* **Printable Garment Tags:** Auto-formatted layout for generating physical tags to prevent lost or mixed items.
-* **Status Management Engine:** Quick-action toggles to advance orders through cleaning stages (*Received*, *In Progress*, *Ready*, *Delivered*).
-
-### Administration & Analytics
-
-* **Executive Overview Dashboard:** Centralized metrics displaying active orders, total revenue, pending balances, and operational efficiency.
-* **Staff Management & Auditing:** Administrative controls to onboard staff members, manage roles, and review branch performance.
-* **Invoice & Receipt System:** Complete invoice view (`/invoice`) with breakdown of itemized charges, payments made, and outstanding balances.
+Contraintes respectées : pas de Firebase, pas de Redux, **aucune librairie UI lourde**
+(MUI, AntD, Bootstrap proscrits) — Tailwind + composants maison uniquement.
 
 ---
 
-## Tech Stack
+## 3. Démarrage
 
-### Client & Interface
+### Prérequis
 
-* **Framework:** React 19 + TypeScript
-* **Build Tool:** Vite
-* **Styling & UI:** Tailwind CSS v4, composants maison (pas de librairie UI lourde)
-* **State & Routing:** Zustand (état global), React Router v7
-* **HTTP / Backend:** Supabase (PostgreSQL + Auth + RLS), `@supabase/supabase-js`
-* **Base locale (offline-first):** Dexie.js (IndexedDB)
-* **Paiement:** CinetPay API v2 (Edge Functions Supabase)
-* **QR Code:** `qrcode` (génération), `html5-qrcode` (scan)
-* **Validation:** Zod
-* **PWA:** `vite-plugin-pwa`
+- Node.js ≥ 20 (testé avec Node 22.22.3)
+- npm ≥ 10
+- Un projet Supabase (Cloud) **ou** la CLI Supabase pour un environnement local
 
-### Infrastructure & Déploiement
+### 3.1 Installation en une commande
 
-* **Backend / DB cloud:** Supabase Cloud (multi-tenant natif via Row-Level Security)
-* **Déploiement front:** Vercel (`vercel.json` configuré pour SPA route rewrites)
-* **Code Quality & Tooling:** ESLint 9 (Flat Config), TypeScript
-
----
-
-## Application Architecture
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│                      Client Layer                        │
-│                                                          │
-│   Landing Page & Booking   │   Order Tracking View       │
-│   Staff Dashboard          │   Admin Overview & Audits   │
-└────────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-┌──────────────────────────────────────────────────────────┐
-│                    Application State                     │
-│                                                          │
-│   Auth Context (JWT/Session)  │  API Layer (Axios)       │
-└────────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-┌──────────────────────────────────────────────────────────┐
-│                    Operations Engine                     │
-│                                                          │
-│   Status Modals  │  Printable Tag Generator │ Invoice    │
-└──────────────────────────────────────────────────────────┘
-
-```
-
----
-
-## Project Structure
-
-```text
-mufti-laundry-website/
-├── public/
-│   ├── favicon.svg
-│   └── icons.svg
-├── src/
-│   ├── api/
-│   │   └── axios.js               # Global Axios instance with interceptors
-│   ├── assets/                    # Static images, hero banners, and vector assets
-│   ├── components/
-│   │   ├── AdminLayout.jsx        # Wrapper with navigation for admin pages
-│   │   ├── BillingModal.jsx       # Modal for processing client balances
-│   │   ├── CreateOrderModal.jsx   # Form modal for logging new laundry batches
-│   │   ├── PaymentModal.jsx       # Payment recording and verification
-│   │   ├── PrintableTag.jsx       # Physical garment tag template for printing
-│   │   ├── Receipt.jsx            # Dynamic customer receipt view
-│   │   ├── StatusUpdateModal.jsx  # Stage tracking controller
-│   │   └── protectedRoute.jsx     # Route guard enforcing authentication
-│   ├── context/
-│   │   └── AuthContext.jsx        # Auth state management & token persistence
-│   ├── muftiLandingpage/          # Public-facing brand presentation & booking UI
-│   │   ├── components/            # Hero, Booking, Services, Pricing, SEO Head
-│   │   ├── data/                  # Service catalogs, branch lists, testimonials
-│   │   ├── hooks/                 # Custom scroll and counter hooks
-│   │   └── utils/                 # Helper utilities
-│   ├── pages/
-│   │   ├── DashboardOverview.jsx  # Primary executive analytics dashboard
-│   │   ├── InvoiceView.jsx        # Itemized invoice document view
-│   │   ├── Login.jsx              # Secured staff/admin authentication portal
-│   │   ├── Orders.jsx             # Comprehensive order index and management
-│   │   ├── Services.jsx           # Service catalog and rate administration
-│   │   ├── StaffDashboard.jsx     # Daily operational workspace for laundry staff
-│   │   ├── StaffManagement.jsx    # System admin employee portal
-│   │   └── TrackOrder.jsx         # Public customer order lookup
-│   ├── App.jsx                    # Application routes and main layout router
-│   ├── main.jsx                   # React application entry point
-│   └── index.css                  # Tailwind directives and custom utility styles
-├── .env.example                   # Environment variable blueprint
-├── DEPLOYMENT_GUIDE.md            # Step-by-step production deployment guide
-├── eslint.config.js               # ESLint configuration
-├── package.json                   # Project scripts and dependencies
-├── vercel.json                    # Single-Page Application rewrite rules for Vercel
-└── vite.config.js                 # Vite bundler configuration
-
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-* **Node.js**: v18.0.0 or higher
-* **npm**: v9.0.0 or higher
-* **Supabase CLI** (optionnel, pour le local : `supabase start`) ou un projet Supabase Cloud
-
-### Installation & Setup
-
-1. **Clone the Repository**
 ```bash
 git clone https://github.com/Colorado225/LAUNDRYPRESSING.git
 cd LAUNDRYPRESSING
-```
-
-2. **Install Dependencies**
-```bash
 npm install
-```
-
-3. **Configure Environment Variables**
-Create a local `.env` file from the example blueprint:
-```bash
 cp .env.example .env
+# → renseigner les valeurs dans .env (voir ci-dessous)
+npm run setup
 ```
-Set your Supabase and CinetPay keys inside `.env`:
+
+`npm run setup` fait tout le reste : schéma SQL, RLS, Edge Functions, secrets
+CinetPay, pressing et compte propriétaire. Aucune manipulation dans le tableau
+de bord Supabase n'est nécessaire au-delà de la création du projet.
+
+> ⚠️ **Le script a besoin d'un accès réseau à Supabase** et télécharge la CLI au
+> premier lancement via `npx` (aucun paquet n'est ajouté au projet). Il est
+> idempotent : on peut le relancer sans créer de doublon.
+
+### 3.2 Remplir le fichier `.env`
+
+Cinq valeurs sont indispensables :
+
 ```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-CINETPAY_API_KEY=your-cinetpay-api-key
-CINETPAY_SITE_ID=your-cinetpay-site-id
+VITE_SUPABASE_URL=https://<ref>.supabase.co        # Project Settings → API
+VITE_SUPABASE_ANON_KEY=<clé anon>                  # Project Settings → API
+SUPABASE_ACCESS_TOKEN=sbp_…                        # Account → Access Tokens
+SUPABASE_DB_PASSWORD=<mot de passe base>           # Project Settings → Database
+SUPABASE_SERVICE_ROLE_KEY=<clé service_role>       # Project Settings → API
 ```
 
-4. **Apply the Supabase Schema**
-Run the migration `supabase/migrations/001_init.sql` in your Supabase project (SQL Editor) or via Supabase CLI:
+Fortement recommandées :
+
+```env
+APP_URL=https://mon-pressing.vercel.app   # URL publique, sans barre finale
+SEED_OWNER_EMAIL=patron@pressing.ci       # compte créé par npm run setup
+SEED_OWNER_PASSWORD=<mot de passe ≥ 6 car.>
+SEED_TENANT_NAME=Pressing Cocody
+```
+
+Facultatives : `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`
+(sans elles l'application fonctionne, mais le bouton « Payer par Mobile Money »
+reste inopérant).
+
+> ⚠️ **Toute variable préfixée `VITE_` est embarquée dans le bundle et donc publique.**
+> Les autres — y compris `SUPABASE_SERVICE_ROLE_KEY` et `CINETPAY_SECRET_KEY` —
+> ne servent qu'à `npm run setup`, qui les pousse dans les secrets des Edge
+> Functions. Ne préfixez jamais un secret par `VITE_` : le script refuse de
+> démarrer si c'est le cas.
+
+Contrôler la configuration avant d'installer :
+
 ```bash
-supabase start
-supabase db push
+npm run setup:check    # valide le .env et s'arrête
+npm run setup:dry      # affiche les commandes sans rien exécuter
 ```
 
-5. **Set the current tenant** (via l'interface ou localStorage) — voir `src/lib/tenantContext.ts`.
+### 3.3 Ce que fait `npm run setup`
 
-6. **Run Local Development Server**
+| Étape | Action | Idempotence |
+|-------|--------|-------------|
+| 1 | `supabase link` sur le projet | sans effet si déjà lié |
+| 2 | `supabase db push` : `001_init.sql` puis `002_payments.sql` | migration déjà appliquée ignorée |
+| 3 | Déploiement de `cinetpay-init` (JWT requis) et `cinetpay-webhook` (public) | redéploie la même version |
+| 4 | Secrets `CINETPAY_*` et `APP_URL` côté Edge Functions | écrasés par les valeurs du `.env` |
+| 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` | pressing retrouvé par son nom, compte réutilisé |
+| 6 | Contrôle : `orders` doit répondre `42501` en anonyme, webhook en ligne | lecture seule |
+
+Options : `--skip-db`, `--skip-functions`, `--skip-account`, `--check`,
+`--dry-run`, `--help`.
+
+Remarque sur l'étape 3 : si Docker n'est pas installé, le script bascule
+automatiquement sur l'empaquetage côté Supabase (`--use-api`), ce qui évite
+l'erreur « Docker daemon not running » de la CLI.
+
+### 3.4 Installation manuelle (dépannage)
+
+Si `npm run setup` ne peut pas s'exécuter (pas de jeton personnel, réseau
+restreint), voici l'équivalent :
+
+1. Ouvrir **SQL Editor** et exécuter `supabase/migrations/001_init.sql`, puis
+   `002_payments.sql` (l'ordre est impératif : la 002 référence `orders`).
+2. (Optionnel) Exécuter `supabase/seed.sql` pour deux pressings de démonstration.
+3. Créer le compte dans **Authentication > Users**.
+4. Renseigner le pressing et le rattachement :
+
+```sql
+insert into public.tenants (name, phone)
+values ('Pressing Cocody', '+225 07 00 00 00 01')
+returning id;
+
+insert into public.tenant_users (user_id, tenant_id, role)
+values ('<user-uuid>', '<tenant-uuid>', 'owner');
+-- role ∈ ('owner', 'receptionist', 'artisan')
+
+update auth.users
+set raw_app_meta_data =
+  coalesce(raw_app_meta_data, '{}'::jsonb)
+  || jsonb_build_object('tenant_id', '<tenant-uuid>', 'tenant_role', 'owner')
+where id = '<user-uuid>';
+```
+
+Sans la dernière instruction, `current_tenant_id()` retombe sur `tenant_users` :
+l'application fonctionne, mais la RLS passe par une sous-requête à chaque
+lecture.
+
+### 3.5 Lancer l'application
+
 ```bash
 npm run dev
 ```
-Open `http://localhost:5173` in your browser.
+
+Ouvrir <http://localhost:5173>.
+
+- **Supabase configuré** : se connecter avec `SEED_OWNER_EMAIL` /
+  `SEED_OWNER_PASSWORD`. Le pressing est déduit de `tenant_users` — aucun UUID
+  n'est saisi.
+- **Configuration partielle** (une seule des deux variables `VITE_SUPABASE_*`) :
+  l'écran de connexion signale la variable manquante et la commande
+  `npm run setup:check`. On ne bascule **pas** en démonstration, pour éviter de
+  croire à une panne du serveur.
+- **Aucune configuration** : mode démonstration, l'écran demande l'identifiant
+  du pressing (`11111111-1111-4111-8111-111111111111` par défaut, ou
+  `VITE_DEMO_TENANT_ID`). Aucun mot de passe n'est vérifié : inutilisable en
+  production.
+
+### 3.6 Mettre le front en ligne
+
+1. Déployer sur Vercel/Netlify avec `npm run build`, sortie `dist`.
+2. Reporter l'URL publique dans `APP_URL`, puis relancer `npm run setup`
+   (les redirections de paiement et `return_url` sont mises à jour).
+3. Vérifier que `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` sont bien
+   définies dans les variables d'environnement de l'hébergeur — le build les
+   incorpore.
+4. Rejouer `supabase/tests/isolation.sql` dans le SQL Editor (§6).
 
 ---
 
-## Available Scripts
+## 4. Scripts
 
-* `npm run dev`: Boots the Vite development server with Hot Module Replacement (HMR).
-* `npm run build`: Compiles minified HTML, CSS, and JS production bundles to `/dist` (runs `tsc --noEmit`).
-* `npm run preview`: Previews the production build locally.
-* `npm run lint`: Scans source code for potential errors using ESLint.
-* `npm run typecheck`: Runs TypeScript type checking without emitting files.
+| Commande | Rôle |
+|----------|------|
+| `npm run dev` | Serveur de développement (HMR), exposé sur `0.0.0.0:5173` |
+| `npm run build` | Vérification TypeScript **puis** build de production (PWA incluse) |
+| `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
+| `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
+| `npm run typecheck` | `tsc --noEmit` seul |
+| `npm test` | Suite Vitest complète (111 tests, dont les scripts d'installation) |
+| `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
+| `npm run setup:check` | Valide le `.env` puis s'arrête |
+| `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
+| `npm run test:watch` | Vitest en mode surveillance |
 
----
+### Vérifier la PWA
 
-## Engineering Highlights
-
-* **Dynamic Tag & Receipt Rendering:** Constructed specialized print-friendly DOM components (`PrintableTag.jsx`, `Receipt.jsx`) using pure CSS `@media print` rules, eliminating external heavy PDF dependencies.
-* **SPA Routing Resilience:** Configured a dedicated `vercel.json` file with fallback rewrites to ensure deep routes like `/track-order` and `/invoice` resolve cleanly without 404 errors on server reloads.
-* **Modular Component Isolation:** Separated the marketing/booking engine (`/muftiLandingpage`) from internal operations (`/pages`, `/components`) to enforce strict boundaries between public interactions and secure business logic.
-
----
-
-## Author
-
-**Oguntoke Emmanuel Omotayo**
-
-Full-Stack Web Developer focused on building practical, high-converting, and scalable web applications.
-
-* **GitHub:** [@GodWithUs17](https://www.google.com/search?q=https://github.com/GodWithUs17)
-* **LinkedIn:** [oguntoke-emmanuel](https://www.google.com/search?q=https://linkedin.com/in/oguntoke-emmanuel)
-
+```bash
+npm run build && npm run preview
 ```
 
+Le build doit produire `dist/manifest.webmanifest`, `dist/sw.js` et les icônes
+`pwa-192x192.png`, `pwa-512x512.png`, `maskable-512x512.png`.
+L'installation n'est proposée qu'une fois le service worker **actif** (donc en production/aperçu,
+pas en `npm run dev`).
+
+---
+
+## 5. Structure du projet
+
+```text
+.
+├── public/                       # icônes PWA (192/512/maskable/apple) + favicon
+├── src/
+│   ├── App.tsx                   # routeur + notifications globales
+│   ├── main.tsx                  # point d'entrée React
+│   ├── index.css                 # thème Tailwind v4 (@theme) + styles d'impression
+│   ├── components/
+│   │   ├── AppLayout.tsx         # en-tête, navigation, bandeau de synchro
+│   │   ├── AuthGate.tsx          # restauration de session + garde d'accès
+│   │   ├── OfflineBadge.tsx      # vert / orange / rouge + envoi manuel
+│   │   ├── PaymentButton.tsx     # bouton Mobile Money + badges opérateurs
+│   │   ├── QrCodeDisplay.tsx     # étiquette 80 mm imprimable
+│   │   └── QrScanner.tsx         # scan caméra (html5-qrcode)
+│   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
+│   ├── db/
+│   │   ├── localDb.ts            # schéma Dexie (orders, orderItems, pendingPayments)
+│   │   ├── ordersRepository.ts   # CRUD local + mapping Supabase
+│   │   └── hooks.ts              # useLocalOrders, useCreateOrder, useUpdateOrderStatus
+│   ├── hooks/
+│   │   └── useAndroidBackButton.ts # bouton Retour Android (sentinelle d'historique)
+│   ├── lib/
+│   │   ├── env.ts                # lecture des variables d'environnement
+│   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
+│   │   ├── tenantContext.ts      # pressing courant (Zustand + persistance)
+│   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
+│   │   └── ids.ts                # UUID côté client + code QR
+│   ├── pages/
+│   │   ├── Login.tsx             # connexion Supabase Auth (+ mode démonstration)
+│   │   ├── Offline.tsx           # écran de repli hors ligne
+│   │   ├── Orders.tsx            # liste (recherche + filtres)
+│   │   ├── OrderForm.tsx         # création hors ligne
+│   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
+│   │   ├── PaymentReturn.tsx     # retour CinetPay (lecture seule)
+│   │   └── Atelier.tsx           # scan QR → changement de statut
+│   ├── services/
+│   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
+│   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
+│   │   └── qrService.ts          # génération / analyse des codes QR
+│   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
+│   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
+│   ├── sync/syncEngine.ts        # envoi des commandes en attente
+│   ├── test/                     # tests Vitest + amorçage (jamais dans le bundle)
+│   │   ├── setup.ts              # fake-indexeddb, environnement React
+│   │   ├── env.test.ts           # états de configuration (ok / démo / incomplet)
+│   │   ├── qrService.test.ts
+│   │   ├── syncEngine.test.ts
+│   │   ├── tenantIsolation.test.ts
+│   │   └── useCreateOrder.test.tsx
+│   └── types/database.ts         # types alignés sur le schéma SQL
+├── scripts/
+│   ├── setup.mjs                 # installation complète depuis .env (npm run setup)
+│   ├── setup.test.mjs            # contrat du provisionnement (serveur HTTP simulé)
+│   ├── config.test.mjs           # lecture et validation du .env
+│   └── lib/config.mjs            # analyse du .env, validation (logique pure)
+├── supabase/
+│   ├── config.toml               # verify_jwt de chaque Edge Function
+│   ├── functions/
+│   │   ├── _shared/              # client CinetPay, CORS, clients Supabase
+│   │   ├── cinetpay-init/        # initialisation du paiement (JWT requis)
+│   │   └── cinetpay-webhook/     # notification serveur (sans JWT)
+│   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
+│   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
+│   ├── seed.sql                  # jeu de démonstration (2 pressings)
+│   └── tests/isolation.sql       # preuve d'isolation sur une vraie base
+├── docs/
+│   ├── AUDIT.md                  # rapport de la phase 0
+│   ├── BACKLOG.md                # fonctionnalités explicitement hors périmètre
+│   ├── RAPPORT-FINAL.md          # bilan du MVP (fonctionne / V2 / coûts)
+│   └── USER_GUIDE.md             # parcours réceptionniste / artisan / propriétaire
+├── CHANGELOG.md                  # historique des versions du MVP
+├── vitest.config.ts              # configuration de la suite de tests
+└── RESTRUCTURATION.md            # cahier des charges du MVP
 ```
+
+---
+
+## 6. Architecture multi-tenant et sécurité
+
+Chaque pressing est un `tenant`. **Toutes** les tables métier portent
+`tenant_id uuid not null`, et l'isolation est assurée **en PostgreSQL** par Row-Level Security —
+jamais uniquement par le frontend.
+
+Points clés de `supabase/migrations/001_init.sql` :
+
+1. **`current_tenant_id()`** lit `app_metadata.tenant_id` du JWT, avec repli documenté sur
+   `tenant_users` (évite l'erreur « more than one row » sur un utilisateur multi-pressing).
+2. **`tenant_users` en lecture seule** pour l'utilisateur : l'ancienne politique permettait
+   à n'importe qui de s'auto-inscrire comme propriétaire d'un pressing tiers.
+3. **Clés étrangères composites** `(order_id, tenant_id)` : une ligne de commande ne peut pas
+   pointer vers la commande d'un autre pressing.
+4. **Journal de statuts automatique** via trigger `security definer` — le client ne peut pas
+   réécrire l'historique.
+5. **Suppression physique interdite** sur les commandes : on passe en statut `cancelled`.
+
+### Vérifier l'isolation (phase 6)
+
+Créer deux tenants, deux utilisateurs, puis vérifier qu'un utilisateur de Cocody
+ne voit aucune commande de Yopougon (`select * from orders;` doit ne retourner que son tenant).
+
+---
+
+## 7. Décisions techniques et justifications
+
+Conformément à la règle « ne jamais modifier les fichiers de config globaux sans justification écrite » :
+
+| Décision | Justification |
+|----------|---------------|
+| **TypeScript épinglé 6.0.3** (au lieu de 7.0.2) | `typescript-eslint` 8.72.0 refuse TypeScript 7 (« does not support TS 7.0 », issue #10940). Épingler en 6.0.3 permet de conserver un lint complet des `.ts/.tsx`. À réévaluer dès que le support TS 7 sort. |
+| **`tsconfig.json` réécrit** | `allowJs` passé à `false` (100 % du code est désormais en `.ts/.tsx`), `noEmit: true` (le build est fait par Vite), `baseUrl` supprimé car déprécié en TS 6, `paths` conservé et **aligné** sur l'alias `@` de `vite.config.ts`. |
+| **`eslint.config.js` réécrit** | L'ancienne configuration n'analysait que `**/*.{js,jsx}` : les fichiers TypeScript n'étaient jamais lintés. |
+| **Suppression des écrans hors périmètre** | Landing page marketing (2 572 lignes), Services, StaffManagement, InvoiceView, TrackOrder, BillingModal, Receipt, PaymentModal. Code conservé dans Git (commit `ae2903f`). |
+| **Dépendances retirées** | `axios` (backend `localhost:5000` inexistant), `framer-motion`, `html2pdf.js`, `html2canvas-pro`, `react-to-print`, `react-helmet-async`, `react-icons` (doublon de `lucide-react`). |
+| **Montants en entiers XOF** | Le franc CFA n'a pas de sous-unité : aucun décimal, affichage `1 500 FCFA` via `Intl.NumberFormat('fr-CI')`. |
+| **Icônes PWA en PNG** | L'ancienne icône était un sprite SVG d'icônes sociales (`icons.svg`) : Chrome refusait l'installation. Génération de `pwa-192x192.png`, `pwa-512x512.png`, `maskable-512x512.png`, `apple-touch-icon.png`. |
+| **Types de lignes en `type` (et non `interface`)** | Les `interface` TypeScript ne satisfont pas `Record<string, unknown>` exigé par `postgrest-js` : le client Supabase retournait des types `never`. Les alias de type, eux, sont compatibles. |
+| **`server.host = 0.0.0.0` + `allowedHosts`** | Permet l'accès depuis une tablette du pressing et depuis une URL de prévisualisation distante. |
+| **Routes en `React.lazy`** | `html5-qrcode` pèse 112 Ko gzip à lui seul. Sans découpage, le bundle initial passait de 201 à 324 Ko. Avec le découpage : **61 Ko** au démarrage, la librairie de scan n'arrivant qu'à l'ouverture de l'atelier. |
+| **Index Dexie `qrCode` (schéma v2)** | Rechercher une commande scannée sans index parcourrait toute la table. Dexie réindexe automatiquement les données existantes lors de la montée de version. |
+| **Portail `#print-root`** | Imprimer uniquement l'étiquette : `window.print()` sur la page entière produirait une sortie illisible sur une imprimante thermique 80 mm. |
+
+---
+
+## 7bis. Mode offline-first (phase 2)
+
+### Fonctionnement
+
+1. **Toute écriture va d'abord dans IndexedDB** (Dexie). Aucune requête réseau n'est émise
+   lors de la création d'une commande ou d'un changement de statut.
+2. Chaque ligne possède un indicateur `synced` (`0` = à envoyer, `1` = à jour).
+   Toute modification locale repasse la ligne à `0`.
+3. Le moteur de synchronisation (`src/sync/syncEngine.ts`) envoie les lignes en attente :
+   - au démarrage de l'application ;
+   - à l'événement `online` ;
+   - au retour au premier plan (`visibilitychange`) ;
+   - toutes les **60 secondes** si le navigateur est en ligne.
+4. L'envoi est un `upsert` sur l'UUID généré côté client : **rejouer une synchronisation
+   ne crée jamais de doublon**.
+5. En cas d'échec, la commande **reste en file**, l'erreur est enregistrée sur la ligne
+   et le bandeau passe au rouge. Aucune donnée n'est perdue.
+
+### Indicateur d'état (exigence du cahier des charges)
+
+| Couleur | Signification |
+|---------|---------------|
+| 🟢 Vert | En ligne, tout est synchronisé |
+| 🔵 Bleu | Synchronisation en cours |
+| 🟠 Orange | Hors ligne — les commandes restent enregistrées localement |
+| 🔴 Rouge | Au moins un envoi a échoué (message affiché au survol) |
+
+L'indicateur est aussi lisible **sans couleur** (icône + texte) et annonce ses changements
+aux lecteurs d'écran (`aria-live`).
+
+### Test manuel du mode avion
+
+1. Créer une commande via **Nouvelle commande**.
+2. Ouvrir les DevTools → **Network** → cocher **Offline** (ou activer le mode avion de la tablette).
+3. Constater :
+   - le bandeau passe en **orange « Hors ligne »** ;
+   - la commande reste visible dans la liste, marquée **« En attente »** ;
+   - un changement de statut reste possible.
+4. Revenir en ligne : la synchronisation se déclenche immédiatement (événement `online`).
+5. Vérifier dans Supabase :
+
+```sql
+select id, customer_name, status, synced_from_local, updated_at
+from public.orders
+order by created_at desc
+limit 5;
+```
+
+La commande doit apparaître **dans les 60 secondes** suivant le retour de la connexion.
+
+### Limites connues (MVP)
+
+- **Historique des statuts** : la RLS et le trigger serveur journalisent les changements.
+  En mode avion, seul **l'état final** de la commande est transmis à la reconnexion : une
+  suite `received → washing → ironing` effectuée entièrement hors ligne ne laisse qu'une
+  ligne d'historique côté serveur. Le journal détaillé hors ligne est prévu en V2.
+- **Suppression** : jamais physique ; une commande annulée passe au statut `cancelled`.
+- **Synchronisation descendante** (récupérer les commandes créées sur un autre poste)
+  n'est pas incluse dans la phase 2 : elle suppose la connexion Supabase (phase 5).
+- **Un seul pressing par appareil** à la fois ; le changement de pressing vide la base locale
+  (`clearLocalData`).
+
+> Les vérifications de la phase 2 ont été exécutées sur une base IndexedDB simulée
+> (`fake-indexeddb`) : 22 contrôles verts, couvrant création, calcul du total, format du
+> code QR, file d'attente, changement de statut, mode avion et échec réseau. Le test
+> automatisé permanent (Vitest) est prévu en phase 6.
+
+---
+
+## 7ter. Module QR Code (phase 3)
+
+### Format du code
+
+```text
+TENANTID-ORDERID-TIMESTAMP
+11111111-1111-4111-8111-111111111111-3f2a…-1750000000000
+```
+
+Les deux UUID mesurent 36 caractères et sont suivis d'un horodatage numérique :
+l'analyse ne fait donc **jamais** un `split('-')` (ambigu), mais s'appuie sur des
+groupes de longueur fixe. Un QR Code étranger (affiche publicitaire, code-barres
+d'un concurrent) est ignoré proprement, sans faire planter l'atelier.
+
+### Où le QR apparaît
+
+| Écran | Usage |
+|-------|-------|
+| Fiche commande | Aperçu du QR + bouton **Imprimer l'étiquette** |
+| Atelier | Bouton **Scanner un vêtement** → détail + sélecteur de statut |
+
+### Impression de l'étiquette (80 mm)
+
+Le bouton n'imprime pas la page : il monte une étiquette dédiée dans un portail
+`#print-root` et bascule le `<body>` en mode `impression-etiquette`. Les règles
+`@media print` de `src/index.css` masquent alors l'application et n'impriment que
+l'étiquette, au format **80 mm** (imprimante thermique de comptoir).
+
+### Test manuel imposé par le cahier des charges
+
+> « imprimer une étiquette, la scanner depuis une tablette, changer le statut »
+
+1. Créer une commande, ouvrir sa fiche, cliquer **Imprimer l'étiquette**
+   (ou « Enregistrer au format PDF » pour tester sans imprimante).
+2. Ouvrir **Atelier** sur une tablette (ou un ordinateur avec webcam), cliquer
+   **Scanner un vêtement**, autoriser la caméra.
+3. Présenter le QR imprimé : la commande s'affiche avec son détail.
+4. Choisir un nouveau statut → il est écrit **localement**, puis synchronisé.
+
+**Si la caméra est indisponible**, deux secours sont prévus :
+- saisie du code complet de l'étiquette ;
+- saisie de la référence courte imprimée sous le QR (`CMD-7F3A2B`).
+
+### Sécurité et isolation
+
+- Une étiquette appartenant à **un autre pressing** est détectée et refusée :
+  aucune donnée client n'est affichée (la RLS reste la sécurité de référence).
+- `parseQrString()` retourne `null` sur toute chaîne non conforme.
+
+### Notes techniques
+
+- Index Dexie `qrCode` ajouté en **version 2** du schéma : Dexie réindexe
+  automatiquement les commandes déjà présentes, sans perte de données.
+- `html5-qrcode` (~112 Ko gzip) est chargé **uniquement** à l'ouverture de
+  l'atelier, grâce au découpage `React.lazy` : le bundle initial reste à 61 Ko.
+- La génération d'image utilise `qrcode` (DataURL PNG, correction d'erreur `M`).
+- Vérifications exécutées : **19/19** sur le service QR — dont un **décodage réel**
+  de l'image PNG par un lecteur QR indépendant (`jsQR`) — et **13/13** en DOM simulé
+  sur l'atelier et l'étiquette imprimable. Le passage au vert de la caméra elle-même
+  reste un test manuel (matériel requis).
+
+---
+
+## 7quater. Paiement Mobile Money (phase 4 — CinetPay)
+
+### Vue d'ensemble
+
+Le module ajoute le paiement Mobile Money **Wave, Orange Money, MTN MoMo et Moov
+Money** via l'API Checkout v2 de CinetPay. Aucune donnée de carte n'est manipulée :
+le client est redirigé vers le guichet CinetPay, qui gère lui-même l'authentification
+auprès de l'opérateur.
+
+```
+Navigateur                Edge Functions (Deno)          CinetPay
+    |                            |                          |
+    |-- « Payer » -------------->| cinetpay-init            |
+    |                            |-- relit le montant dans `orders`
+    |                            |-- POST /v2/payment ----->|
+    |                            |<-- payment_url ----------|
+    |<-- payment_url ------------|  (trace `pending` en base)
+    |-- redirection vers le guichet CinetPay ---------------->
+    |                            |                          |  paiement
+    |                            |<-- POST notify_url ------|  (webhook)
+    |                            |-- POST /v2/payment/check->|
+    |                            |<-- statut ACCEPTED -------|
+    |                            |-- orders.payment_status = 'paid'
+    |<-- retour /paiement/retour?order=… (lecture seule) -----|
+```
+
+### Sécurité du montant
+
+Le montant envoyé à CinetPay est **toujours relu dans la table `orders` côté
+serveur**. Le montant fourni par le navigateur est ignoré : un client qui
+modifierait la requête ne pourrait donc pas payer 100 FCFA une commande de 12 000 FCFA.
+
+CinetPay impose un montant **multiple de 5** en XOF. La fonction
+`roundToChargeableAmount()` arrondit au multiple de 5 supérieur ; l'écart maximal
+est de 4 FCFA, et il est tracé (`amount` = montant débité, `order_amount` = montant
+réel de la commande) pour la réconciliation comptable.
+
+### Pourquoi une table dédiée `payment_transactions`
+
+Une commande peut connaître plusieurs tentatives de paiement (échec Wave, nouvel
+essai Orange Money). Stocker le paiement dans des colonnes de `orders` aurait fait
+perdre l'historique et rendu l'idempotence impossible. La table porte une contrainte
+`unique` sur `transaction_id` : rejouer une notification ne peut pas créer de doublon.
+
+**Écritures serveur uniquement.** La RLS n'autorise que le `SELECT` pour les
+utilisateurs authentifiés de leur propre pressing (`tenant_id = current_tenant_id()`).
+Toutes les écritures passent par la clé `service_role` des Edge Functions : un client
+malveillant ne peut donc pas s'auto-attribuer un paiement.
+
+### Séquence de la notification (webhook)
+
+`notify_url` est le **seul** mécanisme fiable de mise à jour : le client peut fermer
+son navigateur avant la redirection. Chaque notification est traitée ainsi :
+
+1. Lecture du corps (`application/x-www-form-urlencoded`, parfois JSON).
+2. Vérification du jeton **HMAC-SHA256** de l'en-tête `x-token` si
+   `CINETPAY_SECRET_KEY` est configurée — message = concaténation ordonnée de
+   16 champs (voir `_shared/cinetpay.ts`).
+3. Relecture du statut réel par appel serveur à `POST /v2/payment/check` :
+   **une notification n'est jamais crue sur parole**.
+4. Comparaison du montant encaissé avec le montant attendu. En cas d'incohérence,
+   la transaction passe en `error` et la commande **n'est pas** marquée payée.
+5. Mise à jour idempotente : une transaction déjà `paid` est définitive ; une
+   notification tardive de refus ne peut pas annuler un paiement encaissé.
+
+Réponses HTTP : `200` sur succès ou transaction inconnue (pour éviter les relances
+infinies), `401` sur signature invalide, `503` si CinetPay est injoignable — dans ce
+cas CinetPay réessaiera.
+
+### La page de retour ne valide rien
+
+`/paiement/retour` affiche l'état du paiement en **lisant** `payment_transactions`.
+Elle n'écrit jamais en base. C'est volontaire : une URL de retour est un simple
+`GET` déclenché par le navigateur, donc falsifiable. Si le webhook n'est pas encore
+arrivé, la page sonde 4 fois à 3 secondes d'intervalle puis affiche « en attente »,
+avec un bouton de actualisation manuelle.
+
+### Configuration
+
+Renseigner les trois valeurs dans `.env`, puis lancer `npm run setup` : les
+secrets sont poussés côté Supabase et les deux fonctions déployées
+automatiquement (§3.3).
+
+```env
+CINETPAY_API_KEY=...
+CINETPAY_SITE_ID=...
+CINETPAY_SECRET_KEY=...
+```
+
+L'équivalent manuel, si nécessaire :
+
+```bash
+# Secrets des Edge Functions (jamais dans le bundle Vite)
+supabase secrets set \
+  CINETPAY_API_KEY=... \
+  CINETPAY_SITE_ID=... \
+  CINETPAY_SECRET_KEY=... \
+  APP_URL=https://votre-domaine.ci
+
+# Déploiement (le webhook doit accepter les appels sans JWT)
+supabase functions deploy cinetpay-init
+supabase functions deploy cinetpay-webhook --no-verify-jwt
+```
+
+`CINETPAY_NOTIFY_URL` est déduite de l'URL du projet
+(`https://<ref>.supabase.co/functions/v1/cinetpay-webhook`) et n'a donc pas à
+être saisie. `SUPABASE_URL`, `SUPABASE_ANON_KEY` et
+`SUPABASE_SERVICE_ROLE_KEY` sont injectées automatiquement par Supabase — ne pas
+les définir manuellement.
+
+### Limites de cette phase
+
+- **Aucun test réel n'a pu être exécuté** : ni projet Supabase provisionné, ni
+  identifiants marchand CinetPay, ni binaire `deno` dans l'environnement de
+  développement. Les Edge Functions ne sont donc **pas typées** (`deno check`) et
+  la migration `002_payments.sql` **n'est pas exécutée**. Elles ont été validées
+  par relecture et transpilation (`esbuild`), et la logique pure (arrondi, mapping
+  des opérateurs, HMAC) par **19/19** assertions exécutées hors Deno.
+- Le remboursement, le paiement partiel et le paiement à la livraison sont hors
+  périmètre (voir `docs/BACKLOG.md`).
+- Sans `CINETPAY_SECRET_KEY`, le webhook reste fonctionnel mais la notification
+  n'est pas authentifiée cryptographiquement (mode « vérification seule ») ; un
+  avertissement est écrit dans les logs.
+
+### Test manuel (nécessite de vrais identifiants)
+
+1. Créer une commande de 8 500 FCFA, ouvrir sa fiche, cliquer **Payer par Mobile Money**.
+2. Sur le guichet CinetPay, vérifier le montant **8 500 FCFA** et l'absence de frais ajoutés.
+3. Payer avec un numéro de test Wave / Orange Money fourni par CinetPay.
+4. Après redirection, la page de retour doit afficher « Paiement confirmé » en
+   moins de 12 secondes (délai du sondage).
+5. Dans Supabase, vérifier `payment_transactions.status = 'paid'` avec
+   `signature_verified = true`, et `orders.payment_status = 'paid'`.
+6. Rejouer la notification (bouton « Renvoyer » du backoffice CinetPay) :
+   le statut ne doit pas changer et aucun doublon ne doit apparaître.
+
+---
+
+## 7quinquies. PWA, connexion et ergonomie tablette (phase 5)
+
+### Installation
+
+Le manifeste est généré par `vite-plugin-pwa` à partir de `vite.config.ts` :
+nom, `short_name`, icônes **192 px**, **512 px** et **maskable**, `display:
+standalone`, `theme_color` navy, `id` stable (sans quoi Chrome considère un
+changement d'URL comme une autre application) et deux **raccourcis** d'appui long
+(« Nouvelle commande », « Atelier »).
+
+L'installation n'est proposée qu'en production ou en aperçu : en `npm run dev`,
+le service worker est désactivé. Sur Android, elle passe par
+**⋮ → Installer l'application**.
+
+> ⚠️ **Choix assumé.** Pas de service worker en développement : il servirait des
+> fichiers périmés et rendrait le rechargement à chaud incompréhensible. Le test
+> d'installation se fait donc sur `npm run build && npm run preview`.
+
+### Écran hors ligne
+
+`/offline` n'est pas un simple message d'erreur : il rappelle ce qui reste
+utilisable sans réseau, ce qui exige une connexion, et affiche le nombre de
+commandes en attente. Il est accessible par le lien **Aide** qui apparaît à côté
+du badge orange.
+
+Il n'y a **pas** de `offline.html` statique : la coquille de l'application est
+précachée par Workbox, donc `index.html` est toujours disponible hors ligne. Un
+fichier de secours séparé n'aurait été servi qu'avant la première visite — c'est-
+à-dire jamais, puisque rien n'aurait été mis en cache.
+
+### Bouton « Retour » Android
+
+En PWA installée, Android ne « ferme » pas la page comme un onglet : sans
+historique, il quitte l'application brutalement, au milieu d'une saisie.
+
+`useAndroidBackButton` pousse une **sentinelle** dans l'historique au démarrage :
+
+1. un appui depuis un écran interne remonte normalement ;
+2. arrivé à la sentinelle, un message « Appuyez à nouveau sur Retour » s'affiche ;
+3. un second appui en moins de **2 s** laisse Android fermer l'application.
+
+La sentinelle est poussée via `navigate()` et non `history.pushState` brut :
+react-router conserve ainsi ses index internes et les boutons précédent/suivant du
+navigateur continuent de fonctionner.
+
+### Connexion
+
+`AuthGate` remplace l'ancien écran de sélection d'UUID. Trois chemins :
+
+| Situation | Comportement |
+| --- | --- |
+| Session valide en cache | Ouverture directe, **y compris hors ligne** |
+| Aucune session | Écran `Login` (e-mail + mot de passe) |
+| Supabase non configuré | `Login` en mode démonstration (UUID), avec avertissement |
+
+Le pressing n'est jamais saisi : il est lu dans `tenant_users` pour l'utilisateur
+connecté. Un compte valide mais non rattaché est **immédiatement déconnecté** avec
+un message explicite.
+
+**Pourquoi ignorer `SIGNED_OUT` hors ligne ?** Un rafraîchissement de jeton qui
+échoue faute de réseau émet parfois cet événement. Déconnecter la tablette à ce
+moment-là priverait l'atelier de toutes ses commandes locales — exactement le
+scénario que l'offline-first doit couvrir. L'événement n'est donc traité que si le
+réseau est présent ; la RLS bloque de toute façon toute requête tant que le jeton
+n'est pas rafraîchi.
+
+**Déconnexion.** Le bouton **Quitter** demande confirmation (tablette partagée).
+Les données Dexie ne sont **pas** effacées : elles peuvent contenir des commandes
+non synchronisées, et les écrans filtrent par `tenantId`, donc aucun autre
+pressing ne les voit.
+
+### Ergonomie tablette
+
+- Toutes les actions tactiles font **au moins 48 px** de haut (`min-h-12`) :
+  filtres, liens de retour, boutons de scan, bouton de synchronisation.
+- Les champs de saisie passent en `text-base` : lisibles à bout de bras, au
+  comptoir.
+- Chaque survol (`hover:`) est doublé d'un état `active:` : sur un écran tactile,
+  `hover` ne se déclenche jamais.
+- Contrastes : texte `slate-600` minimum sur fond blanc ; les états ne reposent
+  jamais sur la seule couleur (icône + libellé).
+
+### Limites connues de cette phase
+
+- Pas de réinitialisation de mot de passe par e-mail (reporté en V2, `docs/BACKLOG.md`).
+- Un utilisateur = un pressing : `resolveTenantForUser` retient le premier
+  rattachement. Le sélecteur multi-pressing est en V2.
+- Le rôle est affiché mais ne restreint pas encore la navigation : un artisan voit
+  l'onglet comptoir. La RLS empêche en revanche toute écriture non autorisée.
+- Le critère « installation sur téléphone Android » n'a pas pu être rejoué dans
+  cet environnement (pas de terminal Android) : à valider sur l'appareil cible.
+
+---
+
+## 7sexies. Qualité et vérifications (phase 6)
+
+### Suite de tests automatisés
+
+```bash
+npm test          # exécution unique
+npm run test:watch
+```
+
+Vitest + `jsdom` + `fake-indexeddb` : les modules sont testés dans un
+environnement proche du navigateur, avec un IndexedDB en mémoire et **sans aucun
+appel réseau** (Supabase est remplacé par un double).
+
+| Fichier | Tests | Ce qui est couvert |
+| --- | --- | --- |
+| `src/test/qrService.test.ts` | 18 | Format `TENANT-ORDER-TIMESTAMP`, aller-retour encodage/décodage, QR étrangers rejetés, dimensions réelles du PNG (en-tête IHDR) |
+| `src/test/syncEngine.test.ts` | 11 | Hors ligne, non configuré, sans pressing, envoi nominal, **échec partiel**, idempotence, appels concurrents, traduction FR des erreurs |
+| `src/test/useCreateOrder.test.tsx` | 6 | Refus sans pressing, total calculé, QR cohérent, champs nettoyés, unicité, **aucune requête réseau** |
+| `src/test/tenantIsolation.test.ts` | 23 | RLS activée sur les 6 tables, absence de politique permissive, révocation `anon`, écritures de paiement verrouillées, aucune clé `service_role` côté client, tout `.from()` filtré ou documenté |
+
+Les tests vivent dans `src/test/` : `tsc --noEmit` les vérifie comme le reste du
+code, mais ils ne sont **jamais** inclus dans le bundle de production.
+
+### Isolation multi-tenant sur une vraie base
+
+Le test automatisé ci-dessus vérifie les politiques dans les migrations. La
+preuve « deux pressings, deux connexions » exige une base réelle :
+
+```text
+1. Appliquer 001_init.sql, 002_payments.sql puis seed.sql.
+2. Ouvrir supabase/tests/isolation.sql dans le SQL Editor de Supabase.
+3. Lire les NOTICE : chaque « OK » est une garantie vérifiée.
+```
+
+Le script rejoue exactement ce que fait PostgREST (`set local role authenticated`
++ `request.jwt.claims` reconstitué depuis le JWT) et contrôle six points :
+
+1. le pressing 1 ne voit que ses 2 commandes ;
+2. la commande du pressing 2 est introuvable **même par identifiant exact** ;
+3. les lignes de vêtements sont isolées de la même façon ;
+4. une insertion au nom du pressing 2 est refusée — avec vérification du code
+   `42501` (RLS), pour ne pas passer pour une mauvaise raison ;
+5. un client ne peut pas écrire dans `payment_transactions` ;
+6. le rôle `anon` ne lit rien du tout.
+
+Tout se termine par `ROLLBACK` : aucune donnée de test ne subsiste.
+
+### Audit d'accessibilité et de performance
+
+Lighthouse **n'a pas pu être exécuté** : l'environnement de développement ne
+contient aucun navigateur Chrome/Chromium et l'installation est bloquée. Les
+critères ont donc été vérifiés statiquement, puis corrigés :
+
+| Point | Avant | Après |
+| --- | --- | --- |
+| Contraste texte blanc sur bouton principal | 3,74:1 (échec AA) | **5,47:1** (teal-700) |
+| Contraste survol | 5,47:1 | 7,58:1 (teal-800) |
+| Texte d'aide `slate-400` sur blanc | 2,8:1 | `slate-500` à 4,76:1 |
+| Bouton de fermeture du scanner | 40 px | 48 px |
+| Code imprimé sur l'étiquette | 8 px, gris clair | 9 px, `slate-600`, retour à la ligne |
+| `lang`, `viewport`, `theme-color`, `description` | présents | conservés |
+| Alternatives textuelles | `alt` sur chaque image, `aria-label` sur les boutons icône | conservées |
+
+**PWA** : manifeste complet (`id`, `start_url`, `display: standalone`, icônes
+192/512/maskable, deux raccourcis), service worker précachant 39 fichiers
+(1,19 Mo), écran de repli fonctionnel.
+
+**Performance** : bundle initial 204 kB (64 kB gzip) — la librairie de scan
+(383 kB) et l'écran hors ligne sont chargés à la demande ; polices système, donc
+aucune requête réseau bloquante au premier rendu.
+
+> ⚠️ Ces mesures ne remplacent pas Lighthouse. Le score doit être relevé sur un
+> déploiement HTTPS réel avant la mise en production (voir `docs/RAPPORT-FINAL.md`).
+
+### Vérification syntaxique du SQL
+
+Aucun PostgreSQL n'étant disponible dans l'environnement, les quatre fichiers SQL
+ont été analysés avec l'analyseur officiel de PostgreSQL (`libpg_query` via le
+paquet Python `pglast`) — 98 instructions valides. Cela garantit l'absence
+d'erreur de syntaxe, **pas** l'absence d'erreur d'exécution.
+
+```bash
+python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
+/tmp/sqlvenv/bin/python -c "from pglast import parse_sql; print(len(parse_sql(open('supabase/migrations/001_init.sql').read())))"
+```
+
+---
+
+## 8. Feuille de route
+
+- [x] **Phase 0** — Audit (`docs/AUDIT.md`)
+- [x] **Phase 1** — Socle technique (PWA, Supabase, tenant, migration RLS)
+- [x] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
+- [x] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
+- [x] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
+- [x] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
+- [x] **Phase 6** — QA (Vitest, isolation multi-tenant, CHANGELOG, tag `v0.1.0-mvp`) — *Lighthouse à relever sur un déploiement réel*
+
+---
+
+## 9. Sécurité — rappels
+
+- Ne jamais commiter `.env` (déjà couvert par `.gitignore`).
+- La clé `service_role` contourne la RLS : usage exclusif dans les Edge Functions.
+- Les montants sont vérifiés côté serveur (`check (total_amount >= 0)`) et devront l'être
+  à nouveau dans l'Edge Function CinetPay : un client malveillant peut appeler l'API directement.
+- Le webhook CinetPay devra être authentifié par signature HMAC avant toute mise à jour de
+  `payment_status`.

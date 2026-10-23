@@ -1,276 +1,107 @@
-/* ===== Tailwind v4 — Single CSS Entry Point ===== */
-/* No tailwind.config.js needed — everything lives here */
-
-@import "tailwindcss";
-
 /* ============================================================
-   THEME CONFIGURATION — Replaces tailwind.config.js
+   Pressing Pro — point d'entrée CSS unique (Tailwind v4)
+   Aucun tailwind.config.js : le thème vit dans @theme ci-dessous.
    ============================================================ */
+
+@import 'tailwindcss';
+
 @theme {
-  /* ── Custom Colors ── */
+  /* Palette de marque — sobre, contrastée, lisible en atelier.
+     Le teal d'origine (#0d9488) ne donnait que 3,74:1 avec du texte blanc,
+     sous le seuil AA de 4,5:1. On utilise donc teal-700 (5,47:1) pour les
+     surfaces portant du texte blanc, et teal-800 (7,58:1) pour le survol. */
   --color-brand-navy: #0f172a;
-  --color-brand-teal: #0d9488;
-  --color-brand-gold: #fbbf24;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  --color-brand-slate: #334155;
+  --color-brand-teal: #0f766e;
+  --color-brand-teal-dark: #115e59;
+  --color-brand-amber: #f59e0b;
+  --color-brand-danger: #e11d48;
 
-  --color-mufti-blue-50: #e6f0ff;
-  --color-mufti-blue-100: #b3d1ff;
-  --color-mufti-blue-200: #80b3ff;
-  --color-mufti-blue-300: #4d94ff;
-  --color-mufti-blue-400: #1a75ff;
-  --color-mufti-blue-500: #0055c6;
-  --color-mufti-blue-600: #004db3;
-  --color-mufti-blue-700: #003d8f;
-  --color-mufti-blue-800: #002e6b;
-  --color-mufti-blue-900: #001e47;
-  --color-mufti-blue-950: #001233;
-
-  --color-mufti-lime: #d7f707;
-  --color-mufti-lime-50: #f8ffe6;
-  --color-mufti-lime-100: #eeffb3;
-  --color-mufti-lime-200: #e5ff80;
-  --color-mufti-lime-300: #dbff4d;
-  --color-mufti-lime-400: #d7f707;
-  --color-mufti-lime-500: #b8d406;
-  --color-mufti-lime-600: #99b105;
-  --color-mufti-lime-700: #7a8e04;
-  --color-mufti-lime-800: #5c6b03;
-  --color-mufti-lime-900: #3d4802;
-
-  /* ── Fonts ── */
-  --font-display: "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
-
-  /* ── Custom Animations ── */
-  --animate-spin-slow: spin 4s linear infinite;
-  --animate-spin-slower: spin 8s linear infinite;
-  --animate-float: float 6s ease-in-out infinite;
-  --animate-float-delayed: float 6s ease-in-out 2s infinite;
-  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
-  --animate-slide-up: slide-up 0.6s ease-out both;
-  --animate-slide-down: slide-down 0.3s ease-out both;
-  --animate-fade-in: fade-in 0.5s ease-out both;
-  --animate-bounce-gentle: bounce-gentle 2s ease-in-out infinite;
-  --animate-water-wave: water-wave 3s ease-in-out infinite;
-  --animate-tumble: tumble 3s linear infinite;
-  --animate-shimmer: shimmer 2s linear infinite;
-  --animate-scale-in: scale-in 0.3s ease-out both;
-
-  /* ── Keyframes ── */
-  @keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-20px); }
-  }
-
-  @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 20px oklch(0.55 0.18 255 / 0.3); }
-    50% { box-shadow: 0 0 40px oklch(0.55 0.18 255 / 0.6); }
-  }
-
-  @keyframes slide-up {
-    0% { opacity: 0; transform: translateY(30px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-
-  @keyframes slide-down {
-    0% { opacity: 0; transform: translateY(-10px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-
-  @keyframes fade-in {
-    0% { opacity: 0; }
-    100% { opacity: 1; }
-  }
-
-  @keyframes bounce-gentle {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-  }
-
-  @keyframes water-wave {
-    0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
-    50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
-  }
-
-  @keyframes tumble {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
-
-  @keyframes scale-in {
-    0% { opacity: 0; transform: scale(0.9); }
-    100% { opacity: 1; transform: scale(1); }
-  }
-
-  @keyframes ping-ring {
-    75%, 100% {
-      transform: scale(2);
-      opacity: 0;
-    }
-  }
+  /* Police système : aucune dépendance réseau, rendu immédiat hors ligne */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* ============================================================
-   BASE STYLES
-   ============================================================ */
 @layer base {
   html {
-    scroll-behavior: smooth;
-    scroll-padding-top: 5rem;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    /* Sur tablette, évite le zoom involontaire lors d'un double-tap */
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
-    font-family: var(--font-body);
-    color: var(--color-slate-700);
-    background-color: var(--color-slate-50);
-    overflow-x: hidden;
+    @apply bg-slate-50 font-sans text-slate-900 antialiased;
+    /* Respecte les encoches des tablettes / téléphones récents */
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
-  ::selection {
-    background-color: var(--color-mufti-blue-500);
-    color: white;
+  /* Focus toujours visible : exigence d'accessibilité, pas de hover-only */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-teal);
+    outline-offset: 2px;
   }
 
-  ::-webkit-scrollbar {
-    width: 8px;
+  /* Cibles tactiles : actions directes au doigt, sans délai de 300 ms */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role='button'] {
+    touch-action: manipulation;
   }
+}
 
-  ::-webkit-scrollbar-track {
-    background-color: var(--color-slate-100);
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background-color: var(--color-mufti-blue-300);
-    border-radius: 9999px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-mufti-blue-500);
+@layer utilities {
+  /* Indicateur de statut réseau / synchronisation */
+  .status-dot {
+    @apply inline-block size-2.5 rounded-full;
   }
 }
 
 /* ============================================================
-   CUSTOM UTILITIES — @utility directive (Tailwind v4)
+   Impression — étiquettes QR (80 mm) et rapports atelier
    ============================================================ */
 
-/* Animation delay utilities */
-@utility animation-delay-200 {
-  animation-delay: 200ms;
+/* Conteneur d'impression : présent dans le DOM mais invisible à l'écran. */
+#print-root {
+  display: none;
 }
 
-@utility animation-delay-400 {
-  animation-delay: 400ms;
-}
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
 
-@utility animation-delay-600 {
-  animation-delay: 600ms;
-}
+  body {
+    background: #ffffff;
+  }
 
-@utility animation-delay-1000 {
-  animation-delay: 1000ms;
-}
+  /* Mode « impression d'étiquette » : on masque l'application entière et on
+     n'imprime que le contenu monté dans #print-root. */
+  body.impression-etiquette #root {
+    display: none !important;
+  }
 
-@utility animation-delay-2000 {
-  animation-delay: 2000ms;
-}
+  body.impression-etiquette #print-root {
+    display: block !important;
+  }
 
-/* Hide scrollbar */
-@utility no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
+  /* Les éléments d'interface ne doivent jamais apparaître sur une étiquette */
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 
-/* Gradient text */
-@utility gradient-text {
-  background-image: linear-gradient(to right, var(--color-mufti-blue-500), var(--color-mufti-blue-700));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Gradient backgrounds */
-@utility gradient-hero {
-  background: linear-gradient(135deg, #f8fafc 0%, #e6f0ff 40%, #f0fdf4 70%, #f8fafc 100%);
-}
-
-/* Glassmorphism */
-@utility glass {
-  background-color: oklch(1 0 0 / 0.1);
-  backdrop-filter: blur(12px);
-  border: 1px solid oklch(1 0 0 / 0.2);
-}
-
-@utility glass-dark {
-  background-color: oklch(0.15 0.05 260 / 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid oklch(1 0 0 / 0.1);
-}
-
-/* ============================================================
-   COMPONENT STYLES — Non-utility patterns
-   ============================================================ */
-
-/* Preloader fade out */
-.preloader-exit {
-  animation: fade-out 0.5s ease-out forwards;
-}
-
-@keyframes fade-out {
-  to {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-  }
-}
-
-/* iPhone notch for mockup */
-.iphone-notch {
-  width: 40%;
-  height: 28px;
-  background: #1a1a2e;
-  border-radius: 0 0 18px 18px;
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-}
-
-.iphone-notch::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  background: #333;
-  border-radius: 50%;
-  position: absolute;
-  top: 8px;
-  right: 20px;
-}
-
-/* Dot pattern background helper */
-.bg-dot-pattern {
-  background-image: radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0);
-  background-size: 40px 40px;
-}
-
-.bg-dot-pattern-sm {
-  background-image: radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0);
-  background-size: 20px 20px;
-}
-
-.bg-dot-pattern-md {
-  background-image: radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0);
-  background-size: 30px 30px;
+.print-only {
+  display: none;
 }
