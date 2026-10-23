@@ -4,7 +4,10 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : Phase 3 terminée** (socle, offline-first et module QR Code).
+**État actuel : palier 2 terminé** (catalogue, caisse, reçus, workflow complet,
+réclamations et remboursements). Les phases 1 à 6 et les paliers 0 à 2 de
+`MAJ.md` sont livrés ; le palier 3 (clients, stocks, tableau de bord) reste à
+ouvrir.
 
 ---
 
@@ -17,7 +20,9 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | ✅ phase 2 (base locale) |
 | 2 | **QR Code** (génération par commande + scan atelier) | ✅ phase 3 |
 | 3 | **Offline-first** (création sans internet, synchronisation automatique) | ✅ phase 2 |
-| 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | à venir — phase 4 |
+| 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | ✅ phase 4 |
+| 5 | **Catalogue et caisse** (prix historisé, acomptes, reçu 80 mm, clôture) | ✅ palier 2 |
+| 6 | **Workflow complet** (8 étapes, attribution, livraison promise, réclamations) | ✅ palier 2 |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
 statistiques avancées, gestion des stocks, gestion du personnel, facturation PDF, suivi client public.
@@ -198,7 +203,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (130 tests : synchronisation, rôles, langue, isolation, installation) |
+| `npm test` | Suite Vitest complète (179 tests : synchronisation, rôles, caisse, langue, isolation, installation) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
@@ -821,9 +826,10 @@ Les mêmes règles sont **exécutées** sur un vrai PostgreSQL, sans Supabase :
 npm run sql:verify
 ```
 
-Le script crée une base jetable, y applique `001`→`003` et le jeu de
-démonstration, puis rejoue 29 contrôles (isolation, rôles, verrou optimiste,
-guichet unique). Il est aussi lancé par l'intégration continue (job « SQL réel »).
+Le script crée une base jetable, y applique `001`→`005` et le jeu de
+démonstration, puis rejoue 76 contrôles (isolation, rôles, verrou optimiste,
+guichet unique, catalogue, caisse, attribution, réclamations, remboursements).
+Il est aussi lancé par l'intégration continue (job « SQL réel »).
 
 ### Conflits de synchronisation
 
@@ -843,6 +849,60 @@ modifications* (écrase l'autre tablette) ou *prendre la version du serveur*
   `APP_ENV=development`.
 - Deux notifications simultanées ne peuvent pas marquer la commande payée deux
   fois (compare-and-set sur le statut).
+
+---
+
+## 7octies. Cœur ERP (palier 2)
+
+### Catalogue et prix historisé
+
+Le propriétaire tient un catalogue **article × prestation** (chemise, costume,
+robe… croisés avec lavage, nettoyage à sec, repassage, détachage). À la saisie
+d'une commande, le comptoir choisit une entrée du catalogue : le **prix est
+recopié sur la ligne** de commande. Modifier ou retirer une prestation ensuite
+ne change donc **jamais** une facture déjà émise.
+
+Un prix différent du catalogue est un **tarif dérogatoire** : il faut un motif
+d'au moins 10 caractères, il est refusé à l'atelier et chaque changement de prix
+est journalisé dans `order_price_history` (qui, quand, de combien à combien,
+pourquoi).
+
+### Caisse, acomptes et reçus
+
+- encaissement en espèces au comptoir, en **acompte** ou en solde ;
+- le solde restant est calculé à partir des encaissements réels, jamais d'un
+  champ saisi à la main ;
+- **reçu 80 mm imprimable** (`/commandes/:id/recu`) : référence, téléphone,
+  articles, prix, montant reçu, **reste à payer toujours affiché** ; il
+  fonctionne hors ligne puisque les données sont lues dans IndexedDB ;
+- **clôture de caisse quotidienne** (`/caisse`) : le montant attendu est
+  recalculé par le serveur à partir des encaissements de la journée, le
+  caissier déclare ses espèces, l'écart est conservé ;
+- **remboursements** : propriétaire uniquement, motif obligatoire, plafonnés aux
+  encaissements nets ; ils sortent du tiroir et sont déduits de la caisse du
+  jour.
+
+Un encaissement porte un identifiant généré sur la tablette : si la réponse
+réseau se perd, le renvoi ne crée pas un second paiement (idempotence).
+
+### Workflow, retards et réclamations
+
+Parcours en huit étapes : réception → tri → lavage → séchage → repassage →
+contrôle qualité → prêt → remis. Le statut ne peut qu'**avancer** ; revenir en
+arrière ou rouvrir une commande livrée est réservé au propriétaire, annuler au
+propriétaire et au réceptionniste. Chaque transition est horodatée avec son
+auteur, le statut précédent et, s'il est fourni, le **motif**.
+
+La **date de livraison promise** déclenche un badge « En retard » sur la fiche
+et dans la liste. Les **réclamations** (tache, déchirure, pièce manquante…)
+se constatent à la réception, pendant le traitement ou à la remise ; l'atelier
+peut les déclarer, seul le comptoir les clôture.
+
+### Attribution
+
+Une commande peut être confiée à un employé du pressing. L'atelier peut prendre
+une commande pour lui-même, le comptoir attribue librement. Le serveur refuse
+tout employé d'un autre pressing (`guard_order_assignment`).
 
 ---
 

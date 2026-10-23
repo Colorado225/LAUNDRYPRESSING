@@ -491,12 +491,18 @@ Supabase dans cet environnement.
 
 ### Palier 2 — Cœur ERP (V1.1)
 
-- [ ] Catalogue des prestations et tarification, **prix historisé** sur chaque
-      ligne de commande.
-- [ ] Caisse : espèces, acomptes, solde dû, reçus imprimables, clôture
-      journalière et rapprochement.
-- [ ] Workflow complet (tri, séchage, contrôle qualité), date de livraison
-      prévue, alertes de retard.
+- [x] Catalogue des prestations et tarification, **prix historisé** sur chaque
+      ligne de commande — `004_palier2.sql`, écran Prestations, motif de
+      dérogation journalisé (`order_price_history`).
+- [x] Caisse : espèces, acomptes, solde dû, reçus imprimables, clôture
+      journalière et rapprochement — `record_cash_payment`, écrans Caisse et
+      Reçu, `close_cash_session`.
+- [x] Workflow complet (tri, séchage, contrôle qualité), date de livraison
+      prévue, alertes de retard — neuf statuts, `orders.due_date`, badge
+      « En retard ».
+- [x] Finitions de la même vague : attribution à un employé, réclamations et
+      vêtements abîmés, remboursements encadrés, motif de transition
+      (`005_palier2_complement.sql`).
 
 ### Palier 3 — V1.2
 
@@ -517,11 +523,16 @@ Supabase dans cet environnement.
 | 23/10/2026 | 0 | `MAJ.md`, archivage de `docs/AUDIT.md`, `docs/AUDIT-COURANT.md`, correction du décompte de politiques RLS | `1726cf7` |
 | 23/10/2026 | 0 | Intégration continue : `npm ci`, types, style, tests, build sur chaque PR | `cc390d1` |
 | 23/10/2026 | 0 | Imbrication du texte source dans le sommaire | `98e7bbf` |
-| 23/10/2026 | 1 | Paiement : guichet unique, HMAC obligatoire en production, notifications concurrentes (`003_palier1.sql`, `cinetpay-init`, `cinetpay-webhook`) | à compléter |
-| 23/10/2026 | 1 | Synchronisation : verrou optimiste, conflits arbitrables, `previous_status` | à compléter |
-| 23/10/2026 | 1 | Rôles : matrice, garde-fou serveur, navigation et montants masqués | à compléter |
-| 23/10/2026 | 1 | Vérification SQL réelle : `scripts/sql-verify.sh` + 29 contrôles rejoués sur PostgreSQL 16, job CI dédié | à compléter |
-| 23/10/2026 | 1 | Retrait d'un lien d'image en japonais introduit par le copier-coller du texte source ; contrôle automatique de langue ajouté | à compléter |
+| 23/10/2026 | 1 | Paiement : guichet unique, HMAC obligatoire en production, notifications concurrentes (`003_palier1.sql`, `cinetpay-init`, `cinetpay-webhook`) | `174c134` |
+| 23/10/2026 | 1 | Synchronisation : verrou optimiste, conflits arbitrables, `previous_status` | `6fa254f` |
+| 23/10/2026 | 1 | Rôles : matrice, garde-fou serveur, navigation et montants masqués | `387c8a2` |
+| 23/10/2026 | 1 | Vérification SQL réelle : `scripts/sql-verify.sh` + 29 contrôles rejoués sur PostgreSQL 16, job CI dédié | `174c134` |
+| 23/10/2026 | 1 | Retrait d'un lien d'image en japonais introduit par le copier-coller du texte source ; contrôle automatique de langue ajouté | `de6b73a` |
+| 23/10/2026 | 2 | Catalogue, prix historisé, workflow en 8 étapes, caisse, reçu imprimable, clôture journalière (`004_palier2.sql`, 22 contrôles SQL) | `8170369` |
+| 23/10/2026 | 2 | Écrans Caisse et Prestations, reçu 80 mm, badge « En retard », transitions filtrées par rôle | `9e2c33b` |
+| 23/10/2026 | 2 | Encaissements et relecture distante couverts par 37 tests supplémentaires | `1c4e78b` |
+| 23/10/2026 | 2 | Guichet Mobile Money : ne facturer que le reste à payer | `790f863` |
+| 23/10/2026 | 2 | Attribution, réclamations, remboursements, tarif dérogatoire, motif de transition (`005_palier2_complement.sql`, 24 contrôles SQL) | à compléter |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

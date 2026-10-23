@@ -6,6 +6,74 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.3.0] — 2026-10-23
+
+Palier 2 de la feuille de route (`MAJ.md`) : le cœur ERP — catalogue, caisse,
+reçus et workflow complet —, avec les finitions d'atelier (attribution,
+réclamations, remboursements).
+
+### Ajouté
+
+- **Catalogue** (`catalog_entries`) : article × prestation, prix en FCFA,
+  réservé au propriétaire. Le prix est **recopié sur la ligne de commande** au
+  moment de la vente (`order_items.price`) : une hausse tarifaire ultérieure ne
+  réécrit jamais une ancienne facture.
+- **Tarif dérogatoire** : un prix différent du catalogue exige un motif de
+  10 caractères ; l'atelier ne peut pas toucher aux prix (politique RLS) et
+  chaque changement est journalisé dans `order_price_history`.
+- **Caisse** (`cash_sessions`, `/caisse`) : encaissement en espèces, acomptes,
+  solde recalculé, clôture journalière et rapprochement des espèces déclarées.
+  Le montant attendu est recalculé par le serveur, jamais fourni par le client.
+- **Reçus** (`/commandes/:id/recu`) : 80 mm imprimable, référence, téléphone,
+  articles, prix, montant reçu et **reste à payer toujours affiché**. Fonctionne
+  hors ligne (lecture IndexedDB).
+- **Workflow en 8 étapes** : réception → tri → lavage → séchage → repassage →
+  contrôle qualité → prêt → remis, avec date de livraison promise et badge
+  « En retard ».
+- **Attribution** : une commande peut être confiée à un employé du pressing
+  (`orders.assigned_to`) ; l'atelier peut se l'attribuer, pas la confier à un
+  autre.
+- **Réclamations** (`order_issues`) : tache, déchirure, décoloration, pièce
+  manquante, constatées à la réception, pendant le traitement ou à la remise.
+  L'atelier déclare, le comptoir clôture.
+- **Remboursements** (`payment_refunds`) : propriétaire seulement, motif
+  obligatoire, plafonnés aux encaissements nets ; déduits de la caisse du jour.
+- **Motif de transition** : `orders.status_reason` transporte le motif d'une
+  annulation ou d'un retour en arrière jusqu'à `order_status_history.reason`,
+  puis est effacé.
+
+### Modifié
+
+- **`cinetpay-init`** ne demande plus que le **reste à payer** : un acompte
+  espèces déjà encaissé n'est plus facturé une seconde fois par Mobile Money.
+- **`syncEngine`** : les encaissements passent avant la relecture distante ;
+  les réclamations sont transmises après les commandes ; un refus définitif
+  sort de la file au lieu d'être renvoyé indéfiniment.
+- **`guard_order_update`** : les transitions de statut doivent avancer (sauf
+  propriétaire), l'annulation reste au comptoir.
+- **Interface** : l'atelier ne propose plus que les transitions réellement
+  autorisées ; le formulaire de commande affiche le motif de dérogation dès que
+  le prix s'écarte du catalogue.
+
+### Limites connues
+
+- Un remboursement **n'est pas enregistrable hors ligne** : il sort de l'argent
+  et doit être validé par le serveur.
+- Les commandes modifiées sur un autre appareil ne sont relues que par
+  `pullOrders` (état principal) : les réclamations et remboursements créés
+  ailleurs ne sont pas encore rapatriés.
+- La recette sur un projet Supabase réel reste à faire (aucun identifiant dans
+  l'environnement de développement).
+
+### Tests
+
+179 tests (10 fichiers) ; `npm run sql:verify` rejoue **76 contrôles** sur un
+PostgreSQL 16 jetable, dont 24 pour les finitions du palier 2 (attribution,
+prix dérogatoire, réclamations, remboursements, clôture avec remboursement,
+motif de transition).
+
+---
+
 ## [0.2.0] — 2026-10-23
 
 Palier 1 de la feuille de route (`MAJ.md`) : les trois risques majeurs relevés

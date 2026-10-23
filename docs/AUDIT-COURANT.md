@@ -119,10 +119,11 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 
 | Domaine | État | Palier prévu |
 | --- | --- | --- |
-| Catalogue (articles, prestations, prix) | Absent — prix saisi librement | Palier 2 |
-| Encaissement espèces, acomptes, solde dû | Absent — `cash` n'est qu'un libellé, jamais enregistré | Palier 2 |
-| Reçus imprimables, clôture de caisse | Absent | Palier 2 |
-| Workflow complet (tri, séchage, contrôle qualité) | Partiel — 6 statuts, sans date de livraison ni motif | Palier 2 |
+| Catalogue (articles, prestations, prix) | **Livré** — catalogue article × prestation, prix historisé, dérogation motivée | Fait |
+| Encaissement espèces, acomptes, solde dû | **Livré** — encaissement idempotent, solde recalculé | Fait |
+| Reçus imprimables, clôture de caisse | **Livré** — reçu 80 mm, clôture quotidienne, remboursements déduits | Fait |
+| Workflow complet (tri, séchage, contrôle qualité) | **Livré** — 8 étapes, transitions contrôlées, attribution, réclamations | Fait |
+| Date de livraison promise, alertes de retard | **Livré** — `orders.due_date`, badge « En retard » | Fait |
 | Clients (fiche, historique) | Absent — nom et téléphone sont recopiés sur chaque commande | Palier 3 |
 | Stocks, fournisseurs, dépenses | Absent | Palier 3 |
 | Tableau de bord propriétaire | Absent | Palier 3 |
@@ -142,15 +143,15 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 | 2 | **Élevée** | Écrasement silencieux entre deux tablettes : `upsert` sans comparaison de version | `syncEngine` | **Corrigé** (verrou optimiste + arbitrage) |
 | 3 | Moyenne | Signature HMAC facultative si `CINETPAY_SECRET_KEY` est absente | `cinetpay-webhook` | **Corrigé** (refus 503 en production) |
 | 4 | Moyenne | Aucun rôle appliqué à la navigation ni aux actions | `tenantContext` | **Corrigé** (matrice + garde-fou SQL) |
-| 5 | Moyenne | Historique sans ancien statut ni motif | `001_init.sql:86-97` | **Partiel** : `previous_status` ✅, saisie du motif ❌ |
+| 5 | Moyenne | Historique sans ancien statut ni motif | `001_init.sql:86-97` | **Corrigé** : `previous_status` et motif transporté puis journalisé (`005`) |
 | 6 | Faible | Documentation : 16 politiques annoncées pour 13 réelles | `CHANGELOG.md` | **Corrigé** |
 | 7 | Faible | Audit de phase 0 présenté comme l'état courant | `docs/AUDIT.md` | **Archivé** |
 | 8 | Faible | Aucun contrôle automatique avant fusion | `.github/` absent | **Corrigé** |
 
-Les trois défauts de gravité élevée ou moyenne sont corrigés et couverts par
-des tests locaux. Le seul reste est la **saisie du motif** d'une dérogation :
-la colonne `reason` existe, aucun écran ne la remplit encore (prévu avec le
-module caisse du palier 2).
+Les sept défauts constatés sont corrigés. Le **motif** d'une transition est
+transporté par `orders.status_reason`, recopié dans l'historique par le
+déclencheur puis effacé : l'écran d'annulation le propose, et le palier 2 a
+ajouté le motif obligatoire du tarif dérogatoire et du remboursement.
 
 La **recette sur un projet Supabase réel** (provisionnement, Edge Functions,
 paiement de bout en bout) n'a pas pu être faite : aucun identifiant dans
@@ -166,9 +167,9 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | --- | --- | --- |
 | Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 130 tests : QR, synchronisation, rôles, langue, création de commande, isolation statique, configuration, provisionnement |
+| Tests | `npm test` | 179 tests : QR, synchronisation, rôles, caisse, soldes, retard, langue, création de commande, isolation statique, configuration, provisionnement |
 | Build | `npm run build` | compilation TypeScript + PWA (précache 41 fichiers) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`003`, jeu de démonstration, 29 contrôles (isolation, rôles, verrou optimiste, guichet unique) sur un PostgreSQL 16 jetable |
+| SQL réel | `npm run sql:verify` | migrations `001`→`005`, jeu de démonstration, 76 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`
@@ -177,7 +178,8 @@ Il ne demande ni Supabase ni Docker ; seul `psql` 15+ est nécessaire.
 
 **Ce que ces contrôles ne couvrent pas :** provisionnement d'un vrai projet
 Supabase, Edge Functions déployées, webhook CinetPay de bout en bout,
-comportement sur tablette Android physique.
+comportement sur tablette Android physique, relecture multi-appareil des
+réclamations et des remboursements (seul l'état des commandes est rapatrié).
 
 ---
 
