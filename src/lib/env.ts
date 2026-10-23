@@ -15,6 +15,12 @@ function readEnv(key: keyof ImportMetaEnv): string | undefined {
 }
 
 export const SUPABASE_URL = readEnv('VITE_SUPABASE_URL')
+/**
+ * Identifiant du pressing de démonstration (optionnel).
+ * Permet de tester le mode offline-first avant la mise en place de la
+ * connexion Supabase (phase 5), sans jamais coder d'UUID en dur.
+ */
+export const DEMO_TENANT_ID = readEnv('VITE_DEMO_TENANT_ID')
 export const SUPABASE_ANON_KEY = readEnv('VITE_SUPABASE_ANON_KEY')
 
 /** Variables obligatoires manquantes (sert à guider l'utilisateur). */
