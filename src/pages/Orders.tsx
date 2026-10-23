@@ -71,7 +71,7 @@ export default function Orders() {
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Rechercher un client ou un téléphone…"
           aria-label="Rechercher une commande"
-          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm outline-none focus:border-brand-teal"
+          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-base outline-none focus:border-brand-teal"
         />
       </div>
 
@@ -115,7 +115,7 @@ export default function Orders() {
               <li key={order.id}>
                 <Link
                   to={`/commandes/${order.id}`}
-                  className="flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-brand-teal"
+                  className="flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-colors hover:border-brand-teal active:bg-slate-50"
                 >
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-brand-navy">{order.customerName}</p>
@@ -176,10 +176,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex min-h-10 shrink-0 items-center rounded-full border px-4 text-xs font-semibold transition-colors ${
+      className={`inline-flex min-h-12 shrink-0 items-center rounded-full border px-4 text-sm font-semibold transition-colors ${
         active
           ? 'border-brand-navy bg-brand-navy text-white'
-          : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400'
+          : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400 active:bg-slate-100'
       }`}
     >
       {children}

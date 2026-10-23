@@ -72,7 +72,7 @@ export default function OrderForm() {
       <button
         type="button"
         onClick={() => navigate('/commandes')}
-        className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-slate-600 hover:text-brand-navy"
+        className="inline-flex min-h-12 items-center gap-2 text-sm font-semibold text-slate-600 hover:text-brand-navy active:text-brand-navy"
       >
         <ArrowLeft size={16} aria-hidden />
         Retour aux commandes
@@ -92,7 +92,7 @@ export default function OrderForm() {
                 onChange={(event) => setCustomerName(event.target.value)}
                 autoComplete="name"
                 placeholder="Aya Koné"
-                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal"
+                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
               />
             </Field>
 
@@ -104,7 +104,7 @@ export default function OrderForm() {
                 inputMode="tel"
                 autoComplete="tel"
                 placeholder="07 00 00 00 00"
-                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal"
+                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
               />
             </Field>
           </div>
@@ -117,7 +117,7 @@ export default function OrderForm() {
             <button
               type="button"
               onClick={addItem}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal active:bg-slate-50"
             >
               <Plus size={16} aria-hidden />
               Ajouter
@@ -134,7 +134,7 @@ export default function OrderForm() {
                       value={item.label}
                       onChange={(event) => updateItem(index, { label: event.target.value })}
                       placeholder="Costume 3 pièces"
-                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                     />
                   </Field>
 
@@ -144,7 +144,7 @@ export default function OrderForm() {
                       value={item.fabricType ?? ''}
                       onChange={(event) => updateItem(index, { fabricType: event.target.value })}
                       placeholder="Bazin, Wax, laine…"
-                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                     />
                   </Field>
 
@@ -160,7 +160,7 @@ export default function OrderForm() {
                         updateItem(index, { specialInstructions: event.target.value })
                       }
                       placeholder="Empèsage fort"
-                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                     />
                   </Field>
 
@@ -179,7 +179,7 @@ export default function OrderForm() {
                           })
                         }
                         placeholder="5000"
-                        className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                        className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                       />
                     </Field>
 
@@ -221,7 +221,7 @@ export default function OrderForm() {
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-5 text-sm font-bold text-white transition-colors hover:bg-brand-teal-dark disabled:opacity-60"
+            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-5 text-base font-bold text-white transition-colors hover:bg-brand-teal-dark active:bg-brand-teal-dark disabled:opacity-60"
           >
             <Check size={18} aria-hidden />
             Enregistrer la commande

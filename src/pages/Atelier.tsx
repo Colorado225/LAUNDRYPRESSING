@@ -182,7 +182,7 @@ export default function Atelier() {
                 <li key={order.id}>
                   <Link
                     to={`/commandes/${order.id}`}
-                    className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-teal"
+                    className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-teal active:bg-slate-50"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-brand-navy">
@@ -380,7 +380,7 @@ function ScanResult({
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           to={`/commandes/${order.id}`}
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal"
+          className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal active:bg-slate-50"
         >
           Ouvrir la fiche
           <ArrowRight size={16} aria-hidden />
@@ -396,7 +396,7 @@ function DismissButton({ onClick, inline = false }: { onClick: () => void; inlin
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 ${
+      className={`inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100 ${
         inline ? '' : 'mt-3'
       }`}
     >

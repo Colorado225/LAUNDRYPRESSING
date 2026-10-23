@@ -22,6 +22,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
+        // `id` fige l'identité de l'application : sans lui, Chrome considère
+        // un changement de `start_url` comme une autre PWA et la réinstalle.
+        id: '/',
         name: 'Pressing Pro — Gestion de pressing',
         short_name: 'Pressing Pro',
         description:
@@ -35,6 +38,25 @@ export default defineConfig({
         orientation: 'any',
         scope: '/',
         start_url: '/',
+        categories: ['business', 'productivity'],
+        // Appuis longs sur l'icône (Android) : les deux gestes les plus
+        // fréquents au comptoir et à l'atelier, sans passer par le menu.
+        shortcuts: [
+          {
+            name: 'Nouvelle commande',
+            short_name: 'Commande',
+            description: 'Enregistrer une commande au comptoir',
+            url: '/commandes/nouvelle',
+            icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: 'Atelier — scanner une étiquette',
+            short_name: 'Atelier',
+            description: 'Scanner le QR code d’un vêtement',
+            url: '/atelier',
+            icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+        ],
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
