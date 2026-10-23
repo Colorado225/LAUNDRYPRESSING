@@ -78,9 +78,11 @@ FICHIERS=(
   "supabase/migrations/001_init.sql"
   "supabase/migrations/002_payments.sql"
   "supabase/migrations/003_palier1.sql"
+  "supabase/migrations/004_palier2.sql"
   "supabase/seed.sql"
   "supabase/tests/isolation.sql"
   "supabase/tests/palier1.sql"
+  "supabase/tests/palier2.sql"
   "supabase/tests/roles.sql"
 )
 
