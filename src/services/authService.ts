@@ -211,6 +211,23 @@ export async function updatePassword(password: string): Promise<void> {
   }
 }
 
+/**
+ * Déconnecte le compte de **tous** ses appareils (écran Paramètres).
+ *
+ * Utile quand une tablette du comptoir a été revendue, perdue ou prêtée : la
+ * session locale est effacée, et Supabase invalide les jetons de rafraîchissement
+ * des autres appareils. Les données IndexedDB restent, comme pour `signOut`.
+ */
+export async function signOutEverywhere(): Promise<void> {
+  const supabase = getSupabaseClient()
+  const { error } = await supabase.auth.signOut({ scope: 'global' })
+  useTenantStore.getState().clear()
+
+  if (error) {
+    throw new AuthError('signout_failed', translateAuthError(error.message, error.status))
+  }
+}
+
 /** Libellés français des erreurs Supabase Auth les plus fréquentes. */
 export function translateAuthError(message: string, status?: number): string {
   const normalized = message.toLowerCase()

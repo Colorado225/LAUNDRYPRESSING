@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Building2,
@@ -6,49 +6,90 @@ import {
   Copy,
   CreditCard,
   Database,
+  Download,
   HardDrive,
+  KeyRound,
   Loader2,
+  LogOut,
+  Pencil,
   RefreshCw,
+  Save,
   ShieldCheck,
+  Trash2,
   UserRound,
+  Users,
   Wifi,
   WifiOff,
+  X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { usePendingOrderCount } from '@/db/hooks'
+import {
+  exporterDonneesLocales,
+  purgerCommandesSynchronisees,
+  resumerDonneesLocales,
+  type ResumeLocal,
+} from '@/db/maintenance'
 import { TENANT_ROLE_LABELS } from '@/constants/orders'
 import { isSupabaseConfigured } from '@/lib/env'
 import { formatDateTimeFr } from '@/lib/formatters'
+import { tailleLisible } from '@/lib/parametres'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import { getSupabaseClient } from '@/lib/supabaseClient'
+import { requestPasswordReset, signOutEverywhere } from '@/services/authService'
+import { fetchTeamMembers, memberLabel, ROLE_LABELS, type TeamMember } from '@/services/tenantMembers'
+import { fetchTenantPressing, updateTenant } from '@/services/tenantService'
 import { useSyncStore } from '@/stores/syncStore'
 import { syncPendingOrders } from '@/sync/syncEngine'
 
 /**
- * Paramètres — écran 12 de la maquette, version basique.
+ * Paramètres — écran 12 de la maquette, version enrichie.
  *
- * Volontairement en **lecture seule** : on y vérifie *qui* est connecté, *sur
- * quel pressing*, et *ce qui reste à synchroniser*. Modifier le nom du pressing
- * ou gérer l'équipe se fait déjà ailleurs (`/abonnement` pour la formule,
- * console de supervision pour les comptes) — dupliquer ces actions ici
- * multiplierait les chemins d'écriture pour aucun gain.
+ * Quatre responsabilités, et rien d'autre :
+ *  1. **identifier** le pressing et le compte (avec les identifiants copiables
+ *     que le support demandera) ;
+ *  2. **renommer** le pressing — la seule écriture ouverte ici, réservée au
+ *     propriétaire par la RLS ;
+ *  3. **sécuriser** le compte : lien de réinitialisation, déconnexion de tous
+ *     les appareils ;
+ *  4. **entretenir les données locales** : voir ce qui est stocké, exporter une
+ *     sauvegarde, purger ce qui est déjà au serveur.
+ *
+ * Ce qui reste ailleurs : la formule (`/abonnement`), l'équipe et les rôles
+ * (propriétaire), la console éditeur (`/supervision`). Dupliquer ces écritures
+ * ici créerait deux chemins pour la même donnée.
  */
+const VERSION_APPLICATION = '0.7.0'
+
 export default function Parametres() {
   const tenantId = useTenantStore((state) => state.tenantId)
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const userId = useTenantStore((state) => state.userId)
   const shops = useTenantStore((state) => state.shops)
+  const renameTenant = useTenantStore((state) => state.renameTenant)
 
   const syncState = useSyncStore((state) => state.state)
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt)
   const lastError = useSyncStore((state) => state.lastError)
   const pendingCount = usePendingOrderCount()
 
+  const estProprietaire = can(role, 'tenant.manage')
+
   const [email, setEmail] = useState<string | null>(null)
   const [enLigne, setEnLigne] = useState(() => navigator.onLine)
   const [synchronisation, setSynchronisation] = useState(false)
+  const [equipe, setEquipe] = useState<TeamMember[]>([])
+
+  const [edition, setEdition] = useState(false)
+  const [nom, setNom] = useState(tenantName ?? '')
+  const [telephone, setTelephone] = useState('')
+  const [enregistrement, setEnregistrement] = useState(false)
+
+  const [resume, setResume] = useState<ResumeLocal | null>(null)
+  const [traitementLocal, setTraitementLocal] = useState(false)
+  const [envoiLien, setEnvoiLien] = useState(false)
 
   useEffect(() => {
     const goOnline = () => setEnLigne(true)
@@ -77,6 +118,28 @@ export default function Parametres() {
     }
   }, [])
 
+  const rafraichirLocal = useCallback(async () => {
+    const donnees = await resumerDonneesLocales(tenantId).catch(() => null)
+    setResume(donnees)
+  }, [tenantId])
+
+  useEffect(() => {
+    void rafraichirLocal()
+  }, [rafraichirLocal])
+
+  useEffect(() => {
+    if (!tenantId || !isSupabaseConfigured) return
+    let actif = true
+    void fetchTeamMembers(tenantId)
+      .then((membres) => {
+        if (actif) setEquipe(membres)
+      })
+      .catch(() => undefined)
+    return () => {
+      actif = false
+    }
+  }, [tenantId])
+
   const copier = async (valeur: string, libelle: string) => {
     try {
       await navigator.clipboard.writeText(valeur)
@@ -91,10 +154,130 @@ export default function Parametres() {
     try {
       await syncPendingOrders()
       toast.success('Synchronisation terminée', { icon: '🔄' })
+      await rafraichirLocal()
     } catch {
       toast.error('Synchronisation impossible : vérifiez votre connexion.')
     } finally {
       setSynchronisation(false)
+    }
+  }
+
+  /**
+   * Ouvre le formulaire en lisant d'abord la fiche réelle.
+   *
+   * Sans cette lecture, le champ téléphone partirait vide et l'enregistrement
+   * effacerait le numéro existant — une perte silencieuse de donnée pour une
+   * simple correction de nom.
+   */
+  const commencerEdition = async () => {
+    if (!tenantId) {
+      toast.error('Aucun pressing sélectionné.')
+      return
+    }
+    setNom(tenantName ?? '')
+    setTelephone('')
+    setEdition(true)
+
+    try {
+      const fiche = await fetchTenantPressing(tenantId)
+      setNom(fiche.name)
+      setTelephone(fiche.phone ?? '')
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Lecture du pressing impossible hors ligne.',
+      )
+    }
+  }
+
+  const enregistrerPressing = async () => {
+    if (!tenantId) {
+      toast.error('Aucun pressing sélectionné.')
+      return
+    }
+    setEnregistrement(true)
+    try {
+      const maj = await updateTenant(tenantId, { name: nom, phone: telephone })
+      renameTenant(maj.name)
+      setEdition(false)
+      toast.success('Informations du pressing mises à jour', { icon: '🏪' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible')
+    } finally {
+      setEnregistrement(false)
+    }
+  }
+
+  const envoyerLien = async () => {
+    if (!email) {
+      toast.error('Aucune adresse e-mail associée à ce compte.')
+      return
+    }
+    setEnvoiLien(true)
+    try {
+      await requestPasswordReset(email)
+      toast.success('Lien envoyé : consultez la boîte e-mail du compte.', { icon: '✉️' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Envoi impossible')
+    } finally {
+      setEnvoiLien(false)
+    }
+  }
+
+  const deconnecterPartout = async () => {
+    const confirme = window.confirm(
+      'Déconnecter ce compte de tous les appareils ?\n\n' +
+        'Vous devrez vous reconnecter ici. Les commandes non synchronisées resteront sur cette tablette.',
+    )
+    if (!confirme) return
+
+    try {
+      await signOutEverywhere()
+      toast.success('Compte déconnecté de tous les appareils')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Déconnexion impossible')
+    }
+  }
+
+  const exporter = async () => {
+    setTraitementLocal(true)
+    try {
+      const donnees = await exporterDonneesLocales(tenantId)
+      const blob = new Blob([JSON.stringify(donnees, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      })
+      const url = URL.createObjectURL(blob)
+      const lien = document.createElement('a')
+      lien.href = url
+      lien.download = `sauvegarde-pressing-${new Date().toISOString().slice(0, 10)}.json`
+      lien.click()
+      URL.revokeObjectURL(url)
+      toast.success('Sauvegarde téléchargée', { icon: '💾' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Export impossible')
+    } finally {
+      setTraitementLocal(false)
+    }
+  }
+
+  const purger = async () => {
+    if (!resume || resume.purgeables === 0) return
+
+    const confirme = window.confirm(
+      `Effacer de cette tablette ${resume.purgeables} commande(s) déjà enregistrée(s) sur le serveur ?\n\n` +
+        `Les ${resume.enAttente + resume.enConflit} commande(s) en attente ou en conflit seront conservées. ` +
+        'Une copie reste consultable depuis le serveur, mais plus hors ligne.',
+    )
+    if (!confirme) return
+
+    setTraitementLocal(true)
+    try {
+      const effacees = await purgerCommandesSynchronisees(tenantId)
+      await rafraichirLocal()
+      toast.success(`${effacees} commande(s) effacée(s) de la tablette`, { icon: '🧹' })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Suppression impossible')
+    } finally {
+      setTraitementLocal(false)
     }
   }
 
@@ -116,44 +299,114 @@ export default function Parametres() {
           <ShieldCheck size={22} aria-hidden /> Paramètres
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Compte connecté, pressing, synchronisation et application.
+          Pressing, compte, équipe, synchronisation et données locales.
         </p>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* ---------------------------------------------------------- Pressing */}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-            <Building2 size={16} aria-hidden /> Pressing
-          </h2>
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <Building2 size={16} aria-hidden /> Pressing
+            </h2>
+            {estProprietaire && !edition && (
+              <button
+                type="button"
+                onClick={() => void commencerEdition()}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <Pencil size={13} aria-hidden /> Modifier
+              </button>
+            )}
+          </div>
 
-          <dl className="mt-3 space-y-3 text-sm">
-            <div>
-              <dt className="text-xs text-slate-500">Nom</dt>
-              <dd className="font-semibold text-slate-800">{tenantName ?? 'Non sélectionné'}</dd>
+          {edition ? (
+            <div className="mt-3 space-y-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Nom du pressing</span>
+                <input
+                  value={nom}
+                  onChange={(event) => setNom(event.target.value)}
+                  maxLength={80}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Téléphone (facultatif)
+                </span>
+                <input
+                  value={telephone}
+                  onChange={(event) => setTelephone(event.target.value)}
+                  inputMode="tel"
+                  placeholder="07 07 07 07 07"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+                <span className="mt-1 block text-xs text-slate-500">
+                  Facultatif. Laisser vide efface le numéro enregistré.
+                </span>
+              </label>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void enregistrerPressing()}
+                  disabled={enregistrement}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+                >
+                  {enregistrement ? (
+                    <Loader2 className="animate-spin" size={16} aria-hidden />
+                  ) : (
+                    <Save size={16} aria-hidden />
+                  )}
+                  Enregistrer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEdition(false)}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"
+                >
+                  <X size={16} aria-hidden /> Annuler
+                </button>
+              </div>
             </div>
-            <div>
-              <dt className="text-xs text-slate-500">Identifiant (à communiquer au support)</dt>
-              <dd className="mt-1 flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-lg bg-slate-50 px-2 py-1.5 font-mono text-xs text-slate-700">
-                  {tenantId ?? '—'}
-                </code>
-                {tenantId && (
-                  <button
-                    type="button"
-                    onClick={() => void copier(tenantId, 'Identifiant')}
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600"
-                  >
-                    <Copy size={14} aria-hidden /> Copier
-                  </button>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500">Boutiques rattachées à ce compte</dt>
-              <dd className="font-semibold text-slate-800">{shops.length || 1}</dd>
-            </div>
-          </dl>
+          ) : (
+            <dl className="mt-3 space-y-3 text-sm">
+              <div>
+                <dt className="text-xs text-slate-500">Nom</dt>
+                <dd className="font-semibold text-slate-800">{tenantName ?? 'Non sélectionné'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Identifiant (à communiquer au support)</dt>
+                <dd className="mt-1 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-lg bg-slate-50 px-2 py-1.5 font-mono text-xs text-slate-700">
+                    {tenantId ?? '—'}
+                  </code>
+                  {tenantId && (
+                    <button
+                      type="button"
+                      onClick={() => void copier(tenantId, 'Identifiant')}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600"
+                    >
+                      <Copy size={14} aria-hidden /> Copier
+                    </button>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Boutiques rattachées à ce compte</dt>
+                <dd className="font-semibold text-slate-800">{shops.length || 1}</dd>
+              </div>
+            </dl>
+          )}
+
+          {!estProprietaire && (
+            <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+              Seul le propriétaire peut renommer le pressing.
+            </p>
+          )}
         </section>
 
         {/* ----------------------------------------------------------- Compte */}
@@ -192,10 +445,65 @@ export default function Parametres() {
             </div>
           </dl>
 
-          <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
-            Le mot de passe se change depuis le lien reçu par e-mail (écran de connexion →
-            « Recevoir un lien de réinitialisation »). L’ajout d’un collègue se fait par le
-            propriétaire ou depuis la console de supervision.
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void envoyerLien()}
+              disabled={envoiLien || !isSupabaseConfigured || !enLigne}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+            >
+              {envoiLien ? (
+                <Loader2 className="animate-spin" size={16} aria-hidden />
+              ) : (
+                <KeyRound size={16} aria-hidden />
+              )}
+              Changer le mot de passe
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void deconnecterPartout()}
+              disabled={!isSupabaseConfigured}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+            >
+              <LogOut size={16} aria-hidden /> Déconnecter tous les appareils
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs text-slate-500">
+            Le changement de mot de passe passe par un lien reçu par e-mail : aucun mot de passe ne
+            transite par cette tablette.
+          </p>
+        </section>
+
+        {/* ----------------------------------------------------------- Équipe */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <Users size={16} aria-hidden /> Équipe
+          </h2>
+
+          {equipe.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">
+              {enLigne ? 'Aucun membre lisible pour ce compte.' : 'Équipe indisponible hors ligne.'}
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-slate-100 text-sm">
+              {equipe.map((membre) => (
+                <li key={membre.userId} className="flex items-center justify-between gap-2 py-2">
+                  <span className="min-w-0 truncate font-medium text-slate-800">
+                    {memberLabel(membre, userId)}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                    {ROLE_LABELS[membre.role]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="mt-2 text-xs text-slate-500">
+            L’ajout d’un collègue et la modification des rôles se font par le propriétaire, depuis la
+            console de supervision.
           </p>
         </section>
 
@@ -244,13 +552,96 @@ export default function Parametres() {
           </button>
         </section>
 
-        {/* ------------------------------------------------------- Application */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        {/* ----------------------------------------------- Données locales */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 lg:col-span-2">
           <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-            <HardDrive size={16} aria-hidden /> Application
+            <HardDrive size={16} aria-hidden /> Données sur cet appareil
           </h2>
 
-          <ul className="mt-3 space-y-2 text-sm text-slate-600">
+          {resume === null ? (
+            <p className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="animate-spin" size={14} aria-hidden /> Lecture du stockage…
+            </p>
+          ) : (
+            <>
+              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs text-slate-500">Commandes</dt>
+                  <dd className="font-bold text-brand-navy">{resume.commandes}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">En attente d’envoi</dt>
+                  <dd
+                    className={`font-bold ${resume.enAttente > 0 ? 'text-amber-700' : 'text-brand-navy'}`}
+                  >
+                    {resume.enAttente}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">En conflit</dt>
+                  <dd className={`font-bold ${resume.enConflit > 0 ? 'text-rose-700' : 'text-brand-navy'}`}>
+                    {resume.enConflit}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Espace occupé</dt>
+                  <dd className="font-bold text-brand-navy">{tailleLisible(resume.octets)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Lignes de commande</dt>
+                  <dd className="font-bold text-brand-navy">{resume.lignes}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Encaissements</dt>
+                  <dd className="font-bold text-brand-navy">{resume.encaissements}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Effaçables sans perte</dt>
+                  <dd className="font-bold text-brand-navy">{resume.purgeables}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void exporter()}
+                  disabled={traitementLocal || resume.commandes === 0}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                >
+                  {traitementLocal ? (
+                    <Loader2 className="animate-spin" size={16} aria-hidden />
+                  ) : (
+                    <Download size={16} aria-hidden />
+                  )}
+                  Exporter une sauvegarde
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void purger()}
+                  disabled={traitementLocal || resume.purgeables === 0}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <Trash2 size={16} aria-hidden /> Effacer les commandes synchronisées
+                </button>
+              </div>
+
+              <p className="mt-2 text-xs text-slate-500">
+                La sauvegarde contient les commandes de ce pressing présentes sur la tablette, leurs
+                lignes, les encaissements, les anomalies et les remboursements. Aucune commande en
+                attente ou en conflit n’est jamais effacée par le nettoyage.
+              </p>
+            </>
+          )}
+        </section>
+
+        {/* ------------------------------------------------------- Application */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 lg:col-span-2">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <CheckCircle2 size={16} aria-hidden /> Application
+          </h2>
+
+          <ul className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
             <li className="flex items-start gap-2">
               <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
               Les commandes restent consultables hors ligne sur cet appareil.
@@ -258,6 +649,14 @@ export default function Parametres() {
             <li className="flex items-start gap-2">
               <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
               Mode {isSupabaseConfigured ? 'connecté à Supabase' : 'démonstration (Supabase non configuré)'}.
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
+              Version {VERSION_APPLICATION} — application installable (PWA), utilisable hors ligne.
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />
+              Schéma de base : migrations 001 à 007.
             </li>
           </ul>
 
@@ -269,10 +668,6 @@ export default function Parametres() {
               <CreditCard size={16} aria-hidden /> Voir l’abonnement
             </Link>
           )}
-
-          <p className="mt-3 text-xs text-slate-400">
-            Pressing Pro — application installable (PWA), utilisable hors ligne.
-          </p>
         </section>
       </div>
     </div>

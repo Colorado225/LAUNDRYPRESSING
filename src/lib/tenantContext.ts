@@ -46,6 +46,8 @@ interface TenantState {
   setShops: (shops: ShopMembership[], userId: string | null) => void
   /** Bascule vers une autre boutique du compte ; sans effet si inconnue. */
   switchTenant: (tenantId: string) => void
+  /** Met à jour le nom affiché après une modification du pressing. */
+  renameTenant: (tenantName: string) => void
   clear: () => void
 }
 
@@ -82,6 +84,15 @@ export const useTenantStore = create<TenantState>()(
             role: shop.role,
           }
         }),
+      renameTenant: (tenantName) =>
+        set((state) => ({
+          tenantName,
+          // Le sélecteur de boutique lit `shops` : sans cette mise à jour, il
+          // continuerait d'afficher l'ancien nom jusqu'au prochain chargement.
+          shops: state.shops.map((shop) =>
+            shop.tenantId === state.tenantId ? { ...shop, tenantName } : shop,
+          ),
+        })),
       clear: () =>
         set({
           tenantId: null,
