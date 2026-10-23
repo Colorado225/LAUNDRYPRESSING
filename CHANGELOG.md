@@ -6,6 +6,49 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.7.0] — 2026-10-23
+
+Écran 12 enrichi : les paramètres deviennent un poste de conduite du pressing,
+et non plus une simple fiche de lecture.
+
+### Ajouté
+
+- **Renommage du pressing** (nom, téléphone) réservé au propriétaire
+  (`src/services/tenantService.ts`). Le formulaire relit la fiche avant de
+  s'ouvrir : sans cela, enregistrer le nom aurait effacé le téléphone, absent du
+  contexte local.
+- **Équipe** : liste des membres et de leur rôle, avec la mention « (moi) ».
+- **Sécurité du compte** : bouton *Changer le mot de passe* (envoi du lien par
+  e-mail, aucun mot de passe saisi sur la tablette) et *Déconnecter tous les
+  appareils* (`signOut({ scope: 'global' })`), pour une tablette revendue ou
+  perdue.
+- **Données sur cet appareil** (`src/db/maintenance.ts`) : commandes, en attente,
+  en conflit, lignes, encaissements, espace occupé via `navigator.storage`.
+- **Export JSON** de sauvegarde (commandes, lignes, encaissements, anomalies,
+  remboursements du pressing courant).
+- **Purge des commandes synchronisées** : libère la tablette sans jamais
+  supprimer une commande en attente d'envoi ou en conflit.
+- **`src/lib/parametres.ts`** : validation pure du nom et du téléphone, tailles
+  lisibles, règle de purgeabilité. 17 tests, plus 11 sur les données locales et
+  4 sur le montage de l'écran.
+
+### Décidé
+
+- **Rien n'est écrit ici qui vive ailleurs.** La formule reste dans
+  `/abonnement`, l'équipe et les rôles dans la console de supervision : un écran
+  « paramètres » qui doublerait ces écritures créerait deux chemins pour la même
+  donnée.
+- **La purge est conservatrice par construction.** `estPurgeable` exige
+  `synced === 1` **et** l'absence de conflit ; la règle est testée séparément de
+  l'écran.
+- **Le téléphone se lit avant d'être écrit**, même si cela ajoute un aller-retour
+  réseau : une perte de donnée silencieuse coûte plus cher qu'une requête.
+
+### Vérifié
+
+- 334 tests sur 21 fichiers, 123 contrôles SQL, `tsc --noEmit`, ESLint, build de
+  production.
+
 ## [0.6.1] — 2026-10-23
 
 Pagination serveur des dépenses — la première liste qui ne tient pas dans Dexie.

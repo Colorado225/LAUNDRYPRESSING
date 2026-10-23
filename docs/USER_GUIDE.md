@@ -369,9 +369,31 @@ Onglet **Paramètres**, ouvert à tous les rôles :
 
 - le **pressing** et son identifiant (bouton *Copier*, utile au support) ;
 - le **compte** connecté : rôle sur ce pressing, adresse e-mail, identifiant ;
+- l'**équipe** du pressing : qui travaille ici et avec quel rôle ;
 - la **synchronisation** : état, commandes en attente, dernière réussite,
   dernière erreur, et un bouton *Synchroniser maintenant* ;
-- un rappel du mode hors ligne et le lien vers l'abonnement (propriétaire).
+- les **données sur cet appareil** et l'état de l'application.
+
+**Renommer le pressing** (propriétaire uniquement) : bouton *Modifier*, corriger
+le nom ou le téléphone, puis *Enregistrer*. Le changement part au serveur
+immédiatement et nécessite une connexion. Attention : laisser le téléphone vide
+**efface** le numéro enregistré.
+
+**Changer son mot de passe** : bouton *Changer le mot de passe* → un lien part
+sur l'adresse e-mail du compte → le lien ouvre la page de choix du nouveau mot
+de passe. Aucun mot de passe n'est saisi dans cet écran.
+
+**Tablette revendue ou perdue** : *Déconnecter tous les appareils* invalide la
+session partout. Les commandes non synchronisées restent sur la tablette.
+
+**Données locales** : l'écran affiche le nombre de commandes, celles en attente
+d'envoi, celles en conflit et l'espace occupé.
+
+- *Exporter une sauvegarde* télécharge un fichier JSON (commandes, lignes,
+  encaissements, anomalies, remboursements). À faire avant tout nettoyage.
+- *Effacer les commandes synchronisées* libère de la place : seules les
+  commandes **déjà enregistrées sur le serveur** partent. Les commandes en
+  attente ou en conflit sont toujours conservées.
 
 Le mot de passe se change depuis l'écran de connexion : **« Recevoir un lien de
 réinitialisation »** envoie un e-mail, dont le lien ouvre la page de choix du

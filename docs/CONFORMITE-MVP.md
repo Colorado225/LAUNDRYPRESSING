@@ -30,7 +30,7 @@ reste à faire.
 | 9 | Clients | `/clients` | `/clients` | `src/pages/Clients.tsx` | ✅ livré |
 | 10 | Stocks et dépenses | — | `/stock`, `/depenses` | `Stock.tsx`, `Depenses.tsx` | 🟰 **déjà livré** (palier 3) ; dépenses **paginées côté serveur** |
 | 11 | Rapports et statistiques | — | `/rapports` | `src/pages/Rapports.tsx`, `src/lib/reporting.ts` | ✅ **livré** (courbes 7/30/90 j, comparaison de périodes, export CSV) |
-| 12 | Profil et paramètres | — | `/parametres` | `src/pages/Parametres.tsx` | ✅ **livré** (page basique, lecture seule) |
+| 12 | Profil et paramètres | — | `/parametres` | `src/pages/Parametres.tsx` | ✅ **livré** (pressing modifiable, équipe, sécurité, données locales) |
 
 Légende : ✅ conforme · ⚠️ conforme mais perfectible · 🟰 hors demande MVP mais
 déjà livré · ❌ manquant.
@@ -151,13 +151,23 @@ déjà livré · ❌ manquant.
 
 ### 12. Paramètres — `/parametres`
 
-- **Livré :** pressing et identifiant copiable, compte connecté et rôle, état de
-  synchronisation (en attente, dernière réussite, dernière erreur) avec relance
-  manuelle, rappel hors ligne, accès à l'abonnement pour le propriétaire.
-- **Choix :** écran en **lecture seule**. Modifier le nom du pressing, la
-  formule ou l'équipe se fait déjà dans `/abonnement` et dans la console de
-  supervision : dupliquer ces écritures multiplierait les chemins pour aucun
-  gain.
+- **Livré :** pressing et identifiant copiable, compte connecté et rôle, équipe
+  du pressing, état de synchronisation (en attente, dernière réussite, dernière
+  erreur) avec relance manuelle, accès à l'abonnement pour le propriétaire.
+- **Livré le 23/10 (version enrichie) :**
+  - **renommage du pressing** (nom et téléphone) réservé au propriétaire, la RLS
+    tranchant en dernier ; le formulaire relit la fiche avant de l'ouvrir, sinon
+    enregistrer le nom effacerait le téléphone ;
+  - **équipe** : membres, rôle et mention « (moi) », en lecture ;
+  - **sécurité** : envoi du lien de changement de mot de passe (aucun mot de
+    passe ne transite par la tablette) et **déconnexion de tous les appareils**
+    (`signOut({ scope: 'global' })`) pour une tablette revendue ou perdue ;
+  - **données locales** : nombre de commandes, en attente, en conflit, espace
+    occupé, **export JSON** de sauvegarde, et purge des seules commandes **déjà
+    synchronisées** — jamais une commande en attente ou en conflit.
+- **Choix :** pas d'écriture de la formule ni de l'équipe ici. Elles vivent
+  dans `/abonnement` et la console de supervision ; dupliquer ces écritures
+  créerait deux chemins pour la même donnée.
 
 ### 9. Clients — `/clients`
 

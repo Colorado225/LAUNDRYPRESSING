@@ -211,7 +211,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (302 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
+| `npm test` | Suite Vitest complète (334 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
@@ -254,6 +254,7 @@ pas en `npm run dev`).
 │   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
 │   ├── db/
 │   │   ├── localDb.ts            # schéma Dexie (orders, orderItems, pendingPayments)
+│   │   ├── maintenance.ts        # résumé, export JSON et purge du cache local
 │   │   ├── ordersRepository.ts   # CRUD local + mapping Supabase
 │   │   └── hooks.ts              # useLocalOrders, useCreateOrder, useUpdateOrderStatus
 │   ├── hooks/
@@ -265,6 +266,7 @@ pas en `npm run dev`).
 │   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
 │   │   ├── pagination.ts         # pages locales + curseur serveur (dépenses)
 │   │   ├── reporting.ts          # calculs purs des rapports (écran 11)
+│   │   ├── parametres.ts         # validation du pressing, tailles, purgeabilité
 │   │   ├── permissions.ts        # matrice des capacités par rôle
 │   │   └── ids.ts                # UUID côté client + code QR
 │   ├── pages/
@@ -283,12 +285,13 @@ pas en `npm run dev`).
 │   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
 │   │   ├── Support.tsx           # demandes d'assistance (palier 4)
 │   │   ├── Supervision.tsx       # console de l'éditeur (palier 4)
-│   │   ├── Parametres.tsx        # compte, pressing, synchronisation
+│   │   ├── Parametres.tsx        # pressing, compte, équipe, données locales
 │   │   └── Reinitialisation.tsx  # nouveau mot de passe (lien reçu)
 │   ├── services/
 │   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
 │   │   ├── customerService.ts     # clients, historique, fiche serveur
+│   │   ├── tenantService.ts       # lecture / renommage du pressing (propriétaire)
 │   │   ├── stockService.ts        # articles, mouvements, seuils, fournisseurs
 │   │   ├── expenseService.ts      # dépenses catégorisées (propriétaire)
 │   │   ├── dashboardService.ts    # calculs locaux du tableau de bord
