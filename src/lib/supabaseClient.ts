@@ -20,19 +20,19 @@ export function getSupabaseClient(): SupabaseClient<Database> {
 
   if (!cachedClient) {
     cachedClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      // Stockage par défaut : localStorage. La session survit à la fermeture
-      // de l'onglet, indispensable sur une tablette d'atelier partagée.
-      storageKey: 'pressing-pro-auth',
-    },
-    global: {
-      headers: {
-        'x-application-name': 'pressing-pro-mvp',
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        // Stockage par défaut : localStorage. La session survit à la fermeture
+        // de l'onglet, indispensable sur une tablette d'atelier partagée.
+        storageKey: 'pressing-pro-auth',
       },
-    },
+      global: {
+        headers: {
+          'x-application-name': 'pressing-pro-mvp',
+        },
+      },
     })
   }
 

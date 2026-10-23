@@ -13,20 +13,27 @@ import {
   Shirt,
   WifiOff,
 } from 'lucide-react'
-import { DEMO_TENANT_ID, isSupabaseConfigured, missingSupabaseEnvVars } from '@/lib/env'
+import {
+  DEMO_TENANT_ID,
+  missingSupabaseEnvVars,
+  supabaseConfigState,
+} from '@/lib/env'
 import { useTenantStore } from '@/lib/tenantContext'
 import { AuthError, signInWithPassword } from '@/services/authService'
 
 /**
  * Écran de connexion (phase 5).
  *
- * Deux modes dans le même écran :
+ * Trois modes dans le même écran :
  *  - **normal** : e-mail + mot de passe via Supabase Auth, puis résolution du
  *    pressing dans `tenant_users` (jamais saisi par l'utilisateur) ;
- *  - **démonstration** : quand `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
- *    sont absents, aucune authentification n'est possible. On laisse alors
- *    entrer dans un pressing local pour continuer à tester l'offline-first,
- *    avec un avertissement explicite — plutôt qu'un écran mort.
+ *  - **démonstration** : quand ni `VITE_SUPABASE_URL` ni `VITE_SUPABASE_ANON_KEY`
+ *    ne sont renseignés, aucune authentification n'est possible. On laisse
+ *    alors entrer dans un pressing local pour continuer à tester
+ *    l'offline-first, avec un avertissement explicite — plutôt qu'un écran mort ;
+ *  - **configuration incomplète** : une seule des deux variables est présente.
+ *    C'est une erreur d'installation : on affiche la marche à suivre au lieu de
+ *    la masquer derrière le mode démonstration.
  *
  * Cible : tablette Android d'atelier. Champs pleine largeur, hauteur ≥ 48 px,
  * mot de passe masqué par défaut, erreurs annoncées aux lecteurs d'écran.
@@ -42,7 +49,7 @@ interface LoginProps {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default function Login({ onAuthenticated, notice = null }: LoginProps) {
-  const demo = !isSupabaseConfigured
+  const mode = supabaseConfigState
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-navy px-4 py-8">
@@ -58,11 +65,9 @@ export default function Login({ onAuthenticated, notice = null }: LoginProps) {
         </header>
 
         <div className="rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
-          {demo ? (
-            <DemoAccess onAuthenticated={onAuthenticated} />
-          ) : (
-            <CredentialsForm onAuthenticated={onAuthenticated} />
-          )}
+          {mode === 'demo' && <DemoAccess onAuthenticated={onAuthenticated} />}
+          {mode === 'incomplete' && <ConfigWarning />}
+          {mode === 'ok' && <CredentialsForm onAuthenticated={onAuthenticated} />}
 
           {notice && (
             <p
@@ -223,6 +228,46 @@ function CredentialsForm({ onAuthenticated }: { onAuthenticated: () => void }) {
       <p className="mt-4 text-xs leading-relaxed text-slate-500">
         Mot de passe oublié ? Contactez le propriétaire du pressing : la réinitialisation par
         e-mail n’est pas encore automatisée dans cette version.
+      </p>
+    </>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Configuration incomplète : une seule des deux variables publiques           */
+/* -------------------------------------------------------------------------- */
+
+function ConfigWarning() {
+  return (
+    <>
+      <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">
+        <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
+        <p>
+          <strong className="font-semibold">Configuration incomplète.</strong> La connexion est
+          désactivée tant que les deux variables ne sont pas renseignées dans{' '}
+          <code className="font-mono">.env</code> :
+        </p>
+      </div>
+
+      <ul className="mt-3 space-y-1 text-sm text-slate-700">
+        {missingSupabaseEnvVars.map((variable) => (
+          <li key={variable} className="flex items-center gap-2">
+            <span className="size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
+            <code className="font-mono">{variable}</code>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-4 text-sm leading-relaxed text-slate-600">
+        Renseignez-les puis relancez l’installation : <br />
+        <code className="mt-1 inline-block rounded-lg bg-slate-100 px-2 py-1 font-mono text-xs">
+          npm run setup:check
+        </code>
+      </p>
+
+      <p className="mt-3 text-xs leading-relaxed text-slate-500">
+        Aucun projet Supabase ne doit rester à moitié configuré en production : les commandes
+        enregistrées sur cette tablette ne pourraient pas être synchronisées.
       </p>
     </>
   )

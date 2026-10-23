@@ -33,6 +33,24 @@ export const missingSupabaseEnvVars: string[] = [
 export const isSupabaseConfigured = missingSupabaseEnvVars.length === 0
 
 /**
+ * Trois états possibles, volontairement distingués :
+ *  - `ok`         : les deux variables publiques sont présentes ;
+ *  - `demo`       : **aucune** des deux → mode démonstration assumé, l'écran
+ *                   de connexion propose de saisir un UUID de pressing ;
+ *  - `incomplete` : **une seule** des deux → erreur de configuration qu'il faut
+ *                   afficher. Basculer silencieusement en démonstration ferait
+ *                   croire à un serveur en panne, et laisserait l'utilisateur
+ *                   saisir un identifiant de pressing à la place d'un e-mail.
+ */
+export type SupabaseConfigState = 'ok' | 'demo' | 'incomplete'
+
+export const supabaseConfigState: SupabaseConfigState = isSupabaseConfigured
+  ? 'ok'
+  : missingSupabaseEnvVars.length === 2
+    ? 'demo'
+    : 'incomplete'
+
+/**
  * Masque une URL pour l'affichage (les clés publiques ne doivent pas être
  * recopiées dans les captures d'écran ou les rapports d'erreur).
  */
