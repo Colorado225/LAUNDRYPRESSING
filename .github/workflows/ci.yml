@@ -8,14 +8,17 @@
 #    `package-lock.json`, reproductible, et échec immédiat si le verrou est
 #    désynchronisé de `package.json` ;
 #  - Node 22 : même version majeure que le poste de développement ;
-#  - un seul job : chaque étape est courte, et réinstaller les dépendances dans
-#    plusieurs jobs coûterait plus cher que de les enchaîner ;
+#  - deux jobs : l'application (types, style, tests, build) et le SQL réel
+#    (migrations, RLS, rôles, verrou optimiste) sur un PostgreSQL 16 jetable.
+#    Le second n'a besoin ni de Supabase ni de Docker : le fichier
+#    `supabase/tests/local/00_bootstrap.sql` recrée l'environnement Supabase
+#    minimal (rôles, schéma `auth`, `auth.uid()`) ;
 #  - `concurrency` : une nouvelle poussée annule la vérification précédente de
 #    la même branche, inutile dès qu'elle est obsolète.
 #
-# ⚠ Ce workflow ne remplace pas les vérifications qui exigent un vrai projet
-#   Supabase (migrations, RLS, webhook CinetPay) : elles restent manuelles et
-#   sont décrites dans docs/AUDIT-COURANT.md §6.
+# ⚠ Ce workflow ne remplace pas la recette sur un vrai projet Supabase
+#   (provisionnement, Edge Functions, webhook CinetPay) : elle est décrite dans
+#   docs/AUDIT-COURANT.md §6 et reste manuelle.
 
 name: Intégration continue
 
@@ -62,3 +65,36 @@ jobs:
 
       - name: Construire l'application
         run: npm run build
+
+  sql:
+    name: SQL réel (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Rejouer migrations, RLS, rôles et verrou optimiste
+        run: npm run sql:verify
+        env:
+          PGURL: postgresql://postgres:postgres@localhost:5432/postgres

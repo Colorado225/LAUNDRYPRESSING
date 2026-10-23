@@ -9,6 +9,7 @@
     "setup": "node scripts/setup.mjs",
     "setup:check": "node scripts/setup.mjs --check",
     "setup:dry": "node scripts/setup.mjs --dry-run",
+    "sql:verify": "bash scripts/sql-verify.sh",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
