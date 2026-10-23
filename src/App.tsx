@@ -25,6 +25,9 @@ const Orders = lazy(() => import('@/pages/Orders'))
 const OrderForm = lazy(() => import('@/pages/OrderForm'))
 const OrderDetail = lazy(() => import('@/pages/OrderDetail'))
 const Atelier = lazy(() => import('@/pages/Atelier'))
+const Catalogue = lazy(() => import('@/pages/Catalogue'))
+const Caisse = lazy(() => import('@/pages/Caisse'))
+const Receipt = lazy(() => import('@/pages/Receipt'))
 const PaymentReturn = lazy(() => import('@/pages/PaymentReturn'))
 const Offline = lazy(() => import('@/pages/Offline'))
 
@@ -59,6 +62,9 @@ export default function App() {
               <Route path="/commandes/nouvelle" element={<OrderForm />} />
               <Route path="/commandes/:orderId" element={<OrderDetail />} />
               <Route path="/atelier" element={<Atelier />} />
+              <Route path="/catalogue" element={<Catalogue />} />
+              <Route path="/caisse" element={<Caisse />} />
+              <Route path="/commandes/:orderId/recu" element={<Receipt />} />
               <Route path="/offline" element={<Offline />} />
               {/* Retour CinetPay. L'alias anglais évite de casser un lien déjà partagé. */}
               <Route path="/paiement/retour" element={<PaymentReturn />} />

@@ -48,6 +48,8 @@ export interface LocalOrder {
    * renvoyée tant que l'utilisateur n'a pas choisi quelle version garder.
    */
   syncConflict: string | null
+  /** Échéance promise au client (AAAA-MM-JJ), `null` si aucune. */
+  dueDate: string | null
 }
 
 /** Vêtement d'une commande. */
@@ -58,7 +60,49 @@ export interface LocalOrderItem {
   label: string
   fabricType: string | null
   specialInstructions: string | null
+  /** Prix facturé, figé à la saisie (une hausse de tarif ne réécrit rien). */
   price: number
+  /** Entrée de catalogue utilisée, `null` pour une ligne libre. */
+  catalogEntryId: string | null
+  /** Libellés recopiés au moment de la vente. */
+  articleName: string | null
+  serviceName: string | null
+}
+
+/**
+ * Cache local du catalogue (palier 2).
+ *
+ * Le catalogue vit sur le serveur (seul le propriétaire l'écrit) mais doit
+ * rester consultable hors ligne : la tablette en garde une copie en lecture
+ * seule, rafraîchie à chaque synchronisation.
+ */
+export interface LocalCatalogEntry {
+  id: string
+  tenantId: string
+  article: string
+  service: string
+  price: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/**
+ * Encaissement au comptoir en attente d'envoi.
+ *
+ * L'identifiant est généré sur la tablette : c'est lui qui rend l'appel au
+ * serveur idempotent. Un paiement encaissé hors ligne est visible
+ * immédiatement dans le solde, puis transmis au retour du réseau.
+ */
+export interface LocalCashPayment {
+  id: string
+  orderId: string
+  tenantId: string
+  amount: number
+  method: 'cash'
+  note: string | null
+  receivedAt: string
+  synced: SyncFlag
+  lastError: string | null
 }
 
 /**
@@ -84,6 +128,8 @@ export class PressingDatabase extends Dexie {
   orders!: Table<LocalOrder, string>
   orderItems!: Table<LocalOrderItem, string>
   pendingPayments!: Table<LocalPendingPayment, string>
+  catalogEntries!: Table<LocalCatalogEntry, string>
+  cashPayments!: Table<LocalCashPayment, string>
 
   constructor() {
     super('pressing-pro')
@@ -124,6 +170,38 @@ export class PressingDatabase extends Dexie {
             if (order.syncConflict === undefined) order.syncConflict = null
           })
       })
+
+    // v4 (palier 2) : échéance, catalogue et caisse espèces.
+    //  - `orders.dueDate` sert aux alertes de retard ;
+    //  - les lignes de commande gagnent la traçabilité du catalogue (prix
+    //    historisé) ;
+    //  - deux nouvelles tables : cache du catalogue et file des encaissements.
+    this.version(4)
+      .stores({
+        orders:
+          'id, tenantId, status, synced, createdAt, qrCode, dueDate, [tenantId+status], [tenantId+synced]',
+        orderItems: 'id, orderId, tenantId, [orderId+tenantId]',
+        catalogEntries: 'id, tenantId, [tenantId+isActive]',
+        cashPayments:
+          'id, orderId, tenantId, synced, receivedAt, [tenantId+synced], [orderId+synced]',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('orders')
+          .toCollection()
+          .modify((order: LocalOrder & Record<string, unknown>) => {
+            if (order.dueDate === undefined) order.dueDate = null
+          })
+
+        await tx
+          .table('orderItems')
+          .toCollection()
+          .modify((item: LocalOrderItem & Record<string, unknown>) => {
+            if (item.catalogEntryId === undefined) item.catalogEntryId = null
+            if (item.articleName === undefined) item.articleName = null
+            if (item.serviceName === undefined) item.serviceName = null
+          })
+      })
   }
 }
 
@@ -131,7 +209,21 @@ export const db = new PressingDatabase()
 
 /** Supprime toutes les données locales (déconnexion, changement de pressing). */
 export async function clearLocalData(): Promise<void> {
-  await db.transaction('rw', db.orders, db.orderItems, db.pendingPayments, async () => {
-    await Promise.all([db.orders.clear(), db.orderItems.clear(), db.pendingPayments.clear()])
-  })
+  await db.transaction(
+    'rw',
+    db.orders,
+    db.orderItems,
+    db.pendingPayments,
+    db.catalogEntries,
+    db.cashPayments,
+    async () => {
+      await Promise.all([
+        db.orders.clear(),
+        db.orderItems.clear(),
+        db.pendingPayments.clear(),
+        db.catalogEntries.clear(),
+        db.cashPayments.clear(),
+      ])
+    },
+  )
 }

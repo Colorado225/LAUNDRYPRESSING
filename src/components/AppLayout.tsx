@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { ClipboardList, LogOut, PlusCircle, ScanLine, Shirt } from 'lucide-react'
+import { ClipboardList, LogOut, PlusCircle, ScanLine, Shirt, Tag, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import OfflineBadge from './OfflineBadge'
 import { TENANT_ROLE_LABELS } from '@/constants/orders'
@@ -94,6 +94,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <ScanLine size={18} aria-hidden />
             Atelier
           </NavLink>
+          {can(role, 'cash.manage') && (
+            <NavLink to="/caisse" className={navLinkClass}>
+              <Wallet size={18} aria-hidden />
+              Caisse
+            </NavLink>
+          )}
+          {can(role, 'catalog.manage') && (
+            <NavLink to="/catalogue" className={navLinkClass}>
+              <Tag size={18} aria-hidden />
+              Prestations
+            </NavLink>
+          )}
         </nav>
       </header>
 

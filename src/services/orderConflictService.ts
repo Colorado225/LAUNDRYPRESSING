@@ -99,6 +99,10 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     fabricType: item.fabric_type,
     specialInstructions: item.special_instructions,
     price: item.price,
+    // Champs du palier 2 : absents côté serveur = ligne libre historique.
+    catalogEntryId: item.catalog_entry_id ?? null,
+    articleName: item.article_name ?? null,
+    serviceName: item.service_name ?? null,
   }))
 
   const localOrder: LocalOrder = {
@@ -113,6 +117,7 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     paymentMethod: server.payment_method,
     createdAt: server.created_at,
     updatedAt: server.updated_at,
+    dueDate: server.due_date ?? null,
     synced: 1,
     syncedAt: new Date().toISOString(),
     serverVersion: server.version,

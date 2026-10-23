@@ -1,39 +1,85 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Lock, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, Check, Lock, PenLine, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder } from '@/db/hooks'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
+import {
+  getCachedCatalog,
+  refreshCatalog,
+  servicesForArticle,
+  uniqueArticles,
+} from '@/db/catalogRepository'
+import type { LocalCatalogEntry } from '@/db/localDb'
 
 /**
  * Création de commande — 100 % locale.
  *
- * Aucun appel réseau n'est effectué : la commande est écrite dans IndexedDB
- * puis envoyée par le moteur de synchronisation dès que la connexion revient.
- * C'est le cœur du fonctionnement en mode avion.
+ * Aucun appel réseau n'est effectué pour enregistrer la commande : elle est
+ * écrite dans IndexedDB puis envoyée par le moteur de synchronisation dès que
+ * la connexion revient. C'est le cœur du fonctionnement en mode avion.
+ *
+ * Palier 2 : les lignes peuvent venir du **catalogue** (prix proposé, corrigeable)
+ * ou être saisies **librement**. Dans les deux cas, le libellé et le prix sont
+ * recopiés sur la ligne : une modification ultérieure du catalogue ne change
+ * jamais une commande déjà enregistrée.
  */
 
-const EMPTY_ITEM: OrderItemInput = {
+const EMPTY_ITEM: OrderItemDraft = {
+  mode: 'catalog',
   label: '',
   fabricType: '',
   specialInstructions: '',
   price: 0,
+  catalogEntryId: undefined,
+  articleName: undefined,
+  serviceName: undefined,
+}
+
+interface OrderItemDraft extends OrderItemInput {
+  mode: 'catalog' | 'free'
 }
 
 export default function OrderForm() {
   const navigate = useNavigate()
   const createOrder = useCreateOrder()
+  const tenantId = useTenantStore((state) => state.tenantId)
   const role = useTenantStore((state) => state.role)
   const canCreate = can(role, 'orders.create')
 
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
-  const [items, setItems] = useState<OrderItemInput[]>([{ ...EMPTY_ITEM }])
+  const [dueDate, setDueDate] = useState('')
+  const [items, setItems] = useState<OrderItemDraft[]>([{ ...EMPTY_ITEM }])
+  const [catalog, setCatalog] = useState<LocalCatalogEntry[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+
+  // Catalogue : copie locale immédiatement, rafraîchissement en arrière-plan.
+  // Hors ligne, la copie existante reste utilisable — c'est tout l'intérêt.
+  useEffect(() => {
+    if (!tenantId) return
+
+    let actif = true
+
+    void getCachedCatalog(tenantId).then((entrees) => {
+      if (actif) setCatalog(entrees)
+    })
+
+    void refreshCatalog(tenantId).then((reussi) => {
+      if (!reussi || !actif) return
+      void getCachedCatalog(tenantId).then((entrees) => {
+        if (actif) setCatalog(entrees)
+      })
+    })
+
+    return () => {
+      actif = false
+    }
+  }, [tenantId])
 
   // L'onglet est masqué pour l'artisan, mais une URL saisie à la main ne doit
   // pas contourner la règle — le serveur la refuserait de toute façon (RLS).
@@ -58,23 +104,81 @@ export default function OrderForm() {
     )
   }
 
+  const articles = uniqueArticles(catalog)
+  const catalogueDisponible = articles.length > 0
+
   const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
 
-  const updateItem = (index: number, patch: Partial<OrderItemInput>) => {
+  const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)))
   }
 
-  const addItem = () => setItems((current) => [...current, { ...EMPTY_ITEM }])
+  const addItem = () =>
+    setItems((current) => [
+      ...current,
+      { ...EMPTY_ITEM, mode: catalogueDisponible ? 'catalog' : 'free' },
+    ])
 
   const removeItem = (index: number) => {
     setItems((current) => (current.length === 1 ? current : current.filter((_, i) => i !== index)))
+  }
+
+  const choisirArticle = (index: number, article: string) => {
+    const prestations = servicesForArticle(catalog, article)
+    const premiere = prestations[0]
+
+    updateItem(index, {
+      articleName: article,
+      serviceName: premiere?.service,
+      catalogEntryId: premiere?.id,
+      price: premiere?.price ?? 0,
+      label: premiere ? `${article} — ${premiere.service}` : article,
+    })
+  }
+
+  const choisirPrestation = (index: number, entryId: string) => {
+    const entree = catalog.find((candidate) => candidate.id === entryId)
+    if (!entree) return
+
+    updateItem(index, {
+      catalogEntryId: entree.id,
+      articleName: entree.article,
+      serviceName: entree.service,
+      price: entree.price,
+      label: `${entree.article} — ${entree.service}`,
+    })
+  }
+
+  const basculerMode = (index: number, mode: 'catalog' | 'free') => {
+    if (mode === 'free') {
+      updateItem(index, {
+        mode,
+        catalogEntryId: undefined,
+        articleName: undefined,
+        serviceName: undefined,
+      })
+      return
+    }
+
+    const article = items[index]?.articleName ?? articles[0]
+    if (!article) return
+    choisirArticle(index, article)
+    updateItem(index, { mode })
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setErrors([])
 
-    const parsed = createOrderSchema.safeParse({ customerName, customerPhone, items })
+    const lignes: OrderItemInput[] = items.map(({ mode: _mode, ...item }) => item)
+
+    const parsed = createOrderSchema.safeParse({
+      customerName,
+      customerPhone,
+      items: lignes,
+      dueDate: dueDate || undefined,
+    })
+
     if (!parsed.success) {
       setErrors(zodMessages(parsed.error))
       return
@@ -134,12 +238,26 @@ export default function OrderForm() {
                 className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
               />
             </Field>
+
+            <Field
+              label="Livraison promise"
+              htmlFor="due-date"
+              hint="Facultatif — sert aux alertes de retard"
+            >
+              <input
+                id="due-date"
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+              />
+            </Field>
           </div>
         </section>
 
         {/* Vêtements */}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Vêtements</h2>
             <button
               type="button"
@@ -151,19 +269,80 @@ export default function OrderForm() {
             </button>
           </div>
 
+          {!catalogueDisponible && (
+            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+              Aucune prestation au catalogue pour l’instant : les lignes sont saisies
+              librement. Le propriétaire peut installer une grille de départ depuis
+              l’onglet « Prestations ».
+            </p>
+          )}
+
           <ul className="mt-3 space-y-3">
             {items.map((item, index) => (
               <li key={index} className="rounded-xl bg-slate-50 p-3">
-                <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
-                  <Field label="Vêtement" htmlFor={`item-label-${index}`}>
-                    <input
-                      id={`item-label-${index}`}
-                      value={item.label}
-                      onChange={(event) => updateItem(index, { label: event.target.value })}
-                      placeholder="Costume 3 pièces"
-                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                {catalogueDisponible && (
+                  <div className="mb-3 flex gap-2">
+                    <ModeButton
+                      actif={item.mode === 'catalog'}
+                      onClick={() => basculerMode(index, 'catalog')}
+                      icon={<BookOpen size={14} aria-hidden />}
+                      label="Catalogue"
                     />
-                  </Field>
+                    <ModeButton
+                      actif={item.mode === 'free'}
+                      onClick={() => basculerMode(index, 'free')}
+                      icon={<PenLine size={14} aria-hidden />}
+                      label="Saisie libre"
+                    />
+                  </div>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {item.mode === 'catalog' && catalogueDisponible ? (
+                    <>
+                      <Field label="Article" htmlFor={`item-article-${index}`}>
+                        <select
+                          id={`item-article-${index}`}
+                          value={item.articleName ?? ''}
+                          onChange={(event) => choisirArticle(index, event.target.value)}
+                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                        >
+                          <option value="">Choisir un article…</option>
+                          {articles.map((article) => (
+                            <option key={article} value={article}>
+                              {article}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <Field label="Prestation" htmlFor={`item-service-${index}`}>
+                        <select
+                          id={`item-service-${index}`}
+                          value={item.catalogEntryId ?? ''}
+                          onChange={(event) => choisirPrestation(index, event.target.value)}
+                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                        >
+                          <option value="">Choisir une prestation…</option>
+                          {servicesForArticle(catalog, item.articleName ?? '').map((entree) => (
+                            <option key={entree.id} value={entree.id}>
+                              {entree.service} — {formatFcfa(entree.price)}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    </>
+                  ) : (
+                    <Field label="Vêtement" htmlFor={`item-label-${index}`}>
+                      <input
+                        id={`item-label-${index}`}
+                        value={item.label}
+                        onChange={(event) => updateItem(index, { label: event.target.value })}
+                        placeholder="Costume 3 pièces"
+                        className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                      />
+                    </Field>
+                  )}
 
                   <Field label="Tissu" htmlFor={`item-fabric-${index}`}>
                     <input
@@ -192,7 +371,15 @@ export default function OrderForm() {
                   </Field>
 
                   <div className="flex items-end gap-2">
-                    <Field label="Prix (FCFA)" htmlFor={`item-price-${index}`}>
+                    <Field
+                      label="Prix (FCFA)"
+                      htmlFor={`item-price-${index}`}
+                      hint={
+                        item.mode === 'catalog' && item.catalogEntryId
+                          ? 'Prix du catalogue — corrigeable au comptoir'
+                          : undefined
+                      }
+                    >
                       <input
                         id={`item-price-${index}`}
                         type="number"
@@ -256,6 +443,34 @@ export default function OrderForm() {
         </div>
       </form>
     </div>
+  )
+}
+
+function ModeButton({
+  actif,
+  onClick,
+  icon,
+  label,
+}: {
+  actif: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={actif}
+      className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+        actif
+          ? 'border-brand-teal bg-brand-teal/10 text-brand-navy'
+          : 'border-slate-300 bg-white text-slate-600 hover:border-brand-teal'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   )
 }
 

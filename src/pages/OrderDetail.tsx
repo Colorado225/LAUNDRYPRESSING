@@ -20,10 +20,13 @@ import {
   PAYMENT_STATUS_LABELS,
   getNextStatus,
   getPreviousStatus,
+  isOrderLate,
+  todayIso,
 } from '@/constants/orders'
-import { formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
+import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
 import { can, canSeeAmounts } from '@/lib/permissions'
 import ConflictBanner from '@/components/ConflictBanner'
+import CashPanel from '@/components/CashPanel'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
@@ -64,6 +67,11 @@ export default function OrderDetail() {
   const statusMeta = ORDER_STATUSES[order.status]
   const nextStatus = getNextStatus(order.status)
   const previousStatus = getPreviousStatus(order.status)
+  const enRetard = isOrderLate(order, todayIso())
+  // La marche arrière est réservée au propriétaire par `guard_order_update` :
+  // afficher le bouton aux autres rôles ne produirait qu'une erreur serveur.
+  const peutReculer = can(role, 'orders.editDetails') && role === 'owner'
+  const peutAnnuler = can(role, 'orders.updateStatus') && role !== 'artisan'
 
   const changeStatus = async (status: typeof order.status) => {
     try {
@@ -88,11 +96,19 @@ export default function OrderDetail() {
             </p>
           </div>
 
-          <span
-            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${statusMeta.badgeClass}`}
-          >
-            {statusMeta.label}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${statusMeta.badgeClass}`}
+            >
+              {statusMeta.label}
+            </span>
+
+            {enRetard && (
+              <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-100 px-3 py-1.5 text-sm font-semibold text-rose-800">
+                En retard
+              </span>
+            )}
+          </div>
         </div>
 
         <p className="mt-3 text-sm text-slate-600">{statusMeta.description}</p>
@@ -102,6 +118,13 @@ export default function OrderDetail() {
             <dt className="text-xs uppercase tracking-wide text-slate-500">Total</dt>
             <dd className="text-lg font-bold text-brand-navy">
               {seeAmounts ? formatFcfa(order.totalAmount) : '—'}
+            </dd>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 p-3">
+            <dt className="text-xs uppercase tracking-wide text-slate-500">Livraison promise</dt>
+            <dd className={`text-sm font-semibold ${enRetard ? 'text-rose-700' : 'text-slate-800'}`}>
+              {order.dueDate ? formatDateFr(order.dueDate) : 'Non précisée'}
             </dd>
           </div>
 
@@ -177,6 +200,9 @@ export default function OrderDetail() {
         </ul>
       </section>
 
+      {/* Caisse : espèces, acompte, solde et reçu */}
+      {seeAmounts && <CashPanel order={order} />}
+
       {/* Paiement Mobile Money — initiation réservée au comptoir */}
       {can(role, 'payments.initiate') && <PaymentButton order={order} />}
 
@@ -206,7 +232,7 @@ export default function OrderDetail() {
         </ol>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {previousStatus && (
+          {previousStatus && peutReculer && (
             <button
               type="button"
               onClick={() => void changeStatus(previousStatus)}
@@ -228,7 +254,7 @@ export default function OrderDetail() {
             </button>
           )}
 
-          {order.status !== 'cancelled' && order.status !== 'delivered' && (
+          {peutAnnuler && order.status !== 'cancelled' && order.status !== 'delivered' && (
             <button
               type="button"
               onClick={() => void changeStatus('cancelled')}

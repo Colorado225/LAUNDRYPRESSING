@@ -10,6 +10,8 @@ import {
   redirectToPayment,
 } from '@/services/paymentService'
 import { formatFcfa } from '@/lib/formatters'
+import { useCashPayments } from '@/db/hooks'
+import { computeBalance } from '@/services/cashService'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 
@@ -33,10 +35,14 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
   // Défense en profondeur : l'écran parent masque déjà le bouton, mais un
   // composant monté directement ne doit pas contourner la matrice.
   const allowed = can(role, 'payments.initiate')
+  const paiementsEspeces = useCashPayments(order.id)
   const guard = canInitiatePayment()
-  const charged = chargeableAmount(order.totalAmount)
-  const isRounded = charged !== order.totalAmount
-  const alreadyPaid = order.paymentStatus === 'paid'
+  // On ne demande que le RESTE À PAYER : un acompte en espèces déjà encaissé
+  // au comptoir ne doit pas être facturé une seconde fois par Mobile Money.
+  const solde = computeBalance(order.totalAmount, order.paymentStatus, paiementsEspeces)
+  const charged = chargeableAmount(solde.remaining)
+  const isRounded = charged !== solde.remaining
+  const alreadyPaid = order.paymentStatus === 'paid' || solde.remaining <= 0
   const blocked = alreadyPaid || order.status === 'cancelled' || !guard.ok
 
   if (!allowed) return null
@@ -121,7 +127,7 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
         ))}
         <span className="text-xs text-slate-500">
           · Montant à régler : <strong className="text-slate-700">{formatFcfa(charged)}</strong>
-          {isRounded && ` (arrondi depuis ${formatFcfa(order.totalAmount)})`}
+          {isRounded && ` (arrondi depuis ${formatFcfa(solde.remaining)})`}
         </span>
       </div>
 

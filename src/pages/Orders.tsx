@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CloudOff, Loader2, PlusCircle, Search } from 'lucide-react'
 import { useLocalOrders } from '@/db/hooks'
-import { ORDER_STATUSES, ORDER_FLOW } from '@/constants/orders'
+import { ORDER_STATUSES, ORDER_FLOW, isOrderLate, todayIso } from '@/constants/orders'
 import { formatDateFr, formatFcfa } from '@/lib/formatters'
 import type { OrderStatus } from '@/types/database'
 import { can, canSeeAmounts } from '@/lib/permissions'
@@ -18,20 +18,23 @@ export default function Orders() {
   const seeAmounts = canSeeAmounts(role)
   const canCreate = can(role, 'orders.create')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all' | 'late'>('all')
+  const aujourdhui = todayIso()
 
   const filtered = useMemo(() => {
     if (!orders) return []
     const term = search.trim().toLowerCase()
     return orders.filter((order) => {
-      const matchesStatus = statusFilter === 'all' || order.status === statusFilter
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'late' ? isOrderLate(order, aujourdhui) : order.status === statusFilter)
       const matchesSearch =
         term.length === 0 ||
         order.customerName.toLowerCase().includes(term) ||
         order.customerPhone.includes(term)
       return matchesStatus && matchesSearch
     })
-  }, [orders, search, statusFilter])
+  }, [orders, search, statusFilter, aujourdhui])
 
   if (orders === undefined) {
     return (
@@ -87,6 +90,9 @@ export default function Orders() {
         <FilterChip active={statusFilter === 'all'} onClick={() => setStatusFilter('all')}>
           Toutes
         </FilterChip>
+        <FilterChip active={statusFilter === 'late'} onClick={() => setStatusFilter('late')}>
+          En retard
+        </FilterChip>
         {ORDER_FLOW.map((status) => (
           <FilterChip
             key={status}
@@ -132,6 +138,12 @@ export default function Orders() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    {isOrderLate(order, aujourdhui) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">
+                        En retard
+                      </span>
+                    )}
+
                     {order.syncConflict && (
                       <span
                         className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800"

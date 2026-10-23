@@ -16,8 +16,10 @@ import type { TenantRole } from '@/types/database'
  * Décisions produit explicites :
  *  - l'artisan ne voit PAS les montants (il n'encaisse pas et n'a pas à
  *    connaître le prix des vêtements qu'il traite) ;
- *  - seul le propriétaire supprime une commande ou gère le pressing ;
- *  - le réceptionniste encaisse et crée les commandes, comme le propriétaire.
+ *  - seul le propriétaire supprime une commande, gère le pressing et fixe les
+ *    tarifs du catalogue ;
+ *  - le réceptionniste encaisse (Mobile Money et espèces), clôture la caisse
+ *    et crée les commandes, comme le propriétaire.
  */
 export type Capability =
   | 'orders.create'
@@ -25,6 +27,8 @@ export type Capability =
   | 'orders.editDetails'
   | 'orders.delete'
   | 'payments.initiate'
+  | 'cash.manage'
+  | 'catalog.manage'
   | 'amounts.view'
   | 'tenant.manage'
 
@@ -35,6 +39,8 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'orders.editDetails',
     'orders.delete',
     'payments.initiate',
+    'cash.manage',
+    'catalog.manage',
     'amounts.view',
     'tenant.manage',
   ],
@@ -43,6 +49,7 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'orders.updateStatus',
     'orders.editDetails',
     'payments.initiate',
+    'cash.manage',
     'amounts.view',
   ],
   artisan: ['orders.updateStatus'],

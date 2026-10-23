@@ -1,17 +1,14 @@
-import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
 import { fileURLToPath, URL } from 'node:url'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vitest/config'
 
 /**
- * Configuration Vitest (phase 6).
+ * Configuration des tests.
  *
- * Volontairement séparée de `vite.config.ts` et non fusionnée avec elle :
- * `VitePWA` génère un service worker au démarrage, ce qui n'a aucun sens dans
- * une suite de tests et ralentirait chaque exécution. Seuls les éléments
- * strictement nécessaires sont repris (JSX, alias `@`).
- *
- * L'alias doit rester identique à celui de `vite.config.ts` : sinon les tests
- * passeraient sur une résolution de modules différente de celle du build.
+ * Volontairement séparée de `vite.config.ts` : celui-ci charge le plugin PWA
+ * (génération du service worker) et le proxy de développement, inutiles — et
+ * coûteux — pour des tests unitaires. Seuls l'alias `@` et le plugin React
+ * sont repris, pour que les tests importent les mêmes chemins que l'application.
  */
 export default defineConfig({
   plugins: [react()],
@@ -21,12 +18,10 @@ export default defineConfig({
     },
   },
   test: {
-    // IndexedDB et DOM réalistes : les modules critiques (Dexie, hooks) en
-    // dépendent directement.
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
-    restoreMocks: true,
     clearMocks: true,
+    restoreMocks: true,
   },
 })

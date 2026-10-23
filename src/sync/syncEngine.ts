@@ -14,6 +14,13 @@ import {
   updateOrderServerVersion,
 } from '@/db/ordersRepository'
 import { useSyncStore } from '@/stores/syncStore'
+import {
+  getPendingCashPayments,
+  markCashPaymentError,
+  markCashPaymentSynced,
+  summariseCash,
+} from '@/db/cashRepository'
+import { applyRemoteCashState, applyRemoteOrderState } from '@/db/ordersRepository'
 
 /**
  * Moteur de synchronisation offline-first.
@@ -32,6 +39,15 @@ import { useSyncStore } from '@/stores/syncStore'
  *     commande est marquée en conflit et attend un arbitrage humain.
  *  5. En cas d'échec réseau, la commande reste en file (`synced = 0`) et sera
  *     retentée au prochain passage (événement `online` ou intervalle de 60 s).
+ *
+ * Palier 2 — deux ajouts :
+ *  6. Les **encaissements au comptoir** en attente sont transmis après les
+ *     commandes (l'ordre est important : la commande doit exister côté serveur).
+ *     L'identifiant du paiement est généré sur la tablette : un renvoi ne crée
+ *     pas de second encaissement.
+ *  7. Une **lecture** légère rapatrie l'état des commandes modifiées ailleurs
+ *     (paiement Mobile Money, changement de statut sur une autre tablette).
+ *     Elle ne touche JAMAIS une commande ayant du travail local en attente.
  */
 
 const SYNC_INTERVAL_MS = 60_000
@@ -51,6 +67,10 @@ export interface SyncResult {
   failed: number
   /** Commandes bloquées par un conflit, en attente d'arbitrage. */
   conflicts: number
+  /** Encaissements au comptoir transmis avec succès. */
+  cashSucceeded: number
+  /** Commandes dont l'état a été rafraîchi depuis le serveur. */
+  pulled: number
   /** `true` quand le passage a été ignoré (hors ligne, non configuré, sans tenant). */
   skipped: boolean
   lastError: string | null
@@ -61,8 +81,44 @@ const EMPTY_RESULT: SyncResult = {
   succeeded: 0,
   failed: 0,
   conflicts: 0,
+  cashSucceeded: 0,
+  pulled: 0,
   skipped: true,
   lastError: null,
+}
+
+/**
+ * Curseur de lecture, conservé d'un passage à l'autre.
+ *
+ * On repart 10 minutes en arrière à chaque fois : une tablette dont l'horloge
+ * avance légèrement ne doit pas manquer une modification. Relire un peu est
+ * sans conséquence (les versions identiques sont ignorées), manquer une ligne
+ * ne l'est pas.
+ */
+const PULL_CURSOR_KEY = 'pressing.derniereLecture'
+const PULL_OVERLAP_MS = 10 * 60 * 1000
+
+function readPullCursor(): string {
+  try {
+    const stocke = window.localStorage.getItem(PULL_CURSOR_KEY)
+    if (stocke) {
+      const date = new Date(stocke)
+      if (!Number.isNaN(date.getTime())) {
+        return new Date(date.getTime() - PULL_OVERLAP_MS).toISOString()
+      }
+    }
+  } catch {
+    // Mode navigation privée ou stockage plein : on relit simplement plus large.
+  }
+  return new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+}
+
+function writePullCursor(iso: string): void {
+  try {
+    window.localStorage.setItem(PULL_CURSOR_KEY, iso)
+  } catch {
+    // Sans curseur, la prochaine lecture repartira de 7 jours : correct, plus coûteux.
+  }
 }
 
 /** Résultat de l'envoi d'une commande vers le serveur. */
@@ -114,6 +170,7 @@ async function pushOrder(order: LocalOrder): Promise<PushResult> {
     qr_code: payload.qr_code,
     photo_url: payload.photo_url,
     total_amount: payload.total_amount,
+    due_date: payload.due_date,
     updated_at: payload.updated_at,
     synced_from_local: payload.synced_from_local,
   }
@@ -131,6 +188,75 @@ async function pushOrder(order: LocalOrder): Promise<PushResult> {
   if (!data || data.length === 0) return { status: 'conflict' }
 
   return { status: 'synced', version: data[0]!.version }
+}
+
+/**
+ * Transmet les encaissements au comptoir en attente.
+ *
+ * Erreurs « définitives » (montant invalide, commande inconnue) : le paiement
+ * est marqué comme traité avec son message, sinon la tablette le renverrait
+ * toutes les 60 secondes sans jamais pouvoir aboutir. Il reste visible dans
+ * l'écran Caisse avec son motif.
+ */
+async function pushCashPayments(tenantId: string): Promise<{ succeeded: number; lastError: string | null }> {
+  const supabase = getSupabaseClient()
+  const pending = await getPendingCashPayments(tenantId)
+
+  let succeeded = 0
+  let lastError: string | null = null
+
+  for (const payment of pending) {
+    try {
+      const { data, error } = await supabase.rpc('record_cash_payment', {
+        p_order_id: payment.orderId,
+        p_amount: payment.amount,
+        p_payment_id: payment.id,
+        p_note: payment.note,
+      })
+
+      if (error) throw Object.assign(new Error(error.message), { code: error.code })
+
+      await markCashPaymentSynced(payment.id)
+      await applyRemoteCashState(payment.orderId, data.remaining, 'cash')
+      succeeded += 1
+    } catch (error) {
+      const message = toFrenchSyncError(error)
+      const code = (error as { code?: string }).code
+      const definitive = code === '22023' || code === '42501' || code === 'P0002'
+
+      lastError = message
+      await markCashPaymentError(payment.id, message, definitive)
+    }
+  }
+
+  return { succeeded, lastError }
+}
+
+/** Rafraîchit l'état des commandes modifiées sur un autre appareil. */
+async function pullOrders(tenantId: string): Promise<number> {
+  const supabase = getSupabaseClient()
+  const depuis = readPullCursor()
+
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, version, status, payment_status, payment_method, total_amount, due_date, updated_at')
+    .eq('tenant_id', tenantId)
+    .gt('updated_at', depuis)
+    .order('updated_at', { ascending: true })
+    .limit(300)
+
+  if (error || !data) return 0
+
+  let appliquees = 0
+
+  for (const ligne of data) {
+    const applique = await applyRemoteOrderState(ligne)
+    if (applique) appliquees += 1
+
+    if (typeof ligne.updated_at === 'string') writePullCursor(ligne.updated_at)
+  }
+
+  return appliquees
 }
 
 /**
@@ -163,9 +289,13 @@ async function runSync(): Promise<SyncResult> {
   }
 
   const pendingOrders = await getPendingOrders(tenantId)
-  if (pendingOrders.length === 0) {
+  const pendingCash = await getPendingCashPayments(tenantId)
+
+  if (pendingOrders.length === 0 && pendingCash.length === 0) {
+    // Rien à envoyer, mais d'autres appareils ont peut-être écrit : on relit.
+    const pulled = await pullOrders(tenantId).catch(() => 0)
     useSyncStore.getState().finishSync({ pendingCount: 0, lastError: null })
-    return { ...EMPTY_RESULT, skipped: false }
+    return { ...EMPTY_RESULT, pulled, skipped: false }
   }
 
   useSyncStore.getState().startSync()
@@ -221,14 +351,32 @@ async function runSync(): Promise<SyncResult> {
     }
   }
 
+  // 3. Encaissements au comptoir : APRÈS les commandes, pour qu'une commande
+  //    créée hors ligne existe côté serveur au moment du paiement.
+  const cash = await pushCashPayments(tenantId).catch((error: unknown) => ({
+    succeeded: 0,
+    lastError: toFrenchSyncError(error),
+  }))
+
+  if (cash.lastError) lastError = cash.lastError
+
+  // 4. Lecture des modifications faites ailleurs.
+  const pulled = await pullOrders(tenantId).catch(() => 0)
+
   const remaining = await countPendingOrders(tenantId)
-  useSyncStore.getState().finishSync({ pendingCount: remaining, lastError })
+  const cashSummary = await summariseCash(tenantId)
+  useSyncStore.getState().finishSync({
+    pendingCount: remaining + cashSummary.pending,
+    lastError,
+  })
 
   return {
     attempted: pendingOrders.length,
     succeeded,
     failed,
     conflicts,
+    cashSucceeded: cash.succeeded,
+    pulled,
     skipped: false,
     lastError,
   }

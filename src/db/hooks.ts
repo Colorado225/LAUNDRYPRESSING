@@ -2,8 +2,14 @@ import { useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { OrderStatus } from '@/types/database'
 import { useTenantStore } from '@/lib/tenantContext'
-import { countPendingOrders, createOrderLocal, updateOrderStatusLocal } from './ordersRepository'
-import { db, type LocalOrder } from './localDb'
+import {
+  countPendingOrders,
+  createOrderLocal,
+  updateOrderStatusLocal,
+  updateOrderDueDateLocal,
+} from './ordersRepository'
+import { queueCashPayment } from './cashRepository'
+import { db, type LocalCashPayment, type LocalOrder } from './localDb'
 
 /**
  * Hooks React du mode offline-first.
@@ -74,5 +80,37 @@ export function useCreateOrder() {
 export function useUpdateOrderStatus() {
   return useCallback(async (orderId: string, status: OrderStatus) => {
     return updateOrderStatusLocal(orderId, status)
+  }, [])
+}
+
+/** Encaissements connus d'une commande, réactifs aux écritures locales. */
+export function useCashPayments(orderId: string | undefined): LocalCashPayment[] {
+  return (
+    useLiveQuery(async () => {
+      if (!orderId) return []
+      return db.cashPayments.where('orderId').equals(orderId).sortBy('receivedAt')
+    }, [orderId]) ?? []
+  )
+}
+
+/** Enregistre un encaissement au comptoir (écriture locale immédiate). */
+export function useQueueCashPayment() {
+  const tenantId = useTenantStore((state) => state.tenantId)
+
+  return useCallback(
+    async (orderId: string, amount: number, note: string | null) => {
+      if (!tenantId) {
+        throw new Error("Aucun pressing sélectionné : impossible d'encaisser.")
+      }
+      return queueCashPayment(tenantId, orderId, amount, note)
+    },
+    [tenantId],
+  )
+}
+
+/** Modifie l'échéance d'une commande (local, synchronisé ensuite). */
+export function useUpdateOrderDueDate() {
+  return useCallback(async (orderId: string, dueDate: string | null) => {
+    return updateOrderDueDateLocal(orderId, dueDate)
   }, [])
 }

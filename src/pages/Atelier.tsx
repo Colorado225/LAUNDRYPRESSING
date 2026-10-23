@@ -17,7 +17,11 @@ import { useUpdateOrderStatus } from '@/db/hooks'
 import { findOrderByQrCode, getOrderWithItems, getWorkshopOrders } from '@/db/ordersRepository'
 import type { LocalOrderWithItems } from '@/db/ordersRepository'
 import { useTenantStore } from '@/lib/tenantContext'
-import { ORDER_FLOW, ORDER_STATUSES, PAYMENT_STATUS_LABELS } from '@/constants/orders'
+import {
+  ORDER_STATUSES,
+  PAYMENT_STATUS_LABELS,
+  allowedStatusTargets,
+} from '@/constants/orders'
 import { formatDateTimeFr, formatFcfa } from '@/lib/formatters'
 import { shortOrderReference } from '@/services/qrService'
 import type { OrderStatus } from '@/types/database'
@@ -240,6 +244,9 @@ function ScanResult({
   onStatusChange: (orderId: string, status: OrderStatus) => Promise<void>
   onDismiss: () => void
 }) {
+  // Appelé avant tout retour anticipé : les règles des hooks l'exigent.
+  const role = useTenantStore((state) => state.role)
+
   if (outcome.kind === 'idle') return null
 
   if (outcome.kind === 'searching') {
@@ -285,6 +292,7 @@ function ScanResult({
 
   const { order, items } = outcome.data
   const meta = ORDER_STATUSES[order.status]
+  const cibles = allowedStatusTargets(order.status, role)
 
   return (
     <section className="rounded-2xl border-2 border-brand-teal/40 bg-white p-4 sm:p-5">
@@ -341,7 +349,7 @@ function ScanResult({
           Changer le statut
         </p>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {ORDER_FLOW.map((status) => {
+          {cibles.map((status) => {
             const statusMeta = ORDER_STATUSES[status]
             const isCurrent = status === order.status
             return (
@@ -361,14 +369,16 @@ function ScanResult({
             )
           })}
 
-          <button
-            type="button"
-            onClick={() => void onStatusChange(order.id, 'cancelled')}
-            aria-pressed={order.status === 'cancelled'}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-          >
-            {ORDER_STATUSES.cancelled.label}
-          </button>
+          {cibles.includes('cancelled') && (
+            <button
+              type="button"
+              onClick={() => void onStatusChange(order.id, 'cancelled')}
+              aria-pressed={order.status === 'cancelled'}
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+            >
+              {ORDER_STATUSES.cancelled.label}
+            </button>
+          )}
         </div>
 
         <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
