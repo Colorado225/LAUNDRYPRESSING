@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CloudOff, Loader2, PlusCircle, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CloudOff, Loader2, PlusCircle, Search } from 'lucide-react'
 import { useLocalOrders } from '@/db/hooks'
+import { DEFAULT_PAGE_SIZE, paginate } from '@/lib/pagination'
 import { ORDER_STATUSES, ORDER_FLOW, isOrderLate, todayIso } from '@/constants/orders'
 import { formatDateFr, formatFcfa } from '@/lib/formatters'
 import type { OrderStatus } from '@/types/database'
@@ -11,6 +12,11 @@ import { useTenantStore } from '@/lib/tenantContext'
 /**
  * Liste des commandes — lue dans IndexedDB, jamais sur le réseau.
  * L'écran reste donc pleinement utilisable en mode avion.
+ *
+ * La pagination est purement locale : elle découpe l'affichage, sans changer
+ * la source de vérité. Sur une tablette d'atelier, afficher des centaines de
+ * lignes avec leurs badges rend le défilement poussif ; la recherche et les
+ * filtres restent, eux, calculés sur **toute** la liste.
  */
 export default function Orders() {
   const orders = useLocalOrders()
@@ -19,6 +25,10 @@ export default function Orders() {
   const canCreate = can(role, 'orders.create')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all' | 'late'>('all')
+  // Pagination : la page mémorisée est étiquetée par le filtre courant. Un
+  // changement de recherche rend donc naturellement la première page, sans
+  // effet de bord ni remise à zéro impérative.
+  const [pagination, setPagination] = useState({ cle: '', page: 1 })
   const aujourdhui = todayIso()
 
   const filtered = useMemo(() => {
@@ -35,6 +45,10 @@ export default function Orders() {
       return matchesStatus && matchesSearch
     })
   }, [orders, search, statusFilter, aujourdhui])
+
+  const cleFiltre = `${search.trim().toLowerCase()}|${statusFilter}`
+  const pageDemandee = pagination.cle === cleFiltre ? pagination.page : 1
+  const page = paginate(filtered, pageDemandee, DEFAULT_PAGE_SIZE)
 
   if (orders === undefined) {
     return (
@@ -121,8 +135,9 @@ export default function Orders() {
           </p>
         </div>
       ) : (
+        <>
         <ul className="space-y-2">
-          {filtered.map((order) => {
+          {page.items.map((order) => {
             const meta = ORDER_STATUSES[order.status]
             return (
               <li key={order.id}>
@@ -187,6 +202,44 @@ export default function Orders() {
             )
           })}
         </ul>
+
+        {page.pageCount > 1 && (
+          <nav
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2"
+            aria-label="Pagination des commandes"
+          >
+            <p className="text-sm text-slate-600">
+              {page.from}–{page.to} sur {page.total} commande{page.total > 1 ? 's' : ''}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPagination({ cle: cleFiltre, page: page.page - 1 })}
+                disabled={page.page === 1}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <ChevronLeft size={16} aria-hidden />
+                Précédent
+              </button>
+
+              <span className="text-sm font-semibold text-slate-600">
+                Page {page.page} / {page.pageCount}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setPagination({ cle: cleFiltre, page: page.page + 1 })}
+                disabled={page.page === page.pageCount}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Suivant
+                <ChevronRight size={16} aria-hidden />
+              </button>
+            </div>
+          </nav>
+        )}
+        </>
       )}
     </div>
   )
