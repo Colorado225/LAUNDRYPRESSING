@@ -1,10 +1,14 @@
 {
   "compilerOptions": {
+    /* Cible et modules */
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    /* Strictness — le MVP doit être robuste sur tablette d'entrée de gamme */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -13,16 +17,21 @@
     "noPropertyAccessFromIndexSignature": true,
     "allowUnusedLabels": false,
     "forceConsistentCasingInFileNames": true,
-  "skipLibCheck": true,
-  "allowJs": true,
-  "checkJs": false,
-  "resolveJsonModule": true,
+
+    /* Interop et résolution */
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,
+    "allowJs": false,
+    "noEmit": true,
+
+    /* Alias aligné sur vite.config.ts (résolu depuis ce fichier) */
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": ["vite/client", "node"]
   },
-  "include": ["src"],
+  "include": ["src", "vite.config.ts"],
   "exclude": ["node_modules", "dist", "supabase"]
 }
