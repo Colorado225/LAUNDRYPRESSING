@@ -4,7 +4,7 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : Phase 1 terminée** (socle technique). Les modules métier arrivent aux phases 2 à 6.
+**État actuel : Phase 2 terminée** (socle technique + couche offline-first).
 
 ---
 
@@ -14,9 +14,9 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 
 | # | Module | Statut |
 |---|--------|--------|
-| 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | à venir — phase 2 |
+| 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | ✅ phase 2 (base locale) |
 | 2 | **QR Code** (génération par commande + scan atelier) | à venir — phase 3 |
-| 3 | **Offline-first** (création sans internet, synchronisation automatique) | à venir — phase 2 |
+| 3 | **Offline-first** (création sans internet, synchronisation automatique) | ✅ phase 2 |
 | 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | à venir — phase 4 |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
@@ -126,9 +126,15 @@ la seconde n'existe que pour ne pas bloquer le développement.
 npm run dev
 ```
 
-Ouvrir <http://localhost:5173>. La page affichée est la **page de diagnostic du socle**
-(elle sera remplacée par la connexion en phase 5) : elle indique l'état de Supabase,
-du service worker, du pressing courant et le rendu des formats ivoiriens.
+Ouvrir <http://localhost:5173>. Au premier lancement, l'application demande
+l'**identifiant du pressing** (UUID) : c'est un écran temporaire, la connexion
+Supabase Auth arrivant en phase 5. Utilisez l'UUID créé par `supabase/seed.sql` :
+
+```text
+11111111-1111-4111-8111-111111111111
+```
+
+ou définissez `VITE_DEMO_TENANT_ID` dans `.env` pour le pré-remplir.
 
 ---
 
@@ -164,13 +170,28 @@ pas en `npm run dev`).
 │   ├── App.tsx                   # routeur + notifications globales
 │   ├── main.tsx                  # point d'entrée React
 │   ├── index.css                 # thème Tailwind v4 (@theme) + styles d'impression
+│   ├── components/
+│   │   ├── AppLayout.tsx         # en-tête, navigation, bandeau de synchro
+│   │   ├── OfflineBadge.tsx      # vert / orange / rouge + envoi manuel
+│   │   └── TenantGate.tsx        # sélection du pressing (temporaire, phase 5)
 │   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
+│   ├── db/
+│   │   ├── localDb.ts            # schéma Dexie (orders, orderItems, pendingPayments)
+│   │   ├── ordersRepository.ts   # CRUD local + mapping Supabase
+│   │   └── hooks.ts              # useLocalOrders, useCreateOrder, useUpdateOrderStatus
 │   ├── lib/
 │   │   ├── env.ts                # lecture des variables d'environnement
 │   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
 │   │   ├── tenantContext.ts      # pressing courant (Zustand + persistance)
-│   │   └── formatters.ts         # FCFA, dates et téléphones ivoiriens
-│   ├── pages/Socle.tsx           # page de diagnostic (temporaire)
+│   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
+│   │   └── ids.ts                # UUID côté client + code QR
+│   ├── pages/
+│   │   ├── Orders.tsx            # liste (recherche + filtres)
+│   │   ├── OrderForm.tsx         # création hors ligne
+│   │   └── OrderDetail.tsx       # fiche + avancement du statut
+│   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
+│   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
+│   ├── sync/syncEngine.ts        # envoi des commandes en attente
 │   └── types/database.ts         # types alignés sur le schéma SQL
 ├── supabase/
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
@@ -224,11 +245,80 @@ Conformément à la règle « ne jamais modifier les fichiers de config globaux 
 
 ---
 
+## 7bis. Mode offline-first (phase 2)
+
+### Fonctionnement
+
+1. **Toute écriture va d'abord dans IndexedDB** (Dexie). Aucune requête réseau n'est émise
+   lors de la création d'une commande ou d'un changement de statut.
+2. Chaque ligne possède un indicateur `synced` (`0` = à envoyer, `1` = à jour).
+   Toute modification locale repasse la ligne à `0`.
+3. Le moteur de synchronisation (`src/sync/syncEngine.ts`) envoie les lignes en attente :
+   - au démarrage de l'application ;
+   - à l'événement `online` ;
+   - au retour au premier plan (`visibilitychange`) ;
+   - toutes les **60 secondes** si le navigateur est en ligne.
+4. L'envoi est un `upsert` sur l'UUID généré côté client : **rejouer une synchronisation
+   ne crée jamais de doublon**.
+5. En cas d'échec, la commande **reste en file**, l'erreur est enregistrée sur la ligne
+   et le bandeau passe au rouge. Aucune donnée n'est perdue.
+
+### Indicateur d'état (exigence du cahier des charges)
+
+| Couleur | Signification |
+|---------|---------------|
+| 🟢 Vert | En ligne, tout est synchronisé |
+| 🔵 Bleu | Synchronisation en cours |
+| 🟠 Orange | Hors ligne — les commandes restent enregistrées localement |
+| 🔴 Rouge | Au moins un envoi a échoué (message affiché au survol) |
+
+L'indicateur est aussi lisible **sans couleur** (icône + texte) et annonce ses changements
+aux lecteurs d'écran (`aria-live`).
+
+### Test manuel du mode avion
+
+1. Créer une commande via **Nouvelle commande**.
+2. Ouvrir les DevTools → **Network** → cocher **Offline** (ou activer le mode avion de la tablette).
+3. Constater :
+   - le bandeau passe en **orange « Hors ligne »** ;
+   - la commande reste visible dans la liste, marquée **« En attente »** ;
+   - un changement de statut reste possible.
+4. Revenir en ligne : la synchronisation se déclenche immédiatement (événement `online`).
+5. Vérifier dans Supabase :
+
+```sql
+select id, customer_name, status, synced_from_local, updated_at
+from public.orders
+order by created_at desc
+limit 5;
+```
+
+La commande doit apparaître **dans les 60 secondes** suivant le retour de la connexion.
+
+### Limites connues (MVP)
+
+- **Historique des statuts** : la RLS et le trigger serveur journalisent les changements.
+  En mode avion, seul **l'état final** de la commande est transmis à la reconnexion : une
+  suite `received → washing → ironing` effectuée entièrement hors ligne ne laisse qu'une
+  ligne d'historique côté serveur. Le journal détaillé hors ligne est prévu en V2.
+- **Suppression** : jamais physique ; une commande annulée passe au statut `cancelled`.
+- **Synchronisation descendante** (récupérer les commandes créées sur un autre poste)
+  n'est pas incluse dans la phase 2 : elle suppose la connexion Supabase (phase 5).
+- **Un seul pressing par appareil** à la fois ; le changement de pressing vide la base locale
+  (`clearLocalData`).
+
+> Les vérifications de la phase 2 ont été exécutées sur une base IndexedDB simulée
+> (`fake-indexeddb`) : 22 contrôles verts, couvrant création, calcul du total, format du
+> code QR, file d'attente, changement de statut, mode avion et échec réseau. Le test
+> automatisé permanent (Vitest) est prévu en phase 6.
+
+---
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`AUDIT.md`)
 - [x] **Phase 1** — Socle technique (PWA, Supabase, tenant, migration RLS)
-- [ ] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
+- [x] **Phase 2** — Offline-first (Dexie, file de synchronisation, indicateur réseau)
 - [ ] **Phase 3** — QR Code (génération, impression 80 mm, scan atelier)
 - [ ] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
 - [ ] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
