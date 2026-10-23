@@ -75,8 +75,14 @@ déjà livré · ❌ manquant.
 - **Livré :** recherche nom / téléphone, onglets *Toutes, En retard, Réception,
   Tri, Lavage, Séchage, Repassage, Contrôle, Prêt, Remis, Annulée*, bouton
   **Nouvelle commande** masqué si le rôle ne le permet pas.
-- **Écart :** pas de pagination. La liste est chargée en entier depuis IndexedDB
-  (assumé, voir `docs/BACKLOG.md`).
+- **Livré le 23/10 :** **pagination locale** de 20 commandes par page, avec
+  barre « X–Y sur N » et boutons *Précédent* / *Suivant* désactivés aux bornes.
+  Une recherche ou un changement d'onglet ramène à la première page ; le filtre
+  porte sur la liste entière, jamais sur la page affichée.
+- **Lecture :** tout reste lu depuis Dexie (`useLocalOrders`), donc la pagination
+  fonctionne hors ligne. Aucune requête serveur : c'est une découpe du rendu.
+- **Écart résiduel :** aucun. Au-delà de quelques milliers de commandes, il
+  faudra un chargement progressif côté base — consigné dans `docs/BACKLOG.md`.
 
 ### 4. Détail d'une commande — `/commandes/:orderId`
 
@@ -155,7 +161,7 @@ déjà livré · ❌ manquant.
 | ~~1~~ | Page **Paramètres** (écran 12) | ✅ **fait** — `/parametres` : pressing, compte, synchronisation, hors ligne. |
 | ~~2~~ | Formulaire de commande en **trois étapes** (écran 5) | ✅ **fait** — validation par étape, étape Paiement avec règlement différé ou caisse immédiate. |
 | ~~3~~ | Tableau des **5 dernières commandes** (écran 2) | ✅ **fait** — `recentOrders`, ordonné par date de création. |
-| 1 | Pagination de la liste (écran 3) | Nécessaire au-delà de quelques centaines de commandes ; consigné en dette. |
+| ~~4~~ | **Pagination** de la liste (écran 3) | ✅ **fait** — 20 commandes par page, filtres portant sur la liste entière. |
 
 ### Mise en page
 

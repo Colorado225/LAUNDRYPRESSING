@@ -63,6 +63,6 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Couverture de code | Pas encore mesurée (pas de `@vitest/coverage-v8`) ; à activer avec un seuil minimum. |
 | Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
-| Pagination de la liste des commandes | Chargement local complet via Dexie ; à revoir au-delà de quelques centaines de commandes. |
-| Recette sur un projet Supabase réel | Aucun identifiant disponible : provisionnement, Edge Functions et paiement de bout en bout ne sont pas testés. Le schéma et les règles RLS le sont sur PostgreSQL 16 (123 contrôles). |
+| Pagination **serveur** des listes | Les listes lisent Dexie et sont paginées côté rendu (20 par page). Une pagination SQL deviendra nécessaire le jour d'un écran alimenté en direct. |
+| Recette sur un projet Supabase réel | Aucun identifiant disponible : provisionnement, Edge Functions et paiement de bout en bout ne sont pas testés. Le schéma et les règles RLS le sont sur PostgreSQL 16 (123 contrôles) ; `npm run recette` couvre 7 contrôles du projet déployé. La marche à suivre humaine est dans `docs/RECETTE-SUPABASE.md`. |
 | Demandes de support hors ligne | Aucune file d'attente dédiée : une demande nécessite une connexion. |

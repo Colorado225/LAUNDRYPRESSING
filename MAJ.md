@@ -363,7 +363,7 @@ vérification.
 | Seul l'état final d'une commande est transmis hors ligne | **Exact** | `src/sync/syncEngine.ts:98` → `upsert(..., { onConflict: 'id' })`, sans colonne `version` : dernier écrivain gagne, sans trace. |
 | L'historique ne conserve pas l'ancien statut | **Exact** | `supabase/migrations/001_init.sql:86-97` : `status`, `changed_by`, `changed_at` — ni `previous_status`, ni motif. |
 | Les QR codes devraient être non devinables | **Déjà satisfait** | `src/lib/ids.ts` (`buildQrString`) embarque l'UUID v4 du pressing **et** celui de la commande. Le QR n'est pas un secret ; la RLS interdit la lecture inter-pressing. Risque résiduel faible. |
-| Prévoir la pagination | **Sans objet aujourd'hui** | La liste lit IndexedDB ; aucune requête serveur paginée n'existe. À rouvrir le jour d'un écran alimenté par le serveur. |
+| Prévoir la pagination | **Traité le 23/10, autrement** | La liste lit IndexedDB, donc une pagination serveur resterait du code mort. `src/lib/pagination.ts` découpe le rendu (20 par page) ; elle sera branchée côté serveur le jour d'un écran alimenté en direct. |
 | Le déploiement n'est pas validé | **Exact** | `scripts/setup.mjs` n'a tourné qu'en `--dry-run` et contre un serveur HTTP simulé. |
 | Catalogue, caisse, clients, stocks, tableau de bord absents | **Exact** | 6 tables seulement : `tenants`, `tenant_users`, `orders`, `order_items`, `order_status_history`, `payment_transactions`. |
 | Nombre de politiques RLS | **Incohérence documentaire relevée** | Le `CHANGELOG` annonçait 16 politiques ; le décompte réel est **13** (12 dans `001_init.sql` + 1 dans `002_payments.sql`). Corrigé. |
@@ -404,7 +404,7 @@ Trois recommandations ne sont pas reprises telles quelles, avec justification :
 | Recommandation | Décision | Justification |
 | --- | --- | --- |
 | « Identifiants QR non devinables » | **Non retenue** | Les identifiants sont déjà des UUID v4 ; le contenu du QR n'est pas un secret. Le risque réel (réimpression non contrôlée) est traité au palier 2 avec l'historique des impressions. |
-| « Pagination dès que le volume le justifie » | **Reportée** | Aucune liste serveur n'existe : la pagination serait du code mort. À traiter avec le premier écran alimenté en direct. |
+| « Pagination dès que le volume le justifie » | **Appliquée côté rendu** | Aucune liste serveur n'existe, donc pas de pagination SQL. La liste des commandes est découpée en pages de 20 dans l'interface ; le filtre et la recherche portent sur la liste entière. |
 | « Réécrire `docs/AUDIT.md` » | **Remplacée par l'archivage** | Ce document est la trace datée du point de départ (commit `ae2903f`). Le réécrire effacerait la preuve de l'ampleur de la reprise. Un bandeau d'archive et un audit courant séparé remplissent le même objectif sans perte d'information. |
 
 ---
@@ -562,6 +562,8 @@ Supabase dans cet environnement.
 | 23/10/2026 | MVP | `docs/CONFORMITE-MVP.md` : correspondance des douze écrans, réinitialisation du mot de passe, arguments de connexion, historique des scans | `ef19e27` |
 | 23/10/2026 | MVP | Barre latérale en bureau, page Paramètres, CHANGELOG 0.5.1 | `8063ffb` |
 | 23/10/2026 | MVP | Commande en trois étapes, étape de règlement, cinq dernières commandes sur le tableau de bord (227 tests) | `015bc31` |
+| 23/10/2026 | MVP | Pagination de la liste des commandes (20 par page), 9 tests | `f884b8b` |
+| 23/10/2026 | MVP | `npm run recette` : 7 contrôles en lecture seule du projet déployé, 9 tests | `dfcff54` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

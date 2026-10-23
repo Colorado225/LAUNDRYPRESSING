@@ -211,7 +211,8 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (227 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, abonnement, langue, isolation, installation) |
+| `npm test` | Suite Vitest complète (245 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, abonnement, pagination, langue, isolation, installation) |
+| `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
@@ -317,6 +318,7 @@ pas en `npm run dev`).
 │   ├── AUDIT.md                  # rapport de la phase 0
 │   ├── BACKLOG.md                # fonctionnalités explicitement hors périmètre
 │   ├── RAPPORT-FINAL.md          # bilan du MVP (fonctionne / V2 / coûts)
+│   ├── RECETTE-SUPABASE.md       # marche à suivre de recette sur un vrai projet
 │   └── USER_GUIDE.md             # parcours réceptionniste / artisan / propriétaire
 ├── CHANGELOG.md                  # historique des versions du MVP
 ├── vitest.config.ts              # configuration de la suite de tests

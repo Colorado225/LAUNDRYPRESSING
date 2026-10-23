@@ -6,6 +6,45 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.5.3] — 2026-10-23
+
+Dette technique close : la liste des commandes est paginée, et le projet déployé
+peut être contrôlé en une commande.
+
+### Ajouté
+
+- **Pagination de la liste des commandes** (`/commandes`) : 20 commandes par
+  page, barre « 21–40 sur 137 », boutons *Précédent* / *Suivant* désactivés aux
+  bornes. La recherche et les onglets de statut portent sur **toute** la liste,
+  jamais sur la page affichée.
+- **`src/lib/pagination.ts`** : découpe de page pure et bornée (`paginate`,
+  `Page<T>`, `DEFAULT_PAGE_SIZE`), réutilisable par les futures listes. 9 tests.
+- **`npm run recette`** (`scripts/recette.mjs`) : 7 contrôles **en lecture
+  seule** sur un projet déployé — API REST joignable, `orders` et
+  `platform_admins` fermées à l'anonyme, 20 tables, 3 formules,
+  `rpc/my_subscription` et webhook CinetPay déployés. Code de sortie 0/1, donc
+  utilisable en CI ou avant une livraison. 9 tests sur le script lui-même.
+- **`docs/RECETTE-SUPABASE.md`** : marche à suivre de la recette qu'un humain
+  doit exécuter (provisionnement, contrôles SQL, parcours comptoir, paiement
+  CinetPay de bout en bout, installation PWA sur tablette, contrôles de sécurité
+  côté API).
+
+### Décidé
+
+- **Pagination purement locale.** Les commandes sont déjà toutes dans Dexie pour
+  fonctionner hors ligne : paginer côté serveur imposerait un second chemin de
+  lecture, donc deux comportements à tester. On découpe le rendu, pas la donnée.
+- **La page revient à 1 quand le filtre change**, sans `useEffect` : l'état
+  retient `{ clé, page }` et la page affichée n'est retenue que si la clé
+  (`recherche|onglet`) correspond. Aucune remise à zéro impérative, donc aucun
+  rendu intermédiaire avec une page hors bornes.
+- **`npm run recette` n'écrit jamais.** Il peut tourner sur la base d'un client
+  en production sans laisser de trace.
+
+### Vérifié
+
+- 245 tests sur 14 fichiers, `tsc --noEmit`, ESLint et build de production.
+
 ## [0.5.2] — 2026-10-23
 
 Deux écrans de la maquette complétés : le formulaire de commande en étapes et

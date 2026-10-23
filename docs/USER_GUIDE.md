@@ -80,6 +80,13 @@ historique.
 La commande est immédiatement visible dans la liste, **même sans réseau**. Un
 badge orange indique qu'elle attend l'envoi vers le serveur.
 
+> **Retrouver une commande dans la liste.** La liste affiche **20 commandes par
+> page**, de la plus récente à la plus ancienne. La barre du bas indique
+> « 21–40 sur 137 » ; *Précédent* et *Suivant* changent de page. La **recherche**
+> (nom ou téléphone) et les **onglets de statut** portent sur **toutes** les
+> commandes, pas seulement sur la page affichée : chercher un nom ramène
+> directement à la page où il se trouve.
+
 ### 3.2 Imprimer l'étiquette
 
 1. Ouvrir la commande depuis la liste.
