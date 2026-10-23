@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -37,6 +37,10 @@ import { useState } from 'react'
  */
 export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>()
+  const [searchParams] = useSearchParams()
+  // Retour de la création de commande avec « encaisser maintenant » : le
+  // panneau s'ouvre déjà, le montant est pré-rempli.
+  const reglerMaintenant = searchParams.get('regler') === '1'
   const data = useLocalOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
   const tenantName = useTenantStore((state) => state.tenantName)
@@ -215,7 +219,7 @@ export default function OrderDetail() {
       <IssuePanel order={order} items={items} />
 
       {/* Caisse : espèces, acompte, solde et reçu */}
-      {seeAmounts && <CashPanel order={order} />}
+      {seeAmounts && <CashPanel order={order} autoOpen={reglerMaintenant} />}
 
       {/* Paiement Mobile Money — initiation réservée au comptoir */}
       {can(role, 'payments.initiate') && <PaymentButton order={order} />}

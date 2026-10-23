@@ -24,14 +24,28 @@ import { MIN_REFUND_REASON, RefundError, recordRefund } from '@/services/refundS
  * ici). Le solde affiché reste donc juste dans les deux cas.
  */
 
-export default function CashPanel({ order }: { order: LocalOrder }) {
+/**
+ * @param autoOpen Déplie le panneau dès l'arrivée sur la fiche (création d'une
+ *   commande avec règlement immédiat : `/commandes/:id?regler=1`).
+ */
+export default function CashPanel({
+  order,
+  autoOpen = false,
+}: {
+  order: LocalOrder
+  autoOpen?: boolean
+}) {
   const role = useTenantStore((state) => state.role)
   const paiements = useCashPayments(order.id)
   const remboursements = useOrderRefunds(order.id)
   const encaisser = useQueueCashPayment()
 
-  const [ouvert, setOuvert] = useState(false)
-  const [montant, setMontant] = useState('')
+  // Le solde est calculé avant les états : le montant proposé à l'ouverture
+  // automatique doit être le reste à payer, pas zéro.
+  const solde = computeBalance(order.totalAmount, order.paymentStatus, paiements)
+
+  const [ouvert, setOuvert] = useState(autoOpen)
+  const [montant, setMontant] = useState(autoOpen ? String(solde.remaining) : '')
   const [note, setNote] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const [rembourser, setRembourser] = useState(false)
@@ -39,7 +53,6 @@ export default function CashPanel({ order }: { order: LocalOrder }) {
   const [motif, setMotif] = useState('')
   const [envoiRemboursement, setEnvoiRemboursement] = useState(false)
 
-  const solde = computeBalance(order.totalAmount, order.paymentStatus, paiements)
   const peutEncaisser = can(role, 'cash.manage') && canAcceptPayment(order, solde)
 
   // Un remboursement ne change pas le « reste à payer » : il constate une

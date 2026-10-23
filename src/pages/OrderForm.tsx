@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, BookOpen, Check, Lock, PenLine, Plus, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  Check,
+  Lock,
+  PenLine,
+  Plus,
+  Trash2,
+  UserRound,
+  Shirt,
+  Wallet,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder } from '@/db/hooks'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
@@ -16,16 +28,21 @@ import {
 import type { LocalCatalogEntry } from '@/db/localDb'
 
 /**
- * Création de commande — 100 % locale.
+ * Création de commande — 100 % locale, en trois étapes.
  *
  * Aucun appel réseau n'est effectué pour enregistrer la commande : elle est
  * écrite dans IndexedDB puis envoyée par le moteur de synchronisation dès que
  * la connexion revient. C'est le cœur du fonctionnement en mode avion.
  *
- * Palier 2 : les lignes peuvent venir du **catalogue** (prix proposé, corrigeable)
- * ou être saisies **librement**. Dans les deux cas, le libellé et le prix sont
- * recopiés sur la ligne : une modification ultérieure du catalogue ne change
- * jamais une commande déjà enregistrée.
+ * Découpage **Client → Vêtements → Paiement** : sur une tablette de comptoir,
+ * un formulaire unique oblige à faire défiler pour retrouver un champ oublié.
+ * Chaque étape est validée séparément, ce qui permet de signaler une erreur de
+ * téléphone sans perdre les vêtements déjà saisis.
+ *
+ * Palier 2 : les lignes peuvent venir du **catalogue** (prix proposé,
+ * corrigeable) ou être saisies **librement**. Dans les deux cas, le libellé et
+ * le prix sont recopiés sur la ligne : une modification ultérieure du catalogue
+ * ne change jamais une commande déjà enregistrée.
  */
 
 const EMPTY_ITEM: OrderItemDraft = {
@@ -44,6 +61,18 @@ interface OrderItemDraft extends OrderItemInput {
   mode: 'catalog' | 'free'
 }
 
+/** Règlement choisi à l'étape 3 ; aucun argent ne circule ici. */
+type Paiement = 'plus-tard' | 'especes'
+
+const ETAPES = [
+  { titre: 'Client', icon: UserRound },
+  { titre: 'Vêtements', icon: Shirt },
+  { titre: 'Paiement', icon: Wallet },
+] as const
+
+const clientSchema = createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true })
+const articlesSchema = createOrderSchema.pick({ items: true })
+
 export default function OrderForm() {
   const navigate = useNavigate()
   const createOrder = useCreateOrder()
@@ -51,10 +80,12 @@ export default function OrderForm() {
   const role = useTenantStore((state) => state.role)
   const canCreate = can(role, 'orders.create')
 
+  const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [items, setItems] = useState<OrderItemDraft[]>([{ ...EMPTY_ITEM }])
+  const [paiement, setPaiement] = useState<Paiement>('plus-tard')
   const [catalog, setCatalog] = useState<LocalCatalogEntry[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -82,6 +113,11 @@ export default function OrderForm() {
     }
   }, [tenantId])
 
+  const articles = useMemo(() => uniqueArticles(catalog), [catalog])
+  const catalogueDisponible = articles.length > 0
+
+  const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
+
   // L'onglet est masqué pour l'artisan, mais une URL saisie à la main ne doit
   // pas contourner la règle — le serveur la refuserait de toute façon (RLS).
   if (!canCreate) {
@@ -104,11 +140,6 @@ export default function OrderForm() {
       </div>
     )
   }
-
-  const articles = uniqueArticles(catalog)
-  const catalogueDisponible = articles.length > 0
-
-  const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
 
   const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
     setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)))
@@ -167,31 +198,99 @@ export default function OrderForm() {
     updateItem(index, { mode })
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  /**
+   * Contrôles de l'étape courante, exécutés avant de passer à la suivante.
+   *
+   * Le serveur revérifie tout (contraintes SQL) ; ces contrôles servent à
+   * signaler l'erreur au bon moment, sur le champ concerné.
+   */
+  const validerEtape = (numero: number): boolean => {
     setErrors([])
 
-    const lignes: OrderItemInput[] = items.map(({ mode: _mode, ...item }) => item)
+    if (numero === 0) {
+      const parsed = clientSchema.safeParse({
+        customerName,
+        customerPhone,
+        dueDate: dueDate || undefined,
+      })
 
-    // Tarif dérogatoire : le serveur refuse un prix différent du catalogue sans
-    // motif (22023). On bloque ici pour éviter un aller-retour inutile.
-    const derogeSansMotif = items.some((item) => {
-      const prixCatalogue = catalog.find((entree) => entree.id === item.catalogEntryId)?.price
-      return (
-        item.mode === 'catalog' &&
-        item.catalogEntryId !== undefined &&
-        prixCatalogue !== undefined &&
-        item.price !== prixCatalogue &&
-        (item.priceReason ?? '').trim().length < 10
-      )
-    })
+      if (!parsed.success) {
+        setErrors(zodMessages(parsed.error))
+        return false
+      }
+      return true
+    }
 
-    if (derogeSansMotif) {
-      setErrors([
-        'Un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).',
-      ])
+    if (numero === 1) {
+      const lignes: OrderItemInput[] = items.map(({ mode: _mode, ...item }) => item)
+      const parsed = articlesSchema.safeParse({ items: lignes })
+
+      if (!parsed.success) {
+        setErrors(zodMessages(parsed.error))
+        return false
+      }
+
+      // Un prix inférieur ou égal à zéro n'a pas de sens au comptoir : il
+      // donnerait une commande gratuite par simple oubli de saisie.
+      const sansPrix = items.findIndex((item) => item.price <= 0)
+      if (sansPrix >= 0) {
+        setErrors([`Vêtement ${sansPrix + 1} : indiquez un prix supérieur à zéro.`])
+        return false
+      }
+
+      // Tarif dérogatoire : le serveur refuse un prix différent du catalogue
+      // sans motif (22023). On bloque ici pour éviter un aller-retour inutile.
+      const derogeSansMotif = items.findIndex((item) => {
+        const prixCatalogue = catalog.find((entree) => entree.id === item.catalogEntryId)?.price
+        return (
+          item.mode === 'catalog' &&
+          item.catalogEntryId !== undefined &&
+          prixCatalogue !== undefined &&
+          item.price !== prixCatalogue &&
+          (item.priceReason ?? '').trim().length < 10
+        )
+      })
+
+      if (derogeSansMotif >= 0) {
+        setErrors([
+          `Vêtement ${derogeSansMotif + 1} : un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).`,
+        ])
+        return false
+      }
+
+      return true
+    }
+
+    return true
+  }
+
+  const suivant = () => {
+    if (!validerEtape(etape)) return
+    setEtape((courante) => Math.min(courante + 1, ETAPES.length - 1))
+  }
+
+  const precedent = () => {
+    setErrors([])
+    setEtape((courante) => Math.max(courante - 1, 0))
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+
+    // Les étapes sont revérifiées : un champ vidé après coup ne doit pas
+    // passer. On ramène l'utilisateur sur celle qui bloque, sinon le message
+    // s'afficherait sans champ visible pour le corriger.
+    if (!validerEtape(0)) {
+      setEtape(0)
       return
     }
+
+    if (!validerEtape(1)) {
+      setEtape(1)
+      return
+    }
+
+    const lignes: OrderItemInput[] = items.map(({ mode: _mode, ...item }) => item)
 
     const parsed = createOrderSchema.safeParse({
       customerName,
@@ -209,7 +308,9 @@ export default function OrderForm() {
     try {
       const { order } = await createOrder(parsed.data)
       toast.success('Commande enregistrée sur cet appareil', { icon: '✅' })
-      navigate(`/commandes/${order.id}`)
+      // « Espèces » n'encaisse rien ici : la commande doit exister pour porter
+      // le paiement. On ouvre donc sa fiche avec le panneau déjà déplié.
+      navigate(`/commandes/${order.id}${paiement === 'especes' ? '?regler=1' : ''}`)
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Impossible d'enregistrer la commande",
@@ -232,238 +333,328 @@ export default function OrderForm() {
 
       <h1 className="text-xl font-bold text-brand-navy sm:text-2xl">Nouvelle commande</h1>
 
+      <Stepper etape={etape} />
+
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {/* Client */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Client</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Nom du client" htmlFor="customer-name">
-              <input
-                id="customer-name"
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-                autoComplete="name"
-                placeholder="Aya Koné"
-                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
-              />
-            </Field>
+        {/* -------------------------------------------------- 1. Client ---- */}
+        {etape === 0 && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Client</h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Nom du client" htmlFor="customer-name">
+                <input
+                  id="customer-name"
+                  value={customerName}
+                  onChange={(event) => setCustomerName(event.target.value)}
+                  autoComplete="name"
+                  autoFocus
+                  placeholder="Aya Koné"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+                />
+              </Field>
 
-            <Field label="Téléphone" htmlFor="customer-phone" hint="10 chiffres, ex. 07 00 00 00 00">
-              <input
-                id="customer-phone"
-                value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="07 00 00 00 00"
-                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
-              />
-            </Field>
+              <Field label="Téléphone" htmlFor="customer-phone" hint="10 chiffres, ex. 07 00 00 00 00">
+                <input
+                  id="customer-phone"
+                  value={customerPhone}
+                  onChange={(event) => setCustomerPhone(event.target.value)}
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="07 00 00 00 00"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+                />
+              </Field>
 
-            <Field
-              label="Livraison promise"
-              htmlFor="due-date"
-              hint="Facultatif — sert aux alertes de retard"
-            >
-              <input
-                id="due-date"
-                type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
-              />
-            </Field>
-          </div>
-        </section>
+              <Field
+                label="Livraison promise"
+                htmlFor="due-date"
+                hint="Facultatif — sert aux alertes de retard"
+              >
+                <input
+                  id="due-date"
+                  type="date"
+                  value={dueDate}
+                  onChange={(event) => setDueDate(event.target.value)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+                />
+              </Field>
+            </div>
 
-        {/* Vêtements */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Vêtements</h2>
-            <button
-              type="button"
-              onClick={addItem}
-              className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal active:bg-slate-50"
-            >
-              <Plus size={16} aria-hidden />
-              Ajouter
-            </button>
-          </div>
-
-          {!catalogueDisponible && (
-            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-              Aucune prestation au catalogue pour l’instant : les lignes sont saisies
-              librement. Le propriétaire peut installer une grille de départ depuis
-              l’onglet « Prestations ».
+            <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+              Le téléphone identifie le client : un numéro déjà connu retrouve automatiquement son
+              historique, sans créer de doublon.
             </p>
-          )}
+          </section>
+        )}
 
-          <ul className="mt-3 space-y-3">
-            {items.map((item, index) => (
-              <li key={index} className="rounded-xl bg-slate-50 p-3">
-                {catalogueDisponible && (
-                  <div className="mb-3 flex gap-2">
-                    <ModeButton
-                      actif={item.mode === 'catalog'}
-                      onClick={() => basculerMode(index, 'catalog')}
-                      icon={<BookOpen size={14} aria-hidden />}
-                      label="Catalogue"
-                    />
-                    <ModeButton
-                      actif={item.mode === 'free'}
-                      onClick={() => basculerMode(index, 'free')}
-                      icon={<PenLine size={14} aria-hidden />}
-                      label="Saisie libre"
-                    />
-                  </div>
-                )}
+        {/* ----------------------------------------------- 2. Vêtements ---- */}
+        {etape === 1 && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Vêtements
+              </h2>
+              <button
+                type="button"
+                onClick={addItem}
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal active:bg-slate-50"
+              >
+                <Plus size={16} aria-hidden />
+                Ajouter
+              </button>
+            </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {item.mode === 'catalog' && catalogueDisponible ? (
-                    <>
-                      <Field label="Article" htmlFor={`item-article-${index}`}>
-                        <select
-                          id={`item-article-${index}`}
-                          value={item.articleName ?? ''}
-                          onChange={(event) => choisirArticle(index, event.target.value)}
-                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
-                        >
-                          <option value="">Choisir un article…</option>
-                          {articles.map((article) => (
-                            <option key={article} value={article}>
-                              {article}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
+            {!catalogueDisponible && (
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                Aucune prestation au catalogue pour l’instant : les lignes sont saisies
+                librement. Le propriétaire peut installer une grille de départ depuis
+                l’onglet « Prestations ».
+              </p>
+            )}
 
-                      <Field label="Prestation" htmlFor={`item-service-${index}`}>
-                        <select
-                          id={`item-service-${index}`}
-                          value={item.catalogEntryId ?? ''}
-                          onChange={(event) => choisirPrestation(index, event.target.value)}
-                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
-                        >
-                          <option value="">Choisir une prestation…</option>
-                          {servicesForArticle(catalog, item.articleName ?? '').map((entree) => (
-                            <option key={entree.id} value={entree.id}>
-                              {entree.service} — {formatFcfa(entree.price)}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    </>
-                  ) : (
-                    <Field label="Vêtement" htmlFor={`item-label-${index}`}>
-                      <input
-                        id={`item-label-${index}`}
-                        value={item.label}
-                        onChange={(event) => updateItem(index, { label: event.target.value })}
-                        placeholder="Costume 3 pièces"
-                        className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+            <ul className="mt-3 space-y-3">
+              {items.map((item, index) => (
+                <li key={index} className="rounded-xl bg-slate-50 p-3">
+                  {catalogueDisponible && (
+                    <div className="mb-3 flex gap-2">
+                      <ModeButton
+                        actif={item.mode === 'catalog'}
+                        onClick={() => basculerMode(index, 'catalog')}
+                        icon={<BookOpen size={14} aria-hidden />}
+                        label="Catalogue"
                       />
-                    </Field>
+                      <ModeButton
+                        actif={item.mode === 'free'}
+                        onClick={() => basculerMode(index, 'free')}
+                        icon={<PenLine size={14} aria-hidden />}
+                        label="Saisie libre"
+                      />
+                    </div>
                   )}
 
-                  <Field label="Tissu" htmlFor={`item-fabric-${index}`}>
-                    <input
-                      id={`item-fabric-${index}`}
-                      value={item.fabricType ?? ''}
-                      onChange={(event) => updateItem(index, { fabricType: event.target.value })}
-                      placeholder="Bazin, Wax, laine…"
-                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
-                    />
-                  </Field>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {item.mode === 'catalog' && catalogueDisponible ? (
+                      <>
+                        <Field label="Article" htmlFor={`item-article-${index}`}>
+                          <select
+                            id={`item-article-${index}`}
+                            value={item.articleName ?? ''}
+                            onChange={(event) => choisirArticle(index, event.target.value)}
+                            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                          >
+                            <option value="">Choisir un article…</option>
+                            {articles.map((article) => (
+                              <option key={article} value={article}>
+                                {article}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
 
-                  <Field
-                    label="Instructions particulières"
-                    htmlFor={`item-instructions-${index}`}
-                    hint="Empèsage, broderie fragile…"
-                  >
-                    <input
-                      id={`item-instructions-${index}`}
-                      value={item.specialInstructions ?? ''}
-                      onChange={(event) =>
-                        updateItem(index, { specialInstructions: event.target.value })
-                      }
-                      placeholder="Empèsage fort"
-                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
-                    />
-                  </Field>
+                        <Field label="Prestation" htmlFor={`item-service-${index}`}>
+                          <select
+                            id={`item-service-${index}`}
+                            value={item.catalogEntryId ?? ''}
+                            onChange={(event) => choisirPrestation(index, event.target.value)}
+                            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                          >
+                            <option value="">Choisir une prestation…</option>
+                            {servicesForArticle(catalog, item.articleName ?? '').map((entree) => (
+                              <option key={entree.id} value={entree.id}>
+                                {entree.service} — {formatFcfa(entree.price)}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      </>
+                    ) : (
+                      <Field label="Vêtement" htmlFor={`item-label-${index}`}>
+                        <input
+                          id={`item-label-${index}`}
+                          value={item.label}
+                          onChange={(event) => updateItem(index, { label: event.target.value })}
+                          placeholder="Costume 3 pièces"
+                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                        />
+                      </Field>
+                    )}
 
-                  <div className="flex items-end gap-2">
-                    <Field
-                      label="Prix (FCFA)"
-                      htmlFor={`item-price-${index}`}
-                      hint={
-                        item.mode === 'catalog' && item.catalogEntryId
-                          ? 'Prix du catalogue — corrigeable au comptoir'
-                          : undefined
-                      }
-                    >
+                    <Field label="Tissu" htmlFor={`item-fabric-${index}`}>
                       <input
-                        id={`item-price-${index}`}
-                        type="number"
-                        min={0}
-                        step={1}
-                        inputMode="numeric"
-                        value={item.price === 0 ? '' : item.price}
-                        onChange={(event) =>
-                          updateItem(index, {
-                            price: event.target.value === '' ? 0 : Number(event.target.value),
-                          })
-                        }
-                        placeholder="5000"
+                        id={`item-fabric-${index}`}
+                        value={item.fabricType ?? ''}
+                        onChange={(event) => updateItem(index, { fabricType: event.target.value })}
+                        placeholder="Bazin, Wax, laine…"
                         className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                       />
                     </Field>
 
-                    <button
-                      type="button"
-                      onClick={() => removeItem(index)}
-                      disabled={items.length === 1}
-                      aria-label={`Supprimer le vêtement ${index + 1}`}
-                      className="mb-0 inline-flex size-12 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
+                    <Field
+                      label="Instructions particulières"
+                      htmlFor={`item-instructions-${index}`}
+                      hint="Empèsage, broderie fragile…"
                     >
-                      <Trash2 size={18} aria-hidden />
-                    </button>
-                  </div>
+                      <input
+                        id={`item-instructions-${index}`}
+                        value={item.specialInstructions ?? ''}
+                        onChange={(event) =>
+                          updateItem(index, { specialInstructions: event.target.value })
+                        }
+                        placeholder="Empèsage fort"
+                        className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                      />
+                    </Field>
 
-                  {(() => {
-                    const prixCatalogue = catalog.find(
-                      (entree) => entree.id === item.catalogEntryId,
-                    )?.price
-                    const deroge =
-                      item.mode === 'catalog' &&
-                      prixCatalogue !== undefined &&
-                      item.price !== prixCatalogue
-
-                    if (!deroge) return null
-
-                    return (
+                    <div className="flex items-end gap-2">
                       <Field
-                        label="Motif du tarif dérogatoire"
-                        htmlFor={`item-reason-${index}`}
-                        hint={`Prix du catalogue : ${formatFcfa(prixCatalogue)}. Un motif est exigé et journalisé.`}
+                        label="Prix (FCFA)"
+                        htmlFor={`item-price-${index}`}
+                        hint={
+                          item.mode === 'catalog' && item.catalogEntryId
+                            ? 'Prix du catalogue — corrigeable au comptoir'
+                            : undefined
+                        }
                       >
                         <input
-                          id={`item-reason-${index}`}
-                          value={item.priceReason ?? ''}
+                          id={`item-price-${index}`}
+                          type="number"
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                          value={item.price === 0 ? '' : item.price}
                           onChange={(event) =>
-                            updateItem(index, { priceReason: event.target.value })
+                            updateItem(index, {
+                              price: event.target.value === '' ? 0 : Number(event.target.value),
+                            })
                           }
-                          maxLength={300}
-                          placeholder="Geste commercial : tache ancienne signalée par le client"
-                          className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
+                          placeholder="5000"
+                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                         />
                       </Field>
-                    )
-                  })()}
+
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        disabled={items.length === 1}
+                        aria-label={`Supprimer le vêtement ${index + 1}`}
+                        className="mb-0 inline-flex size-12 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
+                      >
+                        <Trash2 size={18} aria-hidden />
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const prixCatalogue = catalog.find(
+                        (entree) => entree.id === item.catalogEntryId,
+                      )?.price
+                      const deroge =
+                        item.mode === 'catalog' &&
+                        prixCatalogue !== undefined &&
+                        item.price !== prixCatalogue
+
+                      if (!deroge) return null
+
+                      return (
+                        <Field
+                          label="Motif du tarif dérogatoire"
+                          htmlFor={`item-reason-${index}`}
+                          hint={`Prix du catalogue : ${formatFcfa(prixCatalogue)}. Un motif est exigé et journalisé.`}
+                        >
+                          <input
+                            id={`item-reason-${index}`}
+                            value={item.priceReason ?? ''}
+                            onChange={(event) =>
+                              updateItem(index, { priceReason: event.target.value })
+                            }
+                            maxLength={300}
+                            placeholder="Geste commercial : tache ancienne signalée par le client"
+                            className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
+                          />
+                        </Field>
+                      )
+                    })()}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* ------------------------------------------------- 3. Paiement ---- */}
+        {etape === 2 && (
+          <>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Récapitulatif
+              </h2>
+
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-slate-500">Client</dt>
+                  <dd className="font-semibold text-slate-800">{customerName.trim() || '—'}</dd>
                 </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+                <div>
+                  <dt className="text-xs text-slate-500">Téléphone</dt>
+                  <dd className="font-semibold text-slate-800">{customerPhone.trim() || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Livraison promise</dt>
+                  <dd className="font-semibold text-slate-800">{dueDate || 'Non précisée'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Nombre de vêtements</dt>
+                  <dd className="font-semibold text-slate-800">{items.length}</dd>
+                </div>
+              </dl>
+
+              <ul className="mt-3 divide-y divide-slate-100">
+                {items.map((item, index) => (
+                  <li key={index} className="flex items-start justify-between gap-3 py-2 text-sm">
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-slate-800">
+                        {item.label || `Vêtement ${index + 1}`}
+                      </span>
+                      {(item.fabricType || item.specialInstructions) && (
+                        <span className="block text-xs text-slate-500">
+                          {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-semibold text-brand-navy">
+                      {formatFcfa(item.price)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Règlement
+              </h2>
+
+              <div className="mt-3 space-y-2">
+                <ChoixPaiement
+                  actif={paiement === 'plus-tard'}
+                  onClick={() => setPaiement('plus-tard')}
+                  titre="Régler plus tard"
+                  description="La commande est enregistrée, le solde reste dû et apparaît en caisse."
+                />
+                <ChoixPaiement
+                  actif={paiement === 'especes'}
+                  onClick={() => setPaiement('especes')}
+                  titre="Encaisser des espèces maintenant"
+                  description="La fiche s’ouvre avec le panneau d’encaissement déplié, montant pré-rempli."
+                />
+              </div>
+
+              <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+                Le Mobile Money se déclenche depuis la fiche de la commande, une fois celle-ci
+                enregistrée : CinetPay exige une référence de commande existante.
+              </p>
+            </section>
+          </>
+        )}
 
         {/* Erreurs */}
         {errors.length > 0 && (
@@ -484,17 +675,121 @@ export default function OrderForm() {
             <p className="text-xl font-bold text-brand-navy">{formatFcfa(total)}</p>
           </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-5 text-base font-bold text-white transition-colors hover:bg-brand-teal-dark active:bg-brand-teal-dark disabled:opacity-60"
-          >
-            <Check size={18} aria-hidden />
-            Enregistrer la commande
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {etape > 0 && (
+              <button
+                type="button"
+                onClick={precedent}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-base font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <ArrowLeft size={18} aria-hidden />
+                Précédent
+              </button>
+            )}
+
+            {etape < ETAPES.length - 1 ? (
+              <button
+                type="button"
+                onClick={suivant}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-5 text-base font-bold text-white transition-colors hover:bg-brand-teal-dark active:bg-brand-teal-dark"
+              >
+                Suivant
+                <ArrowRight size={18} aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-5 text-base font-bold text-white transition-colors hover:bg-brand-teal-dark active:bg-brand-teal-dark disabled:opacity-60"
+              >
+                <Check size={18} aria-hidden />
+                Enregistrer la commande
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </div>
+  )
+}
+
+/**
+ * Fil d'étapes.
+ *
+ * Les étapes déjà franchies redeviennent cliquables : revenir corriger un
+ * numéro de téléphone ne doit pas obliger à repasser par « Précédent ».
+ */
+function Stepper({ etape }: { etape: number }) {
+  return (
+    <ol className="flex flex-wrap items-center gap-2" aria-label="Étapes de la commande">
+      {ETAPES.map(({ titre, icon: Icone }, index) => {
+        const courant = index === etape
+        const franchi = index < etape
+
+        return (
+          <li key={titre} className="flex items-center gap-2">
+            <span
+              aria-current={courant ? 'step' : undefined}
+              className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold ${
+                courant
+                  ? 'bg-brand-teal text-white'
+                  : franchi
+                    ? 'bg-brand-teal/10 text-brand-navy'
+                    : 'bg-white text-slate-500 ring-1 ring-slate-200'
+              }`}
+            >
+              <span className="flex size-6 items-center justify-center rounded-full bg-white/20 text-xs font-bold">
+                {franchi ? <Check size={14} aria-hidden /> : index + 1}
+              </span>
+              <Icone size={16} aria-hidden />
+              {titre}
+            </span>
+            {index < ETAPES.length - 1 && (
+              <span className="h-px w-4 bg-slate-300" aria-hidden />
+            )}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+/** Carte de choix d'un mode de règlement. */
+function ChoixPaiement({
+  actif,
+  onClick,
+  titre,
+  description,
+}: {
+  actif: boolean
+  onClick: () => void
+  titre: string
+  description: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={actif}
+      className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
+        actif
+          ? 'border-brand-teal bg-brand-teal/5'
+          : 'border-slate-300 bg-white hover:border-brand-teal'
+      }`}
+    >
+      <span
+        className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${
+          actif ? 'border-brand-teal' : 'border-slate-300'
+        }`}
+        aria-hidden
+      >
+        {actif && <span className="size-2.5 rounded-full bg-brand-teal" />}
+      </span>
+      <span className="min-w-0">
+        <span className="block font-semibold text-slate-800">{titre}</span>
+        <span className="block text-xs leading-relaxed text-slate-500">{description}</span>
+      </span>
+    </button>
   )
 }
 

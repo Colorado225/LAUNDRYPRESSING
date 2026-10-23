@@ -22,6 +22,19 @@ import { computeBalance } from '@/services/cashService'
  *  - les **dépenses** sont lues au serveur (propriétaire uniquement).
  */
 
+/**
+ * Cinq dernières commandes, de la plus récente à la plus ancienne.
+ *
+ * L'ordre suit `createdAt` (horodatage ISO, donc comparable tel quel) et non
+ * `updatedAt` : une commande ancienne qui change de statut ne doit pas
+ * remonter en tête des « dernières arrivées ».
+ */
+export function recentOrders(orders: LocalOrder[], limit = 5): LocalOrder[] {
+  return [...orders]
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+    .slice(0, Math.max(0, limit))
+}
+
 export interface DailyPoint {
   /** AAAA-MM-JJ */
   date: string

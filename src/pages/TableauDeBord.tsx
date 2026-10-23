@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
+  ArrowRight,
   Banknote,
   Bike,
   ClipboardList,
@@ -17,14 +18,17 @@ import {
 import { useAllCashPayments, useAllLocalItems, useLocalOrders } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
-import { formatFcfa } from '@/lib/formatters'
+import { formatDateFr, formatFcfa } from '@/lib/formatters'
 import { isSupabaseConfigured } from '@/lib/env'
 import {
   computeDashboard,
+  recentOrders,
   shortDayLabel,
   startOfMonth,
   type DashboardSnapshot,
 } from '@/services/dashboardService'
+import { ORDER_STATUSES } from '@/constants/orders'
+import { shortOrderReference } from '@/services/qrService'
 import { isLowStock, listStockItems, STOCK_UNIT_LABELS } from '@/services/stockService'
 import { sumExpensesSince, sumMobileMoneySince } from '@/services/expenseService'
 import type { StockItemRow } from '@/types/database'
@@ -103,6 +107,7 @@ export default function TableauDeBord() {
   }
 
   const alertes = stock.filter(isLowStock)
+  const dernieres = recentOrders(orders ?? [], 5)
   const maximumSerie = Math.max(1, ...snapshot.series.map((point) => point.cash))
 
   return (
@@ -157,6 +162,77 @@ export default function TableauDeBord() {
           detail="Commandes actives"
           icone={<TrendingUp size={18} aria-hidden />}
         />
+      </section>
+
+      {/* Cinq dernières commandes : l'accueil du propriétaire doit permettre
+          de reprendre la main sur la dernière prise de commande sans passer
+          par la liste complète. */}
+      <section className="rounded-2xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+            Dernières commandes
+          </h2>
+          <Link
+            to="/commandes"
+            className="inline-flex min-h-10 items-center gap-1.5 text-sm font-semibold text-brand-teal hover:underline"
+          >
+            Toutes les commandes
+            <ArrowRight size={15} aria-hidden />
+          </Link>
+        </div>
+
+        {dernieres.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-slate-500 sm:px-5">
+            Aucune commande enregistrée sur cet appareil.
+          </p>
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[34rem] text-left text-sm">
+              <thead className="border-y border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th scope="col" className="px-4 py-2 font-semibold sm:px-5">N°</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">Client</th>
+                  <th scope="col" className="px-3 py-2 font-semibold">Statut</th>
+                  <th scope="col" className="px-3 py-2 text-right font-semibold">Montant</th>
+                  <th scope="col" className="px-4 py-2 font-semibold sm:px-5">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {dernieres.map((commande) => {
+                  const meta = ORDER_STATUSES[commande.status]
+                  return (
+                    <tr key={commande.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-2.5 sm:px-5">
+                        <Link
+                          to={`/commandes/${commande.id}`}
+                          className="font-mono text-xs font-semibold text-brand-teal hover:underline"
+                        >
+                          {shortOrderReference(commande.id)}
+                        </Link>
+                      </td>
+                      <td className="max-w-[12rem] truncate px-3 py-2.5 font-medium text-slate-800">
+                        {commande.customerName}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${meta.badgeClass}`}
+                        >
+                          {meta.label}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-brand-navy">
+                        {formatFcfa(commande.totalAmount)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-slate-500 sm:px-5">
+                        {formatDateFr(commande.createdAt.slice(0, 10))}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">

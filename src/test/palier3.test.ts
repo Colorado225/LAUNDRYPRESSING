@@ -10,6 +10,7 @@ import { STOCK_CATEGORY_LABELS, STOCK_UNIT_LABELS, isLowStock, stockErrorMessage
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS } from '@/services/expenseService'
 import {
   computeDashboard,
+  recentOrders,
   shiftDay,
   shortDayLabel,
   startOfMonth,
@@ -333,5 +334,57 @@ describe('cohérence des statuts', () => {
     const paiements: PaymentStatus[] = ['pending', 'partial', 'paid']
     expect(statuts).toHaveLength(4)
     expect(paiements).toHaveLength(3)
+  })
+})
+
+describe('recentOrders — cinq dernières commandes', () => {
+  it('classe par date de création, la plus récente d’abord', () => {
+    const commandes = [
+      commande({ id: 'a', createdAt: '2026-10-21T09:00:00.000Z' }),
+      commande({ id: 'b', createdAt: '2026-10-23T09:00:00.000Z' }),
+      commande({ id: 'c', createdAt: '2026-10-22T09:00:00.000Z' }),
+    ]
+
+    expect(recentOrders(commandes).map((ligne) => ligne.id)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('ne retient que la limite demandée', () => {
+    const commandes = Array.from({ length: 8 }, (_, index) =>
+      commande({ id: `cmd-${index}`, createdAt: `2026-10-${10 + index}T09:00:00.000Z` }),
+    )
+
+    const dernieres = recentOrders(commandes, 5)
+    expect(dernieres).toHaveLength(5)
+    expect(dernieres[0]?.id).toBe('cmd-7')
+  })
+
+  it('ignore la date de mise à jour', () => {
+    // Une vieille commande dont le statut vient de changer ne doit pas
+    // remonter en tête : l'accueil montre les arrivées, pas les modifications.
+    const commandes = [
+      commande({
+        id: 'ancienne',
+        createdAt: '2026-10-01T09:00:00.000Z',
+        updatedAt: '2026-10-23T18:00:00.000Z',
+      }),
+      commande({ id: 'recente', createdAt: '2026-10-23T09:00:00.000Z' }),
+    ]
+
+    expect(recentOrders(commandes).map((ligne) => ligne.id)).toEqual(['recente', 'ancienne'])
+  })
+
+  it('ne modifie pas le tableau reçu', () => {
+    const commandes = [
+      commande({ id: 'a', createdAt: '2026-10-21T09:00:00.000Z' }),
+      commande({ id: 'b', createdAt: '2026-10-23T09:00:00.000Z' }),
+    ]
+
+    recentOrders(commandes)
+    expect(commandes.map((ligne) => ligne.id)).toEqual(['a', 'b'])
+  })
+
+  it('accepte une liste vide et une limite nulle', () => {
+    expect(recentOrders([])).toEqual([])
+    expect(recentOrders([commande({ id: 'a' })], 0)).toEqual([])
   })
 })
