@@ -408,17 +408,34 @@ export async function stepAccount(config) {
 
   // --- Le rattachement -----------------------------------------------------
   const membership = await request(
-    `${base}/rest/v1/tenant_users?select=user_id&user_id=eq.${userId}&tenant_id=eq.${tenantId}&limit=1`,
+    `${base}/rest/v1/tenant_users?select=user_id,display_name&user_id=eq.${userId}&tenant_id=eq.${tenantId}&limit=1`,
     { key },
   )
 
-  if (Array.isArray(membership.data) && membership.data.length > 0) {
+  const ligne = Array.isArray(membership.data) ? membership.data[0] : null
+
+  if (ligne) {
     ok('Rattachement au pressing déjà en place')
+
+    // Nom affiché : il sert au sélecteur d'attribution des commandes.
+    if (!ligne.display_name) {
+      await request(`${base}/rest/v1/tenant_users?user_id=eq.${userId}&tenant_id=eq.${tenantId}`, {
+        method: 'PATCH',
+        key,
+        body: { display_name: 'Propriétaire' },
+      })
+      ok('Nom affiché renseigné (Propriétaire)')
+    }
   } else {
     const link = await request(`${base}/rest/v1/tenant_users`, {
       method: 'POST',
       key,
-      body: { user_id: userId, tenant_id: tenantId, role: 'owner' },
+      body: {
+        user_id: userId,
+        tenant_id: tenantId,
+        role: 'owner',
+        display_name: 'Propriétaire',
+      },
     })
 
     if (!link.ok) {
