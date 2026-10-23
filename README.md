@@ -63,16 +63,22 @@ Traditional laundry and dry-cleaning services suffer from operational bottleneck
 
 ### Client & Interface
 
-* **Framework:** React 18
+* **Framework:** React 19 + TypeScript
 * **Build Tool:** Vite
-* **Styling & UI:** Tailwind CSS, Custom Glassmorphism Modals, Lucide Icons
-* **State & Routing:** React Router v6, React Context API (`AuthContext`)
-* **HTTP Client:** Axios (configured with custom interceptors for base endpoints)
+* **Styling & UI:** Tailwind CSS v4, composants maison (pas de librairie UI lourde)
+* **State & Routing:** Zustand (état global), React Router v7
+* **HTTP / Backend:** Supabase (PostgreSQL + Auth + RLS), `@supabase/supabase-js`
+* **Base locale (offline-first):** Dexie.js (IndexedDB)
+* **Paiement:** CinetPay API v2 (Edge Functions Supabase)
+* **QR Code:** `qrcode` (génération), `html5-qrcode` (scan)
+* **Validation:** Zod
+* **PWA:** `vite-plugin-pwa`
 
-### Infrastructure & Deployment
+### Infrastructure & Déploiement
 
-* **Deployment Platform:** Vercel (`vercel.json` configured for SPA route rewrites)
-* **Code Quality & Tooling:** ESLint 9 (Flat Config standard)
+* **Backend / DB cloud:** Supabase Cloud (multi-tenant natif via Row-Level Security)
+* **Déploiement front:** Vercel (`vercel.json` configuré pour SPA route rewrites)
+* **Code Quality & Tooling:** ESLint 9 (Flat Config), TypeScript
 
 ---
 
@@ -160,46 +166,47 @@ mufti-laundry-website/
 
 * **Node.js**: v18.0.0 or higher
 * **npm**: v9.0.0 or higher
+* **Supabase CLI** (optionnel, pour le local : `supabase start`) ou un projet Supabase Cloud
 
 ### Installation & Setup
 
 1. **Clone the Repository**
 ```bash
-git clone [https://github.com/GodWithUs17/mufti-laundry-website.git](https://github.com/GodWithUs17/mufti-laundry-website.git)
-cd mufti-laundry-website
-
+git clone https://github.com/Colorado225/LAUNDRYPRESSING.git
+cd LAUNDRYPRESSING
 ```
-
 
 2. **Install Dependencies**
 ```bash
 npm install
-
 ```
-
 
 3. **Configure Environment Variables**
 Create a local `.env` file from the example blueprint:
 ```bash
 cp .env.example .env
-
 ```
-
-
-Set your API endpoint inside `.env`:
+Set your Supabase and CinetPay keys inside `.env`:
 ```env
-VITE_API_BASE_URL=http://localhost:5000/api
-
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+CINETPAY_API_KEY=your-cinetpay-api-key
+CINETPAY_SITE_ID=your-cinetpay-site-id
 ```
 
+4. **Apply the Supabase Schema**
+Run the migration `supabase/migrations/001_init.sql` in your Supabase project (SQL Editor) or via Supabase CLI:
+```bash
+supabase start
+supabase db push
+```
 
-4. **Run Local Development Server**
+5. **Set the current tenant** (via l'interface ou localStorage) — voir `src/lib/tenantContext.ts`.
+
+6. **Run Local Development Server**
 ```bash
 npm run dev
-
 ```
-
-
 Open `http://localhost:5173` in your browser.
 
 ---
@@ -207,9 +214,10 @@ Open `http://localhost:5173` in your browser.
 ## Available Scripts
 
 * `npm run dev`: Boots the Vite development server with Hot Module Replacement (HMR).
-* `npm run build`: Compiles minified HTML, CSS, and JS production bundles to `/dist`.
+* `npm run build`: Compiles minified HTML, CSS, and JS production bundles to `/dist` (runs `tsc --noEmit`).
 * `npm run preview`: Previews the production build locally.
 * `npm run lint`: Scans source code for potential errors using ESLint.
+* `npm run typecheck`: Runs TypeScript type checking without emitting files.
 
 ---
 
