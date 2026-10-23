@@ -7,7 +7,7 @@
 
 | Contrôle | Commande | Résultat |
 | --- | --- | --- |
-| Types, style, tests, build | `npm run typecheck && npm run lint && npm test && npm run build` | 245 tests, 14 fichiers |
+| Types, style, tests, build | `npm run typecheck && npm run lint && npm test && npm run build` | 405 tests, 27 fichiers |
 | Schéma, RLS, rôles, abonnement | `npm run sql:verify` | 134 contrôles sur PostgreSQL 16.2 |
 | Recette technique du projet déployé | `npm run recette` | 7 contrôles en lecture seule |
 
@@ -16,6 +16,41 @@ CinetPay de bout en bout, l'installation de la PWA sur une tablette Android et
 le parcours complet au comptoir. Aucune de ces étapes n'a pu être exécutée dans
 l'environnement de développement : aucun identifiant de projet, aucun compte
 marchand.
+
+---
+
+## 0 bis. État du projet de recette (23/10/2026)
+
+Un projet Supabase réel existe désormais : `phjstsydxvggtduohfrl`
+(région `eu-west-1`, PostgreSQL 17). Il a été provisionné **par le connecteur
+Supabase**, sans mot de passe de base transmis.
+
+| Élément | État constaté |
+| --- | --- |
+| Migrations appliquées | `001_init` → `008_inscription`, horodatées dans `supabase_migrations.schema_migrations` |
+| Schéma `public` | 20 tables, 3 vues, 33 fonctions, 66 politiques RLS |
+| Formules | `essentiel` 15 000, `pro` 35 000, `reseau` 75 000 FCFA |
+| Données | **aucune** : pas de pressing, pas de compte, pas de jeu de démonstration |
+| `site_url` | `http://localhost:5173` (+ `uri_allow_list` correspondante) |
+| Confirmation e-mail | **activée** (`mailer_autoconfirm = false`) |
+| Longueur de mot de passe | 6 côté serveur (l'application en exige 8) |
+
+**Deux limites connues, à traiter avant une démonstration :**
+
+1. **Droits `anon` sur les fonctions.** Supabase accorde par défaut l'exécution
+   à `anon` sur les fonctions du schéma `public` ; un `revoke … from public` ne
+   retire pas ce droit explicite. Constaté ici : `has_function_privilege('anon',
+   'create_tenant_for_user', 'execute')` valait `true`. Les fonctions refusent
+   d'elles-mêmes un appel sans session, mais la migration `008` révoque
+   désormais explicitement ce droit. À rejouer sur tout nouveau projet.
+2. **Envoi d'e-mails.** Le SMTP intégré est plafonné à quelques messages par
+   heure : au-delà, l'inscription ne reçoit plus son lien de confirmation.
+   Configurer un SMTP propre (Resend, Brevo…) avant une démonstration à
+   plusieurs comptes, ou désactiver temporairement la confirmation.
+
+**Créer le premier compte :** l'inscription libre de l'application suffit —
+elle crée le pressing, rattache le compte comme propriétaire et ouvre un essai
+de 14 jours. Aucun passage par `npm run setup` n'est nécessaire.
 
 ---
 

@@ -61,6 +61,11 @@ pressing, au lieu d'un écran de connexion unique.
 - 405 tests sur 27 fichiers, **134 contrôles SQL** sur 8 fichiers, `tsc --noEmit`,
   ESLint, build de production, migration `008` appliquée puis rejouée sur
   PostgreSQL 16.2.
+- **Provisionnement réel** le 23/10 sur un projet Supabase (PostgreSQL 17) :
+  8 migrations appliquées, 20 tables, 66 politiques RLS. Deux constats consignés
+  dans `docs/RECETTE-SUPABASE.md` : `anon` héritait du droit d'exécution sur les
+  fonctions `security definer` (révoqué, et corrigé dans `008`), et le SMTP
+  intégré plafonne les e-mails de confirmation.
 
 ## [0.8.0] — 2026-10-23
 

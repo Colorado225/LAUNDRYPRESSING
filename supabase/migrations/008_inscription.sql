@@ -113,4 +113,20 @@ comment on function public.create_tenant_for_user(text, text) is
 revoke all on function public.create_tenant_for_user(text, text) from public;
 grant execute on function public.create_tenant_for_user(text, text) to authenticated;
 
+-- -----------------------------------------------------------------------------
+-- `revoke ... from public` ne suffit PAS sur Supabase.
+-- -----------------------------------------------------------------------------
+-- Supabase pose des privilèges par défaut explicites :
+--   `alter default privileges in schema public grant all on functions to anon, authenticated, service_role`
+-- Un `revoke ... from public` retire le droit implicite de PUBLIC mais laisse le
+-- droit explicite d'`anon`. Constaté le 23/10 sur le projet de recette :
+-- `has_function_privilege('anon', 'create_tenant_for_user', 'execute')` valait
+-- `true` après application de cette migration.
+--
+-- Les fonctions refusent d'elles-mêmes un appel sans session (`auth.uid()` nul
+-- ⇒ erreur 42501), donc aucun accès n'était ouvert. Mais un rôle anonyme n'a
+-- rien à faire dans ces points d'entrée : on retire le droit explicitement.
+-- `authenticated` conserve son `grant` ci-dessus.
+revoke execute on function public.create_tenant_for_user(text, text) from anon;
+
 commit;
