@@ -518,7 +518,17 @@ Supabase dans cet environnement.
 
 ### Palier 4 — SaaS
 
-- [ ] Abonnement, multi-boutiques, supervision, support.
+- [x] Abonnement — `007_palier4.sql` (`plans`, `subscriptions`,
+      `subscription_state`, `tenant_writable`), écran `/abonnement` et bandeau
+      d'échéance. Un abonnement échu ou suspendu ferme les écritures (RLS
+      restrictives + déclencheurs) sans bloquer la lecture.
+- [x] Multi-boutiques — en-tête `x-tenant-id` validé par `is_tenant_member`,
+      rôle recalculé par boutique, sélecteur de boutique dans l'en-tête.
+- [x] Supervision — `platform_admins` sans politique RLS, fonctions de console
+      vérifiant `is_platform_admin()`, ouverture de boutique et rattachement de
+      comptes bornés par la formule.
+- [x] Support — demandes cloisonnées par pressing, réponse et clôture par
+      l'éditeur.
 
 ---
 
@@ -538,11 +548,16 @@ Supabase dans cet environnement.
 | 23/10/2026 | 2 | Écrans Caisse et Prestations, reçu 80 mm, badge « En retard », transitions filtrées par rôle | `9e2c33b` |
 | 23/10/2026 | 2 | Encaissements et relecture distante couverts par 37 tests supplémentaires | `1c4e78b` |
 | 23/10/2026 | 2 | Guichet Mobile Money : ne facturer que le reste à payer | `790f863` |
-| 23/10/2026 | 2 | Attribution, réclamations, remboursements, tarif dérogatoire, motif de transition (`005_palier2_complement.sql`, 24 contrôles SQL) | à compléter |
-| 23/10/2026 | 3 | Clients : fiche par téléphone, `normalize_phone`, rattachement automatique à la commande (`006_palier3.sql`, 17 contrôles SQL) | à compléter |
-| 23/10/2026 | 3 | Stock : articles, seuils, grand livre immuable des mouvements, fournisseurs | à compléter |
-| 23/10/2026 | 3 | Dépenses catégorisées réservées au propriétaire, vue `expense_totals` | à compléter |
-| 23/10/2026 | 3 | Écrans Clients, Stock, Dépenses et Tableau de bord, capacités et navigation par rôle | à compléter |
+| 23/10/2026 | 2 | Attribution, réclamations, remboursements, tarif dérogatoire, motif de transition (`005_palier2_complement.sql`, 24 contrôles SQL) | `d87b673` |
+| 23/10/2026 | 2 | Catalogue, caisse et workflow : 179 tests, 76 contrôles SQL, build vérifié | `c55c0de` |
+| 23/10/2026 | 3 | Clients : fiche par téléphone, `normalize_phone`, rattachement automatique à la commande (`006_palier3.sql`, 17 contrôles SQL) | `fe2eda7` |
+| 23/10/2026 | 3 | Stock : articles, seuils, grand livre immuable des mouvements, fournisseurs | `fe2eda7` |
+| 23/10/2026 | 3 | Dépenses catégorisées réservées au propriétaire, vue `expense_totals` | `fe2eda7` |
+| 23/10/2026 | 3 | Écrans Clients, Stock, Dépenses et Tableau de bord, capacités et navigation par rôle | `a93cb97` |
+| 23/10/2026 | 3 | Documentation du palier 3, CHANGELOG 0.4.0 (203 tests, 93 contrôles SQL) | `e86bb60` |
+| 23/10/2026 | 4 | Abonnement, multi-boutiques, supervision et support (`007_palier4.sql`, 28 contrôles SQL) | `e415eea` |
+| 23/10/2026 | 4 | Écrans Abonnement, Support et Supervision, sélecteur de boutique, 18 tests (221 au total) | `f6a3a28` |
+| 23/10/2026 | 4 | `PLATFORM_ADMIN` dans `.env` : compte éditeur inscrit à l'installation | `3ec6d96` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

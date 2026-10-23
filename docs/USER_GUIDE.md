@@ -188,6 +188,13 @@ Le bouton **Synchroniser** force un envoi immédiat.
 
 ### 5.1 Créer un membre de l'équipe
 
+Deux chemins, selon que l'éditeur a ouvert la console de supervision :
+
+- **Console** (`/supervision`, éditeur) : choisir la boutique, saisir
+  l'identifiant du compte, choisir le rôle → **Rattacher**. La formule du
+  pressing borne le nombre de comptes et de boutiques.
+- **À la main**, ci-dessous, quand la console n'est pas disponible.
+
 1. Dans Supabase : **Authentication → Users → Add user** (e-mail + mot de passe).
 2. Ouvrir **SQL Editor** et rattacher le compte au pressing :
 
@@ -272,6 +279,62 @@ fournisseur facultatif et note.
 Le total du mois s'affiche en haut de l'écran et alimente le tableau de bord. Un
 autre rôle ne voit ni l'écran ni les montants : la base refuse la lecture.
 
+### 5.8 Suivre l'abonnement
+
+Onglet **Abonnement** (propriétaire) : formule en cours, montant, échéance,
+nombre de comptes et de boutiques autorisés. Un bandeau apparaît dans toute
+l'application dans trois cas :
+
+| Situation | Ce que voit le pressing | Écritures |
+| --- | --- | --- |
+| Essai en cours | jours d'essai restants | ✅ |
+| Échéance dans moins de sept jours | rappel de renouvellement | ✅ |
+| Période de grâce (après l'échéance) | « échu depuis N jours », bandeau orange | ✅ encore |
+| Abonnement échu | bandeau rouge | ❌ lecture seule |
+| Suspendu par l'éditeur | motif affiché | ❌ lecture seule |
+
+En lecture seule, la consultation, la recherche, le tableau de bord et
+l'impression restent disponibles ; **toute écriture est refusée par le serveur**
+(commande, encaissement, mouvement de stock, dépense). Le règlement se fait
+auprès de l'éditeur, jamais depuis l'application.
+
+### 5.9 Travailler avec plusieurs boutiques
+
+Si le compte est rattaché à plusieurs pressings, un **sélecteur de boutique**
+apparaît en haut de l'écran. Il affiche aussi le rôle tenu dans chaque boutique
+(on peut être propriétaire d'une boutique et réceptionniste d'une autre).
+
+Changer de boutique recharge l'application : commandes hors ligne, caisse et
+abonnement sont propres à chaque pressing. Aucune donnée d'une boutique n'est
+visible depuis une autre.
+
+### 5.10 Écrire au support
+
+Onglet **Support** : un sujet, une description, puis **Envoyer au support**. La
+réponse s'affiche sous la demande, avec son statut (Ouverte, En cours,
+Clôturée). Les demandes sont cloisonnées par pressing et nécessitent une
+connexion internet.
+
+### 5.11 Console de supervision (éditeur uniquement)
+
+Onglet **Supervision** — visible seulement pour les comptes inscrits dans
+`platform_admins` :
+
+- **Suivi** : chaque pressing, sa formule, son état, son échéance, son nombre de
+  comptes, de commandes et sa dernière activité ;
+- **Renouveler / changer de formule** : sélection de la formule puis « +30 j » ;
+  une formule inconnue est refusée par le serveur ;
+- **Suspendre** : coupe immédiatement les écritures du pressing (motif
+  enregistré) ;
+- **Ouvrir une boutique** : nom, téléphone, identifiant du propriétaire,
+  formule. La limite de boutiques de la formule est appliquée ;
+- **Rattacher un compte** : boutique, identifiant du compte, rôle. Le dernier
+  propriétaire d'un pressing ne peut pas être détaché ;
+- **Support** : répondre et clôturer une demande.
+
+Pour désigner un éditeur : `PLATFORM_ADMIN=true` dans `.env` avant
+`npm run setup`, ou `insert into public.platform_admins (user_id) values (…)`.
+
 ---
 
 ## 6. Travailler sans réseau
@@ -286,8 +349,11 @@ Le pressing fonctionne en **mode avion**. Ce qui marche et ce qui ne marche pas 
 | Imprimer une étiquette | ✅ |
 | Scanner un QR code en atelier | ✅ |
 | Changer le statut d'une commande | ✅ |
+| Chercher un client et voir son historique | ✅ (commandes locales) |
 | Payer par Mobile Money | ❌ (guichet CinetPay) |
 | Envoyer une commande au serveur | ❌ (automatique au retour) |
+| Mouvementer le stock, saisir une dépense | ❌ (module de bureau) |
+| Consulter l'abonnement, écrire au support | ❌ (données serveur) |
 
 **Retour du réseau.** La synchronisation est automatique : dès que la tablette
 retrouve internet, les commandes en attente partent une par une. Un échec sur une

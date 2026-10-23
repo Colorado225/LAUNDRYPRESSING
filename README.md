@@ -4,10 +4,9 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : palier 3 terminé** (clients et historique, stocks et
-fournisseurs, dépenses, tableau de bord propriétaire). Les phases 1 à 6 et les
-paliers 0 à 3 de `MAJ.md` sont livrés ; le palier 4 (SaaS multi-pressing) n'est
-pas ouvert.
+**État actuel : palier 4 terminé** (abonnement, multi-boutiques, supervision de
+l'éditeur, support). Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont
+livrés : le produit est complet au périmètre de l'audit.
 
 ---
 
@@ -26,9 +25,13 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 7 | **Clients et historique** (fiche par téléphone, total dépensé, coordonnées) | ✅ palier 3 |
 | 8 | **Stocks, fournisseurs et dépenses** (seuils d'alerte, mouvements, dépenses du propriétaire) | ✅ palier 3 |
 | 9 | **Tableau de bord propriétaire** (activité, chiffre d'affaires, encours, alertes) | ✅ palier 3 |
+| 10 | **Abonnement** (formules, échéance, période de grâce, lecture seule si échu) | ✅ palier 4 |
+| 11 | **Multi-boutiques** (sélecteur de boutique, rôle par boutique, en-tête validé) | ✅ palier 4 |
+| 12 | **Supervision et support** (console éditeur, demandes des pressings) | ✅ palier 4 |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
-statistiques avancées, gestion du personnel, facturation PDF, suivi client public.
+statistiques avancées, gestion du personnel, facturation PDF, suivi client public,
+export comptable.
 Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `docs/AUDIT.md`.
 
 ---
@@ -121,10 +124,10 @@ npm run setup:dry      # affiche les commandes sans rien exécuter
 | Étape | Action | Idempotence |
 |-------|--------|-------------|
 | 1 | `supabase link` sur le projet | sans effet si déjà lié |
-| 2 | `supabase db push` : migrations `001` à `006` dans l'ordre | migration déjà appliquée ignorée |
+| 2 | `supabase db push` : migrations `001` à `007` dans l'ordre | migration déjà appliquée ignorée |
 | 3 | Déploiement de `cinetpay-init` (JWT requis) et `cinetpay-webhook` (public) | redéploie la même version |
 | 4 | Secrets `CINETPAY_*` et `APP_URL` côté Edge Functions | écrasés par les valeurs du `.env` |
-| 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` | pressing retrouvé par son nom, compte réutilisé |
+| 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` (+ `platform_admins` si `PLATFORM_ADMIN=true`) | pressing retrouvé par son nom, compte réutilisé |
 | 6 | Contrôle : `orders` doit répondre `42501` en anonyme, webhook en ligne | lecture seule |
 
 Options : `--skip-db`, `--skip-functions`, `--skip-account`, `--check`,
@@ -206,7 +209,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (203 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, langue, isolation, installation) |
+| `npm test` | Suite Vitest complète (221 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, abonnement, langue, isolation, installation) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
@@ -266,7 +269,10 @@ pas en `npm run dev`).
 │   │   ├── Clients.tsx           # fiche client + historique (palier 3)
 │   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
 │   │   ├── Depenses.tsx          # dépenses du propriétaire (palier 3)
-│   │   └── TableauDeBord.tsx     # indicateurs du jour (palier 3)
+│   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
+│   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
+│   │   ├── Support.tsx           # demandes d'assistance (palier 4)
+│   │   └── Supervision.tsx       # console de l'éditeur (palier 4)
 │   ├── services/
 │   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
@@ -981,6 +987,77 @@ ils affichent « hors ligne » quand la lecture échoue, plutôt qu'un zéro tro
 
 ---
 
+## 7decies. SaaS : abonnement, multi-boutiques et supervision (palier 4)
+
+> **Décision structurante.** Un abonnement échu ne détruit rien et ne se
+> contourne pas : le pressing passe en **lecture seule**. Les données restent
+> consultables — elles appartiennent au client —, les écritures sont refusées
+> par des politiques RLS **restrictives** et par un déclencheur qui couvre les
+> fonctions `security definer` (encaissement, remboursement, stock). Un pressing
+> **sans** ligne d'abonnement reste inscriptible : la migration ne coupe jamais
+> un client existant.
+
+### Formules et échéances
+
+`plans` décrit trois formules (Essentiel, Pro, Réseau) avec leur prix, leur
+durée, le nombre de comptes et de boutiques. `subscriptions` porte, par
+pressing, la formule retenue et la fin de période. L'état affiché n'est pas
+celui stocké : `subscription_state()` le recalcule à partir des dates —
+`active` jusqu'à l'échéance, `grace` (7 jours par défaut) ensuite, `expired`
+au-delà. Une suspension décidée par l'éditeur l'emporte sur les dates.
+
+Aucun paiement n'est prélevé dans l'application : le règlement se fait auprès de
+l'éditeur (Mobile Money ou espèces), qui enregistre la période réglée via
+`platform_set_subscription`. C'est une décision assumée — encaisser un
+abonnement en ligne aurait exigé un second compte marchand et une comptabilité
+de reversement, hors périmètre.
+
+### Multi-boutiques
+
+Un même compte peut être rattaché à plusieurs pressings, avec un **rôle
+différent par boutique** (propriétaire ici, réceptionniste là). La boutique
+active voyage dans l'en-tête `x-tenant-id`, que `current_tenant_id()` n'accepte
+que si `is_tenant_member()` confirme le rattachement ; un en-tête forgé retombe
+sur le claim du jeton. `current_tenant_role()` est lui aussi recalculé par
+boutique — un rôle mis en cache dans le JWT ne suffisait plus.
+
+Côté interface, `ShopSwitcher` n'apparaît qu'à partir de deux boutiques et
+recharge l'application au changement : IndexedDB, caisse et abonnement sont
+propres à chaque pressing.
+
+### Supervision et support
+
+`platform_admins` est une liste blanche **sans aucune politique RLS** : la table
+n'est lisible que par les fonctions `security definer` et par la clé
+`service_role`. Toutes les actions de l'éditeur (`platform_tenants_overview`,
+`platform_set_subscription`, `platform_create_shop`, `platform_members`,
+`platform_set_member`, `platform_support_requests`, `platform_answer_support`)
+vérifient `is_platform_admin()` et lèvent `42501` sinon — masquer le lien de
+navigation ne suffit pas.
+
+La console `/supervision` permet de suivre les pressings (formule, état,
+échéance, volumes), de renouveler, de suspendre, d'ouvrir une boutique et de
+rattacher un compte (avec les limites `max_users` / `max_shops` de la formule),
+enfin de répondre aux demandes de support. Côté pressing, `/support` ouvre une
+demande et lit la réponse ; les demandes sont cloisonnées par `tenant_id`.
+
+Pour devenir éditeur : `PLATFORM_ADMIN=true` dans `.env` avant `npm run setup`
+(une seule fois, sur le compte de l'éditeur), ou à la main :
+
+```sql
+insert into public.platform_admins (user_id) values ('<uuid du compte>');
+```
+
+### Limites connues
+
+- la console exige l'**identifiant Supabase** du compte à rattacher : la
+  création d'un compte depuis l'interface demanderait la clé `service_role`
+  dans le navigateur, ce qui est proscrit ;
+- une demande de support ne peut pas être déposée hors ligne (pas de file
+  d'attente dédiée) ;
+- `max_shops` compte les boutiques où le compte est **propriétaire** : c'est une
+  règle commerciale simple, pas une facturation automatique.
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`docs/AUDIT.md`)
@@ -994,7 +1071,7 @@ ils affichent « hors ligne » quand la lecture échoue, plutôt qu'un zéro tro
 - [x] **Palier 1** — Stabilisation technique (paiement, sync `version`, HMAC, rôles)
 - [x] **Palier 2** — Cœur ERP (catalogue, caisse, reçus, workflow, réclamations)
 - [x] **Palier 3** — V1.2 (clients, stock, fournisseurs, dépenses, tableau de bord)
-- [ ] **Palier 4** — SaaS (abonnements, plusieurs pressings par compte)
+- [x] **Palier 4** — SaaS (abonnements, plusieurs pressings par compte, supervision, support)
 
 ---
 
@@ -1014,3 +1091,11 @@ ils affichent « hors ligne » quand la lecture échoue, plutôt qu'un zéro tro
   un réceptionniste ne voit strictement rien, pas même les totaux agrégés.
 - La vue `expense_totals` est en `security_invoker` : elle hérite de la RLS des
   dépenses au lieu de la contourner.
+- Un abonnement **échu ou suspendu** ferme les écritures par des politiques RLS
+  restrictives **et** par un déclencheur sur `payment_transactions`,
+  `payment_refunds` et `stock_movements` : les fonctions `security definer` ne
+  servent pas de porte dérobée. Les lectures restent ouvertes.
+- `platform_admins` n'a **aucune politique RLS** : la liste des éditeurs n'est
+  lisible que par les fonctions `security definer` et la clé `service_role`.
+- L'en-tête `x-tenant-id` n'est honoré que si `is_tenant_member()` confirme le
+  rattachement du compte au pressing demandé.

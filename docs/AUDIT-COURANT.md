@@ -1,8 +1,8 @@
 # Audit courant — Pressing Pro
 
 **Date :** 23 octobre 2026
-**Révision auditée :** branche `arena/17b0abba-laundrypressing`, palier 3
-(après fusion de la PR #1 et des paliers 0 à 3)
+**Révision auditée :** branche `arena/17b0abba-laundrypressing`, palier 4
+(après fusion de la PR #1 et des paliers 0 à 4)
 **Méthode :** inventaire automatisé du code (analyse des imports, comptage des
 tables, politiques et tests), puis lecture ciblée des zones sensibles
 (authentification, synchronisation, paiement, RLS).
@@ -19,18 +19,18 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 
 | Élément | Valeur |
 | --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 66 (dont 9 de test) |
-| Lignes de code applicatif | 11 663 (hors dossier `src/test/`) |
-| Migrations | 6 (`001_init` → `006_palier3`) |
-| Tables PostgreSQL | 16 + 1 vue (`expense_totals`) |
-| Politiques RLS | 33 (12 + 1 + 3 + 8 + 9) |
-| Fonctions SQL | 22 (dont `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`) |
-| Déclencheurs | 14 |
+| Fichiers TypeScript / TSX dans `src/` | 76 (dont 10 de test) |
+| Lignes de code applicatif | 13 477 (hors dossier `src/test/`) |
+| Migrations | 7 (`001_init` → `007_palier4`) |
+| Tables PostgreSQL | 20 + 3 vues (`expense_totals`, `order_balances`, vues de synthèse) |
+| Politiques RLS | 66 (dont 30 restrictives posées par le palier 4) |
+| Fonctions SQL | 31 (dont `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
+| Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation | 3 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`) |
-| Fichiers de tests | 11 (9 sous `src/`, 2 pour les scripts) |
-| Tests automatisés | 203 |
-| Contrôles SQL exécutés | 93 (isolations, rôles, paliers 1 à 3) |
+| Fichiers de tests | 14 (10 sous `src/`, 2 pour les scripts, 2 fichiers SQL de tests) |
+| Tests automatisés | 221 |
+| Contrôles SQL exécutés | 123 (isolations, rôles, paliers 1 à 4) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
 
@@ -58,6 +58,9 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `/clients` | `Clients.tsx` — fiches et historique (offline pour l'historique) | différé |
 | `/stock` | `Stock.tsx` — articles, mouvements, fournisseurs | différé |
 | `/depenses` | `Depenses.tsx` — dépenses du propriétaire | différé |
+| `/abonnement` | `Abonnement.tsx` — formule, échéance, droits (propriétaire) | différé |
+| `/support` | `Support.tsx` — demandes d'assistance du pressing | différé |
+| `/supervision` | `Supervision.tsx` — console de l'éditeur | différé |
 | `/paiement/retour` | `PaymentReturn.tsx` — retour CinetPay, lecture seule | différé |
 | `/payment/return` | alias redirigé (anciens liens) | — |
 
@@ -83,6 +86,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `supabase/migrations/004_palier2.sql` | catalogue, prix historisé, caisse, clôture, 22 contrôles associés |
 | `supabase/migrations/005_palier2_complement.sql` | attribution, réclamations, remboursements, motif de transition |
 | `supabase/migrations/006_palier3.sql` | clients, fournisseurs, stock + grand livre, dépenses, vue `expense_totals` |
+| `supabase/migrations/007_palier4.sql` | formules et abonnements, lecture seule, multi-boutiques, supervision, support |
+| `supabase/tests/palier4.sql` | 28 contrôles : abonnement, grâce, blocage d'écriture, en-tête de boutique, console, support |
 | `supabase/tests/isolation.sql` | rejoue PostgREST (`request.jwt.claims`) et exige `42501` |
 | `supabase/tests/roles.sql` | 11 contrôles de la matrice de rôles côté serveur |
 | `supabase/tests/palier1.sql` | verrou optimiste, historique, guichet unique |
@@ -131,8 +136,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 Analyse de reachability depuis `src/main.tsx`, imports statiques **et** différés
 (`React.lazy`) inclus :
 
-- 56 fichiers atteignables (tous les écrans `lazy` compris) ;
-- 9 fichiers de test sous `src/` (exécutés par Vitest, non importés) ;
+- 65 fichiers atteignables (tous les écrans `lazy` compris) ;
+- 10 fichiers de test sous `src/` (exécutés par Vitest, non importés) ;
 - 1 fichier de déclarations de types (`src/vite-env.d.ts`).
 
 **Aucun composant, service ou utilitaire orphelin.** Les seuls fichiers non
@@ -192,9 +197,9 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | --- | --- | --- |
 | Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 203 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, langue, création de commande, isolation statique, configuration, provisionnement |
-| Build | `npm run build` | compilation TypeScript + PWA (précache 72 fichiers, 1 331 KiB) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`006`, jeu de démonstration, 93 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses) sur un PostgreSQL 16 jetable |
+| Tests | `npm test` | 221 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, création de commande, isolation statique, configuration, provisionnement |
+| Build | `npm run build` | compilation TypeScript + PWA (précache 81 fichiers, 1 369 KiB) |
+| SQL réel | `npm run sql:verify` | migrations `001`→`007`, jeu de démonstration, 123 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`
@@ -206,10 +211,11 @@ Supabase, Edge Functions déployées, webhook CinetPay de bout en bout,
 comportement sur tablette Android physique, relecture multi-appareil des
 réclamations et des remboursements (seul l'état des commandes est rapatrié).
 
-Les modules du palier 3 ont une limite supplémentaire **assumée** : le stock et
-les dépenses sont des écrans de bureau, utilisables **en ligne** uniquement.
-L'historique client, lui, reste consultable hors ligne car il est dérivé des
-commandes locales.
+Les modules des paliers 3 et 4 ont une limite supplémentaire **assumée** : le
+stock, les dépenses, l'abonnement, le support et la console de supervision sont
+des écrans de bureau, utilisables **en ligne** uniquement. L'historique client
+et les commandes, eux, restent consultables hors ligne car ils sont dérivés des
+données locales.
 
 ---
 

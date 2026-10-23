@@ -6,6 +6,67 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.5.0] — 2026-10-23
+
+Palier 4 de la feuille de route (`MAJ.md`) : le **SaaS** — abonnement,
+multi-boutiques, supervision de l'éditeur et support. Le produit couvre
+désormais l'intégralité du périmètre de l'audit.
+
+### Ajouté
+
+- **Formules et abonnements** (`plans`, `subscriptions`) : trois formules
+  (Essentiel, Pro, Réseau) avec prix, durée, nombre de comptes et de boutiques.
+  L'état affiché est recalculé par `subscription_state()` — `active` jusqu'à
+  l'échéance, `grace` pendant sept jours, `expired` ensuite ; une suspension
+  décidée par l'éditeur l'emporte sur les dates.
+- **Lecture seule quand l'abonnement est échu** : politiques RLS restrictives
+  sur les dix tables métier et déclencheurs sur `payment_transactions`,
+  `payment_refunds` et `stock_movements`. Un pressing **sans** abonnement reste
+  inscriptible : aucune migration ne coupe un client existant. Les lectures
+  restent ouvertes — les données appartiennent au pressing.
+- **Multi-boutiques** : un compte peut être rattaché à plusieurs pressings avec
+  un rôle différent par boutique. La boutique active voyage dans l'en-tête
+  `x-tenant-id`, accepté seulement si `is_tenant_member()` confirme le
+  rattachement ; `current_tenant_role()` est recalculé par boutique. Sélecteur
+  `ShopSwitcher` dans l'en-tête, visible à partir de deux boutiques.
+- **Console de supervision** (`/supervision`, réservée à l'éditeur) : suivi des
+  pressings (formule, état, échéance, comptes, commandes, dernière activité),
+  renouvellement, suspension, ouverture de boutique et rattachement de comptes
+  (bornés par `max_shops` et `max_users`), file des demandes de support.
+  `platform_admins` n'a **aucune politique RLS** ; chaque fonction
+  `security definer` vérifie `is_platform_admin()` et lève `42501` sinon.
+- **Support** (`/support`) : le pressing ouvre une demande et lit la réponse ;
+  les demandes sont cloisonnées par `tenant_id`.
+- **Écran Abonnement** (`/abonnement`) : formule, échéance, comptes et boutiques
+  autorisés, catalogue des formules, et bandeau permanent en cas d'échéance
+  proche, de grâce ou de lecture seule.
+- **Installation** : `PLATFORM_ADMIN=true` dans `.env` inscrit le compte
+  propriétaire dans `platform_admins` au moment de `npm run setup`.
+- **Tests** : 18 nouveaux tests (221 au total) et 28 contrôles SQL
+  supplémentaires (123 au total).
+
+### Décisions
+
+- **Aucun paiement d'abonnement en ligne.** Le règlement se fait auprès de
+  l'éditeur, qui enregistre la période réglée. Encaisser un abonnement aurait
+  exigé un second compte marchand, une réconciliation et une comptabilité de
+  reversement : hors périmètre, et sans bénéfice pour le pressing.
+- **Blocage au niveau base, pas interface.** Masquer un bouton n'a jamais
+  empêché un appel direct : la lecture seule est appliquée par RLS et
+  déclencheurs, l'interface ne fait qu'expliquer la règle.
+- **`max_shops` compte les boutiques où le compte est propriétaire.** Règle
+  commerciale simple et vérifiable, plutôt qu'une facturation automatique.
+
+### Limites connues
+
+- La console exige l'**identifiant Supabase** du compte à rattacher : créer un
+  compte depuis l'interface demanderait la clé `service_role` dans le
+  navigateur, ce qui est proscrit.
+- Une demande de support ne peut pas être déposée hors ligne.
+- Toujours aucune recette sur un projet Supabase réel (aucun identifiant dans
+  l'environnement de développement) : schéma, RLS et règles sont en revanche
+  exécutés sur PostgreSQL 16.
+
 ## [0.4.0] — 2026-10-23
 
 Palier 3 de la feuille de route (`MAJ.md`) : la **gestion** du pressing —
