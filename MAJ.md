@@ -567,7 +567,7 @@ Supabase dans cet environnement.
 | 23/10/2026 | MVP | Écran 11 : `/rapports` (7/30/90 j, comparaison, export CSV) et `src/lib/reporting.ts`, 23 tests | `a9ea06a` |
 | 23/10/2026 | MVP | `scripts/db.mjs` : schéma et 123 contrôles SQL sur une base gérée (Neon), 15 tests | `74339b2` |
 | 23/10/2026 | MVP | Pagination serveur par curseur des dépenses (`listExpensesPage`), total du mois côté serveur, 17 tests | `e91a112` |
-| 23/10/2026 | MVP | Écran 12 enrichi : pressing modifiable, équipe, sécurité du compte, export et purge des données locales, 32 tests | `2798691` |
+| 23/10/2026 | MVP | Écran 12 enrichi : pressing modifiable, équipe, sécurité du compte, export et purge des données locales, 32 tests | `aba9c29` |
 
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.
