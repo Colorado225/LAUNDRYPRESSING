@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
 import AppLayout from '@/components/AppLayout'
 import AuthGate from '@/components/AuthGate'
+import { useAndroidBackButton } from '@/hooks/useAndroidBackButton'
 import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
 
 /**
@@ -12,7 +13,7 @@ import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
  * Phase 2 : liste, création et fiche commande — toutes adossées à IndexedDB.
  * Phase 3 : page /atelier (scan QR + changement de statut).
  * Phase 4 : retour de paiement CinetPay (/paiement/retour).
- * Phase 5 : connexion Supabase (AuthGate).
+ * Phase 5 : connexion Supabase (AuthGate), écran /offline, bouton Retour Android.
  *
  * Les écrans sont chargés à la demande (`React.lazy`) : la librairie de scan
  * (`html5-qrcode`) pèse à elle seule plusieurs centaines de kilo-octets et ne
@@ -25,6 +26,7 @@ const OrderForm = lazy(() => import('@/pages/OrderForm'))
 const OrderDetail = lazy(() => import('@/pages/OrderDetail'))
 const Atelier = lazy(() => import('@/pages/Atelier'))
 const PaymentReturn = lazy(() => import('@/pages/PaymentReturn'))
+const Offline = lazy(() => import('@/pages/Offline'))
 
 export default function App() {
   useEffect(() => {
@@ -34,6 +36,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <BackButtonGuard />
       <Toaster
         position="top-center"
         toastOptions={{
@@ -56,6 +59,7 @@ export default function App() {
               <Route path="/commandes/nouvelle" element={<OrderForm />} />
               <Route path="/commandes/:orderId" element={<OrderDetail />} />
               <Route path="/atelier" element={<Atelier />} />
+              <Route path="/offline" element={<Offline />} />
               {/* Retour CinetPay. L'alias anglais évite de casser un lien déjà partagé. */}
               <Route path="/paiement/retour" element={<PaymentReturn />} />
               <Route path="/payment/return" element={<PaymentAliasRedirect />} />
@@ -66,6 +70,15 @@ export default function App() {
       </AuthGate>
     </BrowserRouter>
   )
+}
+
+/**
+ * Monte la gestion du bouton « Retour » Android. Doit être enfant du routeur :
+ * le hook s'appuie sur `useNavigate` et `useLocation`.
+ */
+function BackButtonGuard() {
+  useAndroidBackButton()
+  return null
 }
 
 /** Conserve les paramètres de requête (transaction_id…) lors de l'alias. */

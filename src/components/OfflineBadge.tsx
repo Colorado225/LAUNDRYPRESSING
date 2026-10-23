@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, CloudOff, Loader2, RefreshCw } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, CloudOff, HelpCircle, Loader2, RefreshCw } from 'lucide-react'
 import { usePendingOrderCount } from '@/db/hooks'
 import { useSyncStore } from '@/stores/syncStore'
 import { syncPendingOrders } from '@/sync/syncEngine'
@@ -90,11 +91,21 @@ export default function OfflineBadge({ compact = false }: { compact?: boolean })
           type="button"
           onClick={() => void handleManualSync()}
           disabled={manualSync || state === 'syncing'}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 disabled:opacity-50"
+          className="inline-flex min-h-12 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 disabled:opacity-50"
         >
           <RefreshCw size={14} className={manualSync ? 'animate-spin' : undefined} aria-hidden />
           Synchroniser
         </button>
+      )}
+
+      {!online && (
+        <Link
+          to="/offline"
+          className="inline-flex min-h-12 items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-900 active:bg-amber-50"
+        >
+          <HelpCircle size={14} aria-hidden />
+          Aide
+        </Link>
       )}
 
       {lastError && (
