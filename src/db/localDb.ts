@@ -58,8 +58,11 @@ export interface LocalPendingPayment {
   orderId: string
   tenantId: string
   amount: number
-  method: PaymentMethod
+  /** Opérateur choisi sur le guichet CinetPay : inconnu au moment de l'initiation. */
+  method: PaymentMethod | null
+  /** `pending` = guichet ouvert, en attente de la confirmation serveur. */
   status: 'pending' | 'sending' | 'error'
+  /** Identifiant de transaction CinetPay (`transaction_id`). */
   reference: string | null
   createdAt: string
   lastError: string | null

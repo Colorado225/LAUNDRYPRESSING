@@ -72,6 +72,35 @@ export type OrderStatusHistoryRow = {
   changed_at: string
 }
 
+/** Transaction Mobile Money (table `payment_transactions`, migration 002). */
+export type PaymentTransactionStatus =
+  | 'pending'
+  | 'initiated'
+  | 'paid'
+  | 'refused'
+  | 'cancelled'
+  | 'error'
+
+export type PaymentTransactionRow = {
+  id: string
+  tenant_id: string
+  order_id: string
+  transaction_id: string
+  amount: number
+  order_amount: number
+  currency: 'XOF' | 'XAF'
+  status: PaymentTransactionStatus
+  provider: string
+  payment_method: PaymentMethod | null
+  operator_label: string | null
+  payment_url: string | null
+  signature_verified: boolean
+  provider_payload: unknown
+  created_at: string
+  updated_at: string
+  paid_at: string | null
+}
+
 /** Type `Insert` générique : les colonnes avec valeur par défaut deviennent optionnelles. */
 type InsertOf<Row, OptionalKeys extends keyof Row> = Omit<Row, OptionalKeys> &
   Partial<Pick<Row, OptionalKeys>>
@@ -117,6 +146,26 @@ export interface Database {
         Row: OrderStatusHistoryRow
         Insert: InsertOf<OrderStatusHistoryRow, 'id' | 'changed_by' | 'changed_at'>
         Update: Partial<Omit<OrderStatusHistoryRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      payment_transactions: {
+        Row: PaymentTransactionRow
+        Insert: InsertOf<
+          PaymentTransactionRow,
+          | 'id'
+          | 'currency'
+          | 'status'
+          | 'provider'
+          | 'payment_method'
+          | 'operator_label'
+          | 'payment_url'
+          | 'signature_verified'
+          | 'provider_payload'
+          | 'created_at'
+          | 'updated_at'
+          | 'paid_at'
+        >
+        Update: Partial<Omit<PaymentTransactionRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
     }

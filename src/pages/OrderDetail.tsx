@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import PaymentButton from '@/components/PaymentButton'
 import QrCodeDisplay from '@/components/QrCodeDisplay'
 import { useLocalOrder, useUpdateOrderStatus } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -158,6 +159,9 @@ export default function OrderDetail() {
           ))}
         </ul>
       </section>
+
+      {/* Paiement Mobile Money */}
+      <PaymentButton order={order} />
 
       {/* Étiquette QR — impression 80 mm */}
       <QrCodeDisplay order={order} items={items} tenantName={tenantName} />
