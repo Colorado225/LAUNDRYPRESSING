@@ -22,10 +22,29 @@ en Mobile Money — chaque pressing ne voyant que ses propres données.
 | **Mobile Money** | Wave, Orange Money, MTN MoMo, Moov Money via CinetPay | Revue + transpilation ; **aucun paiement réel** |
 | **Multi-tenant** | RLS sur 6 tables, révocation `anon`, écritures serveur | Tests `tenantIsolation` (23) + script SQL fourni |
 | **PWA / Auth** | Installable, connexion, session hors ligne, retour Android | Tests DOM en phase 5 (32) ; installation non testée sur appareil |
-| **Qualité** | 58 tests automatisés, `typecheck`, `lint`, `build` verts | `npm test` |
+| **Qualité** | 111 tests automatisés, `typecheck`, `lint`, `build` verts | `npm test` |
 
 **Chiffres du build** : bundle principal 204 kB (64 kB gzip), atelier chargé à la
 demande (383 kB), précache PWA 39 fichiers / 1,19 Mo.
+
+---
+
+## 2 bis. Installation automatisée (0.1.1)
+
+Depuis la 0.1.1, le déploiement ne demande plus aucune manipulation dans le
+tableau de bord : après avoir rempli `.env`, `npm run setup` enchaîne la
+liaison du projet, `db push` (001 puis 002), le déploiement des deux Edge
+Functions, l'envoi des secrets CinetPay, la création du pressing et du compte
+propriétaire, puis un contrôle final (`orders` doit répondre `42501`).
+
+| Point | Détail |
+| --- | --- |
+| Idempotence | pressing retrouvé par son nom, compte réutilisé après un 422, rattachement vérifié avant insertion |
+| Sans Docker | bascule automatique sur l'empaquetage côté Supabase (`--use-api`) |
+| Secrets | transmis par fichier temporaire en `0o600`, supprimé après usage ; mot de passe masqué à l'affichage |
+| Garde-fous | valeurs d'exemple de `.env.example` refusées, secret préfixé `VITE_` refusé, compte à moitié renseigné refusé |
+| Options | `--check`, `--dry-run`, `--skip-db`, `--skip-functions`, `--skip-account` |
+| Couverture | 46 tests, dont un contrat complet rejoué contre un serveur HTTP simulé (deux passages → aucun doublon) |
 
 ---
 
@@ -36,7 +55,9 @@ avant l'ouverture au public :
 
 1. **Migrations jamais exécutées** — aucun projet Supabase provisionné. La
    syntaxe est validée (analyseur PostgreSQL `libpg_query` via `pglast` : 98
-   instructions), mais l'exécution réelle reste à faire.
+   instructions) et leur enchaînement est automatisé par `npm run setup`, mais
+   l'exécution réelle reste à faire. Le script de provisionnement lui-même n'a
+   été validé qu'en `--dry-run` et contre un serveur simulé.
 2. **Aucun paiement réel** — pas d'identifiants marchand CinetPay. Le flux complet
    (guichet → webhook → statut) n'a jamais tourné de bout en bout.
 3. **Lighthouse non exécuté** — aucun navigateur Chrome/Chromium dans
@@ -110,13 +131,15 @@ intégrations à maintenir — hors périmètre du MVP.
 
 ## 6. Mise en production — liste de contrôle
 
-1. Créer le projet Supabase, exécuter `001_init.sql`, `002_payments.sql`,
-   puis `seed.sql` (facultatif).
-2. Déployer `cinetpay-init` et `cinetpay-webhook --no-verify-jwt` ; poser les
-   secrets (`CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`,
-   `APP_URL`).
-3. Créer le compte marchand CinetPay et renseigner l'URL de notification.
-4. Déployer le front (`npm run build`) sur un hébergement HTTPS.
+1. Créer le projet Supabase et relever les cinq valeurs : URL, clé `anon`,
+   jeton personnel (`sbp_…`), mot de passe de la base, clé `service_role`.
+2. Remplir `.env`, puis lancer `npm run setup` : schéma, RLS, Edge Functions,
+   secrets et compte propriétaire sont installés d'un coup.
+3. Créer le compte marchand CinetPay et vérifier que l'URL de notification
+   pointe sur `https://<ref>.supabase.co/functions/v1/cinetpay-webhook`.
+4. Déployer le front (`npm run build`) sur un hébergement HTTPS, reporter
+   l'adresse dans `APP_URL`, puis relancer `npm run setup` pour mettre à jour
+   les redirections de paiement.
 5. Exécuter `supabase/tests/isolation.sql` et lire les `NOTICE`.
 6. Faire un paiement de 100 FCFA de bout en bout, puis le rejouer pour vérifier
    l'idempotence.
