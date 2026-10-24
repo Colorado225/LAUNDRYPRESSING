@@ -69,9 +69,40 @@ export const orderItemInputSchema = z.object({
     .trim()
     .max(300, 'Motif trop long (300 caractères maximum)')
     .optional(),
+  laundryModelId: z.string().uuid('Modèle commercial invalide').nullable().optional(),
+  laundryModelNameSnapshot: z.string().trim().min(2).max(80).nullable().optional(),
+  laundryModelTypeSnapshot: z.enum(['PER_KG', 'WEIGHT_PACKAGE']).nullable().optional(),
+  laundryWeightKg: z.number().positive().max(10_000).refine((value) => Number(value.toFixed(3)) === value).nullable().optional(),
+  laundryPriceBreakdownSnapshot: z.string().trim().max(500).nullable().optional(),
+  laundryServicesSnapshot: z.string().trim().max(1000).nullable().optional(),
+  laundryPricePerKgSnapshot: z.number().int().positive().nullable().optional(),
+  laundryPackagePriceSnapshot: z.number().int().positive().nullable().optional(),
+  laundryIncludedWeightKgSnapshot: z.number().positive().nullable().optional(),
+  laundryOveragePricePerKgSnapshot: z.number().int().nonnegative().nullable().optional(),
+  laundryMinimumWeightKgSnapshot: z.number().positive().nullable().optional(),
+  laundryBillingIncrementKgSnapshot: z.number().positive().nullable().optional(),
+  laundryMinimumChargeSnapshot: z.number().int().nonnegative().nullable().optional(),
 }).superRefine((item, context) => {
   const unite = item.billingUnit ?? 'PIECE'
   const quantite = item.quantity ?? 1
+  if (item.laundryModelId) {
+    if (item.catalogEntryId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['catalogEntryId'], message: 'Une ligne modèle ne peut pas dépendre d’un tarif à la pièce.' })
+    }
+    if (!item.laundryModelNameSnapshot || !item.laundryModelTypeSnapshot || item.laundryWeightKg == null) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'Actualisez les informations du modèle commercial avant de valider.' })
+    }
+    if (item.laundryModelTypeSnapshot === 'PER_KG' && unite !== 'KG') {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['billingUnit'], message: 'Un modèle au kilo doit être facturé en kg.' })
+    }
+    if (item.laundryModelTypeSnapshot === 'WEIGHT_PACKAGE' && (unite !== 'FLAT' || quantite !== 1)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['billingUnit'], message: 'Un forfait de poids doit rester une ligne forfaitaire.' })
+    }
+  } else if (
+    item.laundryModelNameSnapshot != null || item.laundryModelTypeSnapshot != null || item.laundryWeightKg != null
+  ) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'La référence du modèle commercial est manquante.' })
+  }
   if (['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(unite) && !Number.isInteger(quantite)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,

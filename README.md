@@ -332,6 +332,8 @@ pas en `npm run dev`).
 │   ├── migrations/008_inscription.sql # inscription libre (pressing + propriétaire)
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
 │   ├── migrations/006_palier3.sql # clients, stock, dépenses, vue des totaux
+│   ├── migrations/016_laundry_models.sql # modèles commerciaux au kilo/forfait
+│   ├── migrations/017_laundry_model_order_lines.sql # instantanés dans les commandes
 │   ├── seed.sql                  # jeu de démonstration (2 pressings)
 │   ├── tests/isolation.sql       # preuve d'isolation sur une vraie base
 │   └── tests/palier3.sql         # 17 contrôles clients / stock / dépenses

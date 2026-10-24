@@ -51,6 +51,12 @@
   }
 }
 
+@layer components {
+  .field {
+    @apply min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 outline-none focus:border-brand-teal disabled:bg-slate-100;
+  }
+}
+
 @layer utilities {
   /* Indicateur de statut réseau / synchronisation */
   .status-dot {

@@ -8,6 +8,7 @@ import type {
 import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
 import { calculerTarif } from '@/lib/catalogPricing'
+import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
 import {
   createOrderSchema,
   orderItemMeasurementSchema,
@@ -56,6 +57,25 @@ export async function createOrderLocal(
       minimumFacturable: item.minimumChargeSnapshot,
     })
 
+    if (item.laundryModelId && item.laundryModelTypeSnapshot && item.laundryWeightKg) {
+      const modelPrice = calculateLaundryModelPrice({
+        model_type: item.laundryModelTypeSnapshot,
+        price_per_kg: item.laundryPricePerKgSnapshot ?? null,
+        package_price: item.laundryPackagePriceSnapshot ?? null,
+        included_weight_kg: item.laundryIncludedWeightKgSnapshot ?? null,
+        overage_price_per_kg: item.laundryOveragePricePerKgSnapshot ?? null,
+        minimum_weight_kg: item.laundryMinimumWeightKgSnapshot ?? null,
+        billing_increment_kg: item.laundryBillingIncrementKgSnapshot ?? null,
+        minimum_charge: item.laundryMinimumChargeSnapshot ?? null,
+      }, item.laundryWeightKg)
+      if (modelPrice.status === 'PRICED' && modelPrice.amount !== calculated.total) {
+        throw new Error('Le montant de la ligne ne correspond pas au modèle commercial sélectionné.')
+      }
+      if (modelPrice.status === 'QUOTE' && calculated.total < (item.laundryPackagePriceSnapshot ?? 0)) {
+        throw new Error('Le montant validé ne peut pas être inférieur au prix du forfait.')
+      }
+    }
+
     return {
       id: newId(),
       orderId,
@@ -82,6 +102,19 @@ export async function createOrderLocal(
       minimumChargeSnapshot: item.minimumChargeSnapshot ?? null,
       conditionsSnapshot: item.conditionsSnapshot ?? null,
       priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
+      laundryModelId: item.laundryModelId ?? null,
+      laundryModelNameSnapshot: item.laundryModelNameSnapshot ?? null,
+      laundryModelTypeSnapshot: item.laundryModelTypeSnapshot ?? null,
+      laundryWeightKg: item.laundryWeightKg ?? null,
+      laundryPriceBreakdownSnapshot: item.laundryPriceBreakdownSnapshot ?? null,
+      laundryServicesSnapshot: item.laundryServicesSnapshot ?? null,
+      laundryPricePerKgSnapshot: item.laundryPricePerKgSnapshot ?? null,
+      laundryPackagePriceSnapshot: item.laundryPackagePriceSnapshot ?? null,
+      laundryIncludedWeightKgSnapshot: item.laundryIncludedWeightKgSnapshot ?? null,
+      laundryOveragePricePerKgSnapshot: item.laundryOveragePricePerKgSnapshot ?? null,
+      laundryMinimumWeightKgSnapshot: item.laundryMinimumWeightKgSnapshot ?? null,
+      laundryBillingIncrementKgSnapshot: item.laundryBillingIncrementKgSnapshot ?? null,
+      laundryMinimumChargeSnapshot: item.laundryMinimumChargeSnapshot ?? null,
     }
   })
 
@@ -161,12 +194,31 @@ export async function updateOrderItemMeasurementLocal(
       increment: item.billingIncrementSnapshot,
       minimumFacturable: item.minimumChargeSnapshot,
     })
+    let laundryBreakdown = item.laundryPriceBreakdownSnapshot
+    if (item.laundryModelId && item.laundryModelTypeSnapshot === 'PER_KG') {
+      const result = calculateLaundryModelPrice({
+        model_type: 'PER_KG',
+        price_per_kg: item.laundryPricePerKgSnapshot ?? null,
+        package_price: null,
+        included_weight_kg: null,
+        overage_price_per_kg: null,
+        minimum_weight_kg: item.laundryMinimumWeightKgSnapshot ?? null,
+        billing_increment_kg: item.laundryBillingIncrementKgSnapshot ?? null,
+        minimum_charge: item.laundryMinimumChargeSnapshot ?? null,
+      }, validated.quantity)
+      if (result.status !== 'PRICED' || result.amount !== calcul.total) {
+        throw new Error('Le poids ne correspond plus au tarif du modèle commercial.')
+      }
+      laundryBreakdown = result.breakdown
+    }
+
     const itemMisAJour: LocalOrderItem = {
       ...item,
       quantity: calcul.quantiteMesuree,
       billedQuantity: calcul.quantiteFacturee,
       price: calcul.total,
       priceStatus: validated.priceStatus,
+      ...(item.laundryModelId ? { laundryWeightKg: validated.quantity, laundryPriceBreakdownSnapshot: laundryBreakdown } : {}),
     }
 
     if (
@@ -451,6 +503,9 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
 }
 
 export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
+  // L'API reçoit une ligne forfaitaire cohérente pour son premier contrôle,
+  // puis le déclencheur commercial valide le poids et restaure les instantanés.
+  const modeleCommercial = Boolean(item.laundryModelId)
   return {
     id: item.id,
     order_id: item.orderId,
@@ -459,11 +514,11 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     fabric_type: item.fabricType,
     special_instructions: item.specialInstructions,
     price: item.price,
-    quantity: item.quantity,
-    billed_quantity: item.billedQuantity,
-    billing_unit: item.billingUnit,
-    unit_price: item.unitPrice,
-    pricing_mode: item.pricingMode,
+    quantity: modeleCommercial ? 1 : item.quantity,
+    billed_quantity: modeleCommercial ? 1 : item.billedQuantity,
+    billing_unit: modeleCommercial ? 'FLAT' : item.billingUnit,
+    unit_price: modeleCommercial ? item.price : item.unitPrice,
+    pricing_mode: modeleCommercial ? 'FIXED' : item.pricingMode,
     price_status: item.priceStatus,
     catalog_entry_id: item.catalogEntryId,
     article_name: item.articleName,
@@ -475,6 +530,19 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     minimum_charge_snapshot: item.minimumChargeSnapshot,
     conditions_snapshot: item.conditionsSnapshot,
     price_reason: item.priceReason,
+    laundry_model_id: item.laundryModelId ?? null,
+    laundry_model_name_snapshot: item.laundryModelNameSnapshot ?? null,
+    laundry_model_type_snapshot: item.laundryModelTypeSnapshot ?? null,
+    laundry_weight_kg: item.laundryWeightKg ?? null,
+    laundry_price_breakdown_snapshot: item.laundryPriceBreakdownSnapshot ?? null,
+    laundry_services_snapshot: item.laundryServicesSnapshot ?? null,
+    laundry_price_per_kg_snapshot: item.laundryPricePerKgSnapshot ?? null,
+    laundry_package_price_snapshot: item.laundryPackagePriceSnapshot ?? null,
+    laundry_included_weight_kg_snapshot: item.laundryIncludedWeightKgSnapshot ?? null,
+    laundry_overage_price_per_kg_snapshot: item.laundryOveragePricePerKgSnapshot ?? null,
+    laundry_minimum_weight_kg_snapshot: item.laundryMinimumWeightKgSnapshot ?? null,
+    laundry_billing_increment_kg_snapshot: item.laundryBillingIncrementKgSnapshot ?? null,
+    laundry_minimum_charge_snapshot: item.laundryMinimumChargeSnapshot ?? null,
   }
 }
 

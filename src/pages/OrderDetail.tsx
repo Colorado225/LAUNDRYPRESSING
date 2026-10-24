@@ -206,14 +206,17 @@ export default function OrderDetail() {
               <div className="min-w-0">
                 <p className="font-medium text-slate-800">{item.label}</p>
                 <p className="text-xs text-slate-500">
-                  {item.billingUnit === 'FLAT'
-                    ? `Forfait · ${formatFcfa(item.unitPrice)}`
-                    : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                  {item.laundryModelId
+                    ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
+                    : item.billingUnit === 'FLAT'
+                      ? `Forfait · ${formatFcfa(item.unitPrice)}`
+                      : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ — à confirmer' : ''}
                 </p>
                 <p className="text-xs text-slate-500">
                   {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
                 </p>
+                {item.laundryServicesSnapshot && <p className="text-xs text-slate-500">Prestations : {item.laundryServicesSnapshot}</p>}
                 <OrderMeasurementEditor
                   orderId={order.id}
                   item={item}

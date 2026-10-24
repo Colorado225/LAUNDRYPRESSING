@@ -402,6 +402,25 @@ La structure du catalogue se gère **en ligne**. La grille de tarifs déjà mise
 en cache reste consultable pour prendre des commandes hors connexion ; les
 modifications de références et de tarifs attendent le retour du réseau.
 
+#### Modèles au kilo et forfaits de poids
+
+Menu **Modèles commerciaux** (propriétaire uniquement) : créer une offre **au
+kilo** ou un **forfait de poids**, puis renseigner le tarif, le poids inclus ou
+minimum, l'incrément de facturation, le minimum facturable, les conditions,
+exclusions, délai, collecte/livraison et les prestations incluses ou facturées
+en supplément. Le simulateur montre le calcul avant enregistrement.
+
+À l'étape **Lignes** d'une nouvelle commande, choisir **Au kilo / forfait**,
+sélectionner un modèle et saisir le poids mesuré. Le kilo applique le minimum
+et l'incrément configurés ; le forfait applique le prix inclus et son supplément
+au-delà. Si aucun supplément n'a été défini, le poids dépassant le forfait exige
+un montant final validé avec le client. Le poids, le modèle, les prestations et
+les règles de prix utilisées sont figés sur la ligne de commande ; une
+modification ou un archivage ultérieur du modèle ne recalcule pas l'historique.
+Les modèles actifs déjà mis en cache peuvent être consultés hors ligne ;
+la synchronisation vérifie encore que le modèle est actif et que le montant
+correspond au tarif serveur.
+
 ### 5.6 Créer les articles de stock et les fournisseurs
 
 Onglet **Stock** → **Nouvel article** : nom, catégorie (produit, emballage,

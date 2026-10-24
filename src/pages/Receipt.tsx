@@ -131,11 +131,14 @@ export default function Receipt() {
                 {item.serviceName ? ` — ${item.serviceName}` : ''}
                 {item.fabricType ? ` (${item.fabricType})` : ''}
                 <span className="block text-[10px]">
-                  {item.billingUnit === 'FLAT'
-                    ? `Forfait ${formatFcfa(item.unitPrice)}`
-                    : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé × ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                  {item.laundryModelId
+                    ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
+                    : item.billingUnit === 'FLAT'
+                      ? `Forfait ${formatFcfa(item.unitPrice)}`
+                      : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé × ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ' : ''}
                 </span>
+                {item.laundryServicesSnapshot && <span className="block text-[9px]">Prestations : {item.laundryServicesSnapshot}</span>}
               </td>
               <td className="text-right whitespace-nowrap">{formatFcfa(item.price)}</td>
             </tr>

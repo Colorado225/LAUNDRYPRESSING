@@ -180,6 +180,25 @@ describe('lignesFacture', () => {
     })
   })
 
+  it('conserve le poids et les prestations du modèle commercial sur la facture', () => {
+    const [commerciale] = lignesFacture([
+      ligne({
+        id: 'modele-1',
+        label: 'Linge au kilo',
+        laundryModelId: '22222222-2222-4222-8222-222222222222',
+        laundryWeightKg: 2.35,
+        laundryPriceBreakdownSnapshot: '2.4 kg × 1 000 FCFA/kg',
+        laundryServicesSnapshot: 'Inclus : Lavage standard',
+      }),
+    ])
+    expect(commerciale).toMatchObject({
+      libelle: 'Chemise — Lavage',
+      poidsKg: 2.35,
+      detailCommercial: '2.4 kg × 1 000 FCFA/kg',
+      prestationsCommerciales: 'Inclus : Lavage standard',
+    })
+  })
+
   it('renvoie une liste vide sans ligne', () => {
     expect(lignesFacture([])).toEqual([])
   })

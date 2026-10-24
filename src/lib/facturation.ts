@@ -29,6 +29,9 @@ export interface LigneFacture {
   /** Prix unitaire et total restent figés dans les instantanés de commande. */
   prixUnitaire: number
   total: number
+  poidsKg?: number
+  detailCommercial?: string
+  prestationsCommerciales?: string
 }
 
 export interface AcompteFacture {
@@ -103,7 +106,7 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
     const prixUnitaire = item.unitPrice ?? item.price
     // Ne regroupe que des saisies aux quantités, tarifs, statuts et totaux
     // identiques : le minimum facturable peut rendre le total non multiplicatif.
-    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}`
+    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${item.laundryModelId ? item.id : ''}`
 
     const existante = parCle.get(cle)
     if (existante) {
@@ -119,6 +122,13 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
         prixStatut,
         prixUnitaire,
         total: item.price,
+        ...(item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined
+          ? {
+              poidsKg: item.laundryWeightKg,
+              ...(item.laundryPriceBreakdownSnapshot ? { detailCommercial: item.laundryPriceBreakdownSnapshot } : {}),
+              ...(item.laundryServicesSnapshot ? { prestationsCommerciales: item.laundryServicesSnapshot } : {}),
+            }
+          : {}),
       })
     }
   }

@@ -92,6 +92,8 @@ FICHIERS=(
   "supabase/tests/local/13_order_item_pricing_legacy.sql"
   "supabase/migrations/014_order_item_pricing_snapshots.sql"
   "supabase/migrations/015_catalogue_reference_lifecycle.sql"
+  "supabase/migrations/016_laundry_models.sql"
+  "supabase/migrations/017_laundry_model_order_lines.sql"
   "supabase/seed.sql"
   "supabase/tests/isolation.sql"
   "supabase/tests/palier1.sql"
@@ -110,6 +112,7 @@ FICHIERS=(
   "supabase/tests/order_item_pricing.sql"
   "supabase/tests/order_item_pricing_migration.sql"
   "supabase/tests/catalogue_reference_lifecycle.sql"
+  "supabase/tests/laundry_models.sql"
 )
 
 ECHECS=0

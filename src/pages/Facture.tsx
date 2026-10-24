@@ -142,8 +142,8 @@ export default function Facture() {
           </tr>
         </thead>
         <tbody>
-          {facture.lignes.map((ligne) => (
-            <tr key={`${ligne.libelle}-${ligne.prixUnitaire}`} className="border-b border-slate-100">
+          {facture.lignes.map((ligne, index) => (
+            <tr key={`${ligne.libelle}-${ligne.poidsKg ?? ''}-${ligne.prixUnitaire}-${index}`} className="border-b border-slate-100">
               <td className="py-2 pr-2">
                 {ligne.libelle}
                 {ligne.prixStatut === 'ESTIMATED' && (
@@ -155,6 +155,14 @@ export default function Facture() {
                   <span className="block text-[8px] text-slate-500">
                     Mesuré : {ligne.quantiteMesuree} {libelleUnite(ligne.unite)}
                   </span>
+                )}
+                {ligne.poidsKg !== undefined && (
+                  <span className="block text-[8px] text-slate-500">
+                    Poids : {ligne.poidsKg} kg{ligne.detailCommercial ? ` · ${ligne.detailCommercial}` : ''}
+                  </span>
+                )}
+                {ligne.prestationsCommerciales && (
+                  <span className="block text-[8px] text-slate-500">Prestations : {ligne.prestationsCommerciales}</span>
                 )}
               </td>
               <td className="py-2 text-center">

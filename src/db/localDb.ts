@@ -2,6 +2,9 @@ import Dexie, { type Table } from 'dexie'
 import type {
   CatalogBillingUnit,
   CatalogPricingMode,
+  LaundryModelAudience,
+  LaundryModelServiceMode,
+  LaundryModelType,
   OrderItemPriceStatus,
   OrderStatus,
   PaymentMethod,
@@ -98,6 +101,19 @@ export interface LocalOrderItem {
   conditionsSnapshot: string | null
   /** Motif d'une dérogation ou d'une ligne saisie librement. */
   priceReason: string | null
+  laundryModelId?: string | null
+  laundryModelNameSnapshot?: string | null
+  laundryModelTypeSnapshot?: LaundryModelType | null
+  laundryWeightKg?: number | null
+  laundryPriceBreakdownSnapshot?: string | null
+  laundryServicesSnapshot?: string | null
+  laundryPricePerKgSnapshot?: number | null
+  laundryPackagePriceSnapshot?: number | null
+  laundryIncludedWeightKgSnapshot?: number | null
+  laundryOveragePricePerKgSnapshot?: number | null
+  laundryMinimumWeightKgSnapshot?: number | null
+  laundryBillingIncrementKgSnapshot?: number | null
+  laundryMinimumChargeSnapshot?: number | null
 }
 
 /**
@@ -125,6 +141,36 @@ export interface LocalCatalogEntry {
   /** Références article et prestation actives au dernier rafraîchissement. */
   referencesActive?: boolean
   sortOrder: number
+}
+
+/** Cache hors ligne des paramètres commerciaux, avec libellés de prestations figés. */
+export interface LocalLaundryModel {
+  id: string
+  tenantId: string
+  name: string
+  description: string | null
+  modelType: LaundryModelType
+  audience: LaundryModelAudience
+  pricePerKg: number | null
+  packagePrice: number | null
+  includedWeightKg: number | null
+  overagePricePerKg: number | null
+  minimumWeightKg: number | null
+  billingIncrementKg: number | null
+  minimumCharge: number | null
+  conditions: string | null
+  exclusions: string | null
+  pickupDeliveryTerms: string | null
+  turnaroundDays: number | null
+  isActive: boolean
+  sortOrder: number
+  services: Array<{
+    serviceId: string
+    serviceName: string
+    inclusionMode: LaundryModelServiceMode
+    sortOrder: number
+    serviceActive: boolean
+  }>
 }
 
 /**
@@ -242,6 +288,7 @@ export class PressingDatabase extends Dexie {
   orderItems!: Table<LocalOrderItem, string>
   pendingPayments!: Table<LocalPendingPayment, string>
   catalogEntries!: Table<LocalCatalogEntry, string>
+  laundryModels!: Table<LocalLaundryModel, string>
   cashPayments!: Table<LocalCashPayment, string>
   orderIssues!: Table<LocalOrderIssue, string>
   refunds!: Table<LocalRefund, string>
@@ -389,6 +436,32 @@ export class PressingDatabase extends Dexie {
             if (entry.conditions === undefined) entry.conditions = null
           })
       })
+
+    // v8 : paramètres des modèles au kilo et au forfait, consultables hors ligne.
+    this.version(8).stores({
+      laundryModels: 'id, tenantId, [tenantId+isActive]',
+    })
+
+    // v9 : instantanés de modèle commercial sur les lignes de commande.
+    this.version(9)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.laundryModelId === undefined) item.laundryModelId = null
+          if (item.laundryModelNameSnapshot === undefined) item.laundryModelNameSnapshot = null
+          if (item.laundryModelTypeSnapshot === undefined) item.laundryModelTypeSnapshot = null
+          if (item.laundryWeightKg === undefined) item.laundryWeightKg = null
+          if (item.laundryPriceBreakdownSnapshot === undefined) item.laundryPriceBreakdownSnapshot = null
+          if (item.laundryServicesSnapshot === undefined) item.laundryServicesSnapshot = null
+          if (item.laundryPricePerKgSnapshot === undefined) item.laundryPricePerKgSnapshot = null
+          if (item.laundryPackagePriceSnapshot === undefined) item.laundryPackagePriceSnapshot = null
+          if (item.laundryIncludedWeightKgSnapshot === undefined) item.laundryIncludedWeightKgSnapshot = null
+          if (item.laundryOveragePricePerKgSnapshot === undefined) item.laundryOveragePricePerKgSnapshot = null
+          if (item.laundryMinimumWeightKgSnapshot === undefined) item.laundryMinimumWeightKgSnapshot = null
+          if (item.laundryBillingIncrementKgSnapshot === undefined) item.laundryBillingIncrementKgSnapshot = null
+          if (item.laundryMinimumChargeSnapshot === undefined) item.laundryMinimumChargeSnapshot = null
+        })
+      })
   }
 }
 
@@ -405,6 +478,7 @@ export async function clearLocalData(): Promise<void> {
       db.orderItems,
       db.pendingPayments,
       db.catalogEntries,
+      db.laundryModels,
       db.cashPayments,
       db.orderIssues,
       db.refunds,
@@ -416,6 +490,7 @@ export async function clearLocalData(): Promise<void> {
         db.orderItems.clear(),
         db.pendingPayments.clear(),
         db.catalogEntries.clear(),
+        db.laundryModels.clear(),
         db.cashPayments.clear(),
         db.orderIssues.clear(),
         db.refunds.clear(),

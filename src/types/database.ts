@@ -118,6 +118,20 @@ export type OrderItemRow = {
   conditions_snapshot: string | null
   /** Motif d'un écart de tarif ou d'une ligne libre. */
   price_reason: string | null
+  /** Modèle commercial et conditions tarifaires figés à la réception. */
+  laundry_model_id: string | null
+  laundry_model_name_snapshot: string | null
+  laundry_model_type_snapshot: LaundryModelType | null
+  laundry_weight_kg: number | null
+  laundry_price_breakdown_snapshot: string | null
+  laundry_services_snapshot: string | null
+  laundry_price_per_kg_snapshot: number | null
+  laundry_package_price_snapshot: number | null
+  laundry_included_weight_kg_snapshot: number | null
+  laundry_overage_price_per_kg_snapshot: number | null
+  laundry_minimum_weight_kg_snapshot: number | null
+  laundry_billing_increment_kg_snapshot: number | null
+  laundry_minimum_charge_snapshot: number | null
 }
 
 /** Réclamation ou vêtement abîmé (table `order_issues`, migration 005). */
@@ -237,6 +251,46 @@ export type CatalogPricingMode = 'FIXED' | 'FROM' | 'QUOTE' | 'UNCONFIGURED'
 export type CatalogServiceType = 'treatment' | 'option' | 'logistics' | 'other'
 export type CatalogApplicationScope = 'article' | 'order'
 export type OrderItemPriceStatus = 'CONFIRMED' | 'ESTIMATED'
+
+/** Modèles commerciaux de blanchisserie, distincts des tarifs à la pièce. */
+export type LaundryModelType = 'PER_KG' | 'WEIGHT_PACKAGE'
+export type LaundryModelAudience = 'ALL' | 'INDIVIDUAL' | 'PROFESSIONAL'
+export type LaundryModelServiceMode = 'INCLUDED' | 'EXTRA'
+
+export type LaundryModelRow = {
+  id: string
+  tenant_id: string
+  name: string
+  description: string | null
+  model_type: LaundryModelType
+  audience: LaundryModelAudience
+  price_per_kg: number | null
+  package_price: number | null
+  included_weight_kg: number | null
+  overage_price_per_kg: number | null
+  minimum_weight_kg: number | null
+  billing_increment_kg: number | null
+  minimum_charge: number | null
+  conditions: string | null
+  exclusions: string | null
+  pickup_delivery_terms: string | null
+  turnaround_days: number | null
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LaundryModelServiceRow = {
+  id: string
+  tenant_id: string
+  model_id: string
+  service_id: string
+  inclusion_mode: LaundryModelServiceMode
+  sort_order: number
+  created_at: string
+}
 
 export type OrderPriceHistoryRow = {
   id: string
@@ -597,6 +651,19 @@ export interface Database {
           | 'billing_increment_snapshot'
           | 'minimum_charge_snapshot'
           | 'conditions_snapshot'
+          | 'laundry_model_id'
+          | 'laundry_model_name_snapshot'
+          | 'laundry_model_type_snapshot'
+          | 'laundry_weight_kg'
+          | 'laundry_price_breakdown_snapshot'
+          | 'laundry_services_snapshot'
+          | 'laundry_price_per_kg_snapshot'
+          | 'laundry_package_price_snapshot'
+          | 'laundry_included_weight_kg_snapshot'
+          | 'laundry_overage_price_per_kg_snapshot'
+          | 'laundry_minimum_weight_kg_snapshot'
+          | 'laundry_billing_increment_kg_snapshot'
+          | 'laundry_minimum_charge_snapshot'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -687,6 +754,38 @@ export interface Database {
           | 'updated_at'
         >
         Update: Partial<Omit<CatalogEntryRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      laundry_models: {
+        Row: LaundryModelRow
+        Insert: InsertOf<
+          LaundryModelRow,
+          | 'id'
+          | 'description'
+          | 'price_per_kg'
+          | 'package_price'
+          | 'included_weight_kg'
+          | 'overage_price_per_kg'
+          | 'minimum_weight_kg'
+          | 'billing_increment_kg'
+          | 'minimum_charge'
+          | 'conditions'
+          | 'exclusions'
+          | 'pickup_delivery_terms'
+          | 'turnaround_days'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<LaundryModelRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      laundry_model_services: {
+        Row: LaundryModelServiceRow
+        Insert: InsertOf<LaundryModelServiceRow, 'id' | 'created_at'>
+        Update: Partial<Omit<LaundryModelServiceRow, 'id' | 'tenant_id' | 'model_id'>>
         Relationships: []
       }
       cash_sessions: {
@@ -853,6 +952,10 @@ export interface Database {
       }
     }
     Functions: {
+      save_laundry_model: {
+        Args: { p_model: Json; p_services: Json }
+        Returns: string
+      }
       my_subscription: {
         Args: Record<PropertyKey, never>
         Returns: SubscriptionSnapshot | null

@@ -116,6 +116,19 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     minimumChargeSnapshot: item.minimum_charge_snapshot ?? null,
     conditionsSnapshot: item.conditions_snapshot ?? null,
     priceReason: item.price_reason ?? null,
+    laundryModelId: item.laundry_model_id ?? null,
+    laundryModelNameSnapshot: item.laundry_model_name_snapshot ?? null,
+    laundryModelTypeSnapshot: item.laundry_model_type_snapshot ?? null,
+    laundryWeightKg: item.laundry_weight_kg ?? null,
+    laundryPriceBreakdownSnapshot: item.laundry_price_breakdown_snapshot ?? null,
+    laundryServicesSnapshot: item.laundry_services_snapshot ?? null,
+    laundryPricePerKgSnapshot: item.laundry_price_per_kg_snapshot ?? null,
+    laundryPackagePriceSnapshot: item.laundry_package_price_snapshot ?? null,
+    laundryIncludedWeightKgSnapshot: item.laundry_included_weight_kg_snapshot ?? null,
+    laundryOveragePricePerKgSnapshot: item.laundry_overage_price_per_kg_snapshot ?? null,
+    laundryMinimumWeightKgSnapshot: item.laundry_minimum_weight_kg_snapshot ?? null,
+    laundryBillingIncrementKgSnapshot: item.laundry_billing_increment_kg_snapshot ?? null,
+    laundryMinimumChargeSnapshot: item.laundry_minimum_charge_snapshot ?? null,
   }))
 
   const localOrder: LocalOrder = {
