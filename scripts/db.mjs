@@ -55,6 +55,7 @@ export const FICHIERS_SCHEMA = [
   'supabase/migrations/011_superadmin_single.sql',
   'supabase/migrations/012_cinetpay_atomic.sql',
   'supabase/migrations/013_catalogue_model.sql',
+  'supabase/migrations/014_order_item_pricing_snapshots.sql',
   'supabase/seed.sql',
 ]
 
@@ -73,6 +74,7 @@ export const FICHIERS_TESTS = [
   'supabase/tests/cinetpay_atomic.sql',
   'supabase/tests/recette_reelle.sql',
   'supabase/tests/catalogue_model.sql',
+  'supabase/tests/order_item_pricing.sql',
 ]
 
 /** Table de suivi : une ligne par fichier déjà appliqué. */

@@ -89,6 +89,8 @@ FICHIERS=(
   "supabase/migrations/012_cinetpay_atomic.sql"
   "supabase/tests/local/12_catalogue_model_legacy.sql"
   "supabase/migrations/013_catalogue_model.sql"
+  "supabase/tests/local/13_order_item_pricing_legacy.sql"
+  "supabase/migrations/014_order_item_pricing_snapshots.sql"
   "supabase/seed.sql"
   "supabase/tests/isolation.sql"
   "supabase/tests/palier1.sql"
@@ -104,6 +106,8 @@ FICHIERS=(
   "supabase/tests/recette_reelle.sql"
   "supabase/tests/catalogue_model.sql"
   "supabase/tests/catalogue_model_migration.sql"
+  "supabase/tests/order_item_pricing.sql"
+  "supabase/tests/order_item_pricing_migration.sql"
 )
 
 ECHECS=0

@@ -7,7 +7,8 @@ import type {
 } from '@/types/database'
 import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
-import type { CreateOrderInput } from '@/schemas/order'
+import { calculerTarif } from '@/lib/catalogPricing'
+import { createOrderSchema, type CreateOrderInput } from '@/schemas/order'
 import {
   db,
   type LocalOrder,
@@ -33,30 +34,57 @@ export async function createOrderLocal(
   tenantId: string,
   input: CreateOrderInput,
 ): Promise<LocalOrderWithItems> {
+  const validated = createOrderSchema.parse(input)
   const createdAt = nowIso()
   const orderId = newId()
 
-  const items: LocalOrderItem[] = input.items.map((item) => ({
-    id: newId(),
-    orderId,
-    tenantId,
-    label: item.label,
-    fabricType: item.fabricType?.trim() ? item.fabricType.trim() : null,
-    specialInstructions: item.specialInstructions?.trim()
-      ? item.specialInstructions.trim()
-      : null,
-    price: item.price,
-    catalogEntryId: item.catalogEntryId ?? null,
-    articleName: item.articleName?.trim() ? item.articleName.trim() : null,
-    serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
-    priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
-  }))
+  const items: LocalOrderItem[] = validated.items.map((item) => {
+    const quantity = item.quantity ?? 1
+    const billingUnit = item.billingUnit ?? 'PIECE'
+    const unitPrice = item.unitPrice ?? item.price
+    const calculated = calculerTarif({
+      quantite: quantity,
+      prixUnitaire: unitPrice,
+      unite: billingUnit,
+      quantiteMinimum: item.minimumQuantitySnapshot,
+      increment: item.billingIncrementSnapshot,
+      minimumFacturable: item.minimumChargeSnapshot,
+    })
+
+    return {
+      id: newId(),
+      orderId,
+      tenantId,
+      label: item.label,
+      fabricType: item.fabricType?.trim() ? item.fabricType.trim() : null,
+      specialInstructions: item.specialInstructions?.trim()
+        ? item.specialInstructions.trim()
+        : null,
+      price: calculated.total,
+      quantity,
+      billedQuantity: calculated.quantiteFacturee,
+      billingUnit,
+      unitPrice,
+      pricingMode: item.pricingMode ?? 'FIXED',
+      priceStatus: item.priceStatus ?? 'CONFIRMED',
+      catalogEntryId: item.catalogEntryId ?? null,
+      articleName: item.articleName?.trim() ? item.articleName.trim() : null,
+      serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
+      familyNameSnapshot: item.familyNameSnapshot ?? null,
+      catalogUnitPriceSnapshot: item.catalogUnitPriceSnapshot ?? null,
+      minimumQuantitySnapshot: item.minimumQuantitySnapshot ?? null,
+      billingIncrementSnapshot: item.billingIncrementSnapshot ?? null,
+      minimumChargeSnapshot: item.minimumChargeSnapshot ?? null,
+      conditionsSnapshot: item.conditionsSnapshot ?? null,
+      priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
+    }
+  })
 
   const order: LocalOrder = {
     id: orderId,
     tenantId,
-    customerName: input.customerName.trim(),
-    customerPhone: input.customerPhone.trim(),
+    customerName: validated.customerName,
+    customerPhone: validated.customerPhone,
     status: 'received',
     qrCode: buildQrString(tenantId, orderId),
     photoUrl: null,
@@ -65,8 +93,8 @@ export async function createOrderLocal(
     paymentMethod: null,
     createdAt,
     updatedAt: createdAt,
-    dueDate: input.dueDate ?? null,
-    assignedTo: input.assignedTo ?? null,
+    dueDate: validated.dueDate ?? null,
+    assignedTo: validated.assignedTo ?? null,
     assignedAt: null,
     statusReason: null,
     // Une commande neuve n'existe pas encore côté serveur.
@@ -344,9 +372,21 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     fabric_type: item.fabricType,
     special_instructions: item.specialInstructions,
     price: item.price,
+    quantity: item.quantity,
+    billed_quantity: item.billedQuantity,
+    billing_unit: item.billingUnit,
+    unit_price: item.unitPrice,
+    pricing_mode: item.pricingMode,
+    price_status: item.priceStatus,
     catalog_entry_id: item.catalogEntryId,
     article_name: item.articleName,
     service_name: item.serviceName,
+    family_name_snapshot: item.familyNameSnapshot,
+    catalog_unit_price_snapshot: item.catalogUnitPriceSnapshot,
+    minimum_quantity_snapshot: item.minimumQuantitySnapshot,
+    billing_increment_snapshot: item.billingIncrementSnapshot,
+    minimum_charge_snapshot: item.minimumChargeSnapshot,
+    conditions_snapshot: item.conditionsSnapshot,
     price_reason: item.priceReason,
   }
 }

@@ -15,6 +15,11 @@ beforeEach(async () => {
       price: 1000,
       pricingMode: 'FIXED',
       billingUnit: 'PIECE',
+      familyName: null,
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
       requiresReview: false,
       isActive: true,
       sortOrder: 1,
@@ -27,6 +32,11 @@ beforeEach(async () => {
       price: 500,
       pricingMode: 'FIXED',
       billingUnit: 'PIECE',
+      familyName: null,
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
       requiresReview: false,
       isActive: false,
       sortOrder: 2,
@@ -39,6 +49,11 @@ beforeEach(async () => {
       price: 3000,
       pricingMode: 'FIXED',
       billingUnit: 'PIECE',
+      familyName: null,
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
       requiresReview: false,
       isActive: true,
       sortOrder: 1,
@@ -69,8 +84,36 @@ describe('getCachedCatalog', () => {
     expect(entries[0]).toMatchObject({
       pricingMode: 'FIXED',
       billingUnit: 'PIECE',
+      familyName: null,
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
       requiresReview: false,
     })
+  })
+
+  it('normalise hors ligne les anciens devis au forfait final', async () => {
+    await db.catalogEntries.add({
+      id: 'quote-cache-legacy',
+      tenantId: TENANT,
+      article: 'Robe',
+      service: 'Devis',
+      price: 0,
+      pricingMode: 'QUOTE',
+      billingUnit: 'PIECE',
+      familyName: null,
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
+      requiresReview: false,
+      isActive: true,
+      sortOrder: 3,
+    })
+
+    const entry = (await getCachedCatalog(TENANT)).find((candidate) => candidate.id === 'quote-cache-legacy')
+    expect(entry?.billingUnit).toBe('FLAT')
   })
 
   it('bloque prudemment un ancien cache sans indicateur de vérification', async () => {

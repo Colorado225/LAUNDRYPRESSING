@@ -96,14 +96,27 @@ export type OrderItemRow = {
   label: string
   fabric_type: string | null
   special_instructions: string | null
-  /** Prix facturé, figé au moment de la saisie (prix historisé). */
+  /** Montant total facturé pour la ligne, calculé en FCFA entiers. */
   price: number
-  /** Entrée de catalogue utilisée, si la ligne vient du catalogue. */
+  /** Quantité mesurée puis quantité facturée après minimum et incrément. */
+  quantity: number
+  billed_quantity: number
+  billing_unit: CatalogBillingUnit
+  /** Prix par unité de facturation, figé au moment de la saisie. */
+  unit_price: number
+  pricing_mode: CatalogPricingMode
+  price_status: OrderItemPriceStatus
+  /** Références et paramètres tarifaires figés avec la ligne. */
   catalog_entry_id: string | null
-  /** Libellés recopiés : une modification du catalogue ne réécrit pas l'historique. */
   article_name: string | null
   service_name: string | null
-  /** Motif exigé pour un prix différent du tarif du catalogue. */
+  family_name_snapshot: string | null
+  catalog_unit_price_snapshot: number | null
+  minimum_quantity_snapshot: number | null
+  billing_increment_snapshot: number | null
+  minimum_charge_snapshot: number | null
+  conditions_snapshot: string | null
+  /** Motif d'un écart de tarif ou d'une ligne libre. */
   price_reason: string | null
 }
 
@@ -223,6 +236,21 @@ export type CatalogBillingUnit =
 export type CatalogPricingMode = 'FIXED' | 'FROM' | 'QUOTE' | 'UNCONFIGURED'
 export type CatalogServiceType = 'treatment' | 'option' | 'logistics' | 'other'
 export type CatalogApplicationScope = 'article' | 'order'
+export type OrderItemPriceStatus = 'CONFIRMED' | 'ESTIMATED'
+
+export type OrderPriceHistoryRow = {
+  id: string
+  tenant_id: string
+  order_id: string
+  order_item_id: string
+  previous_price: number
+  new_price: number
+  reason: string | null
+  changed_by: string | null
+  changed_at: string
+  previous_snapshot: Json
+  new_snapshot: Json
+}
 
 export type CatalogFamilyRow = {
   id: string
@@ -557,8 +585,34 @@ export interface Database {
           | 'article_name'
           | 'service_name'
           | 'price_reason'
+          | 'quantity'
+          | 'billed_quantity'
+          | 'billing_unit'
+          | 'unit_price'
+          | 'pricing_mode'
+          | 'price_status'
+          | 'family_name_snapshot'
+          | 'catalog_unit_price_snapshot'
+          | 'minimum_quantity_snapshot'
+          | 'billing_increment_snapshot'
+          | 'minimum_charge_snapshot'
+          | 'conditions_snapshot'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      order_price_history: {
+        Row: OrderPriceHistoryRow
+        Insert: InsertOf<
+          OrderPriceHistoryRow,
+          | 'id'
+          | 'reason'
+          | 'changed_by'
+          | 'changed_at'
+          | 'previous_snapshot'
+          | 'new_snapshot'
+        >
+        Update: Partial<Omit<OrderPriceHistoryRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
       order_status_history: {

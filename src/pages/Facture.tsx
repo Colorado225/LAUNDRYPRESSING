@@ -5,6 +5,7 @@ import { useCashPayments, useLocalOrder } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
 import { construireFacture } from '@/lib/facturation'
+import { libelleUnite } from '@/lib/catalogPricing'
 import { imprimerDocument } from '@/lib/impression'
 
 /**
@@ -113,7 +114,7 @@ export default function Facture() {
         <thead>
           <tr className="border-b border-slate-300 text-left text-[9px] uppercase tracking-wide text-slate-500">
             <th scope="col" className="py-2 font-semibold">Désignation</th>
-            <th scope="col" className="w-16 py-2 text-center font-semibold">Qté</th>
+            <th scope="col" className="w-24 py-2 text-center font-semibold">Qté facturée</th>
             <th scope="col" className="w-28 py-2 text-right font-semibold">Prix unitaire</th>
             <th scope="col" className="w-28 py-2 text-right font-semibold">Montant</th>
           </tr>
@@ -121,8 +122,24 @@ export default function Facture() {
         <tbody>
           {facture.lignes.map((ligne) => (
             <tr key={`${ligne.libelle}-${ligne.prixUnitaire}`} className="border-b border-slate-100">
-              <td className="py-2 pr-2">{ligne.libelle}</td>
-              <td className="py-2 text-center">{ligne.quantite}</td>
+              <td className="py-2 pr-2">
+                {ligne.libelle}
+                {ligne.prixStatut === 'ESTIMATED' && (
+                  <span className="block text-[8px] font-semibold uppercase text-amber-700">
+                    Quantité estimée — à confirmer
+                  </span>
+                )}
+                {ligne.quantiteMesuree !== ligne.quantite && (
+                  <span className="block text-[8px] text-slate-500">
+                    Mesuré : {ligne.quantiteMesuree} {libelleUnite(ligne.unite)}
+                  </span>
+                )}
+              </td>
+              <td className="py-2 text-center">
+                {ligne.unite === 'FLAT'
+                  ? 'Forfait'
+                  : `${ligne.quantite} ${libelleUnite(ligne.unite)}`}
+              </td>
               <td className="py-2 text-right whitespace-nowrap">{formatFcfa(ligne.prixUnitaire)}</td>
               <td className="py-2 text-right font-medium whitespace-nowrap">
                 {formatFcfa(ligne.total)}

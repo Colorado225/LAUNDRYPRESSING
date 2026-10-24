@@ -99,10 +99,22 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     fabricType: item.fabric_type,
     specialInstructions: item.special_instructions,
     price: item.price,
-    // Champs du palier 2 : absents côté serveur = ligne libre historique.
+    quantity: item.quantity ?? 1,
+    billedQuantity: item.billed_quantity ?? item.quantity ?? 1,
+    billingUnit: item.billing_unit ?? 'PIECE',
+    unitPrice: item.unit_price ?? item.price,
+    pricingMode: item.pricing_mode ?? 'FIXED',
+    priceStatus: item.price_status ?? 'CONFIRMED',
+    // Les snapshots absents désignent une ancienne ligne libre/historique.
     catalogEntryId: item.catalog_entry_id ?? null,
     articleName: item.article_name ?? null,
     serviceName: item.service_name ?? null,
+    familyNameSnapshot: item.family_name_snapshot ?? null,
+    catalogUnitPriceSnapshot: item.catalog_unit_price_snapshot ?? null,
+    minimumQuantitySnapshot: item.minimum_quantity_snapshot ?? null,
+    billingIncrementSnapshot: item.billing_increment_snapshot ?? null,
+    minimumChargeSnapshot: item.minimum_charge_snapshot ?? null,
+    conditionsSnapshot: item.conditions_snapshot ?? null,
     priceReason: item.price_reason ?? null,
   }))
 

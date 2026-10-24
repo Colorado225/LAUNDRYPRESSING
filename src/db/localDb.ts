@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie'
 import type {
   CatalogBillingUnit,
   CatalogPricingMode,
+  OrderItemPriceStatus,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -76,17 +77,26 @@ export interface LocalOrderItem {
   label: string
   fabricType: string | null
   specialInstructions: string | null
-  /** Prix facturé, figé à la saisie (une hausse de tarif ne réécrit rien). */
+  /** Total de ligne facturé, figé en FCFA entiers. */
   price: number
-  /** Entrée de catalogue utilisée, `null` pour une ligne libre. */
+  /** Quantité saisie et quantité facturée après minimum/incrément. */
+  quantity: number
+  billedQuantity: number
+  billingUnit: CatalogBillingUnit
+  unitPrice: number
+  pricingMode: CatalogPricingMode
+  priceStatus: OrderItemPriceStatus
+  /** Références et conditions tarifaires figées au moment de la vente. */
   catalogEntryId: string | null
-  /** Libellés recopiés au moment de la vente. */
   articleName: string | null
   serviceName: string | null
-  /**
-   * Motif du tarif dérogatoire (prix différent du catalogue). Obligatoire dès
-   * qu'un prix s'écarte du tarif de référence — contrôlé aussi côté serveur.
-   */
+  familyNameSnapshot: string | null
+  catalogUnitPriceSnapshot: number | null
+  minimumQuantitySnapshot: number | null
+  billingIncrementSnapshot: number | null
+  minimumChargeSnapshot: number | null
+  conditionsSnapshot: string | null
+  /** Motif d'une dérogation ou d'une ligne saisie librement. */
   priceReason: string | null
 }
 
@@ -105,6 +115,11 @@ export interface LocalCatalogEntry {
   price: number
   pricingMode: CatalogPricingMode
   billingUnit: CatalogBillingUnit
+  familyName: string | null
+  minimumQuantity: number | null
+  billingIncrement: number | null
+  minimumCharge: number | null
+  conditions: string | null
   requiresReview: boolean
   isActive: boolean
   sortOrder: number
@@ -336,6 +351,42 @@ export class PressingDatabase extends Dexie {
     this.version(6).stores({
       notifications: 'id, tenantId, orderId, createdAt, synced, [tenantId+synced], [orderId+createdAt]',
     })
+
+    // v7 : unités, quantités et instantanés de prix des lignes de commande.
+    // Les anciennes lignes restent exactement au même montant : elles sont
+    // reprises comme une pièce, quantité 1, prix unitaire égal au total ancien.
+    this.version(7)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table('orderItems')
+          .toCollection()
+          .modify((item: LocalOrderItem & Record<string, unknown>) => {
+            if (item.quantity === undefined) item.quantity = 1
+            if (item.billedQuantity === undefined) item.billedQuantity = item.quantity
+            if (item.billingUnit === undefined) item.billingUnit = 'PIECE'
+            if (item.unitPrice === undefined) item.unitPrice = item.price
+            if (item.pricingMode === undefined) item.pricingMode = 'FIXED'
+            if (item.priceStatus === undefined) item.priceStatus = 'CONFIRMED'
+            if (item.familyNameSnapshot === undefined) item.familyNameSnapshot = null
+            if (item.catalogUnitPriceSnapshot === undefined) item.catalogUnitPriceSnapshot = null
+            if (item.minimumQuantitySnapshot === undefined) item.minimumQuantitySnapshot = null
+            if (item.billingIncrementSnapshot === undefined) item.billingIncrementSnapshot = null
+            if (item.minimumChargeSnapshot === undefined) item.minimumChargeSnapshot = null
+            if (item.conditionsSnapshot === undefined) item.conditionsSnapshot = null
+          })
+
+        await tx
+          .table('catalogEntries')
+          .toCollection()
+          .modify((entry: LocalCatalogEntry & Record<string, unknown>) => {
+            if (entry.familyName === undefined) entry.familyName = null
+            if (entry.minimumQuantity === undefined) entry.minimumQuantity = null
+            if (entry.billingIncrement === undefined) entry.billingIncrement = null
+            if (entry.minimumCharge === undefined) entry.minimumCharge = null
+            if (entry.conditions === undefined) entry.conditions = null
+          })
+      })
   }
 }
 

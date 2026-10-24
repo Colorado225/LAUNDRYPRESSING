@@ -24,6 +24,7 @@ import {
   todayIso,
 } from '@/constants/orders'
 import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
+import { libelleUnite } from '@/lib/catalogPricing'
 import { can, canSeeAmounts } from '@/lib/permissions'
 import ConflictBanner from '@/components/ConflictBanner'
 import CashPanel from '@/components/CashPanel'
@@ -194,13 +195,19 @@ export default function OrderDetail() {
       {/* Vêtements */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-          Vêtements ({items.length})
+          Lignes de commande ({items.length})
         </h2>
         <ul className="mt-3 divide-y divide-slate-100">
           {items.map((item) => (
             <li key={item.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
               <div className="min-w-0">
                 <p className="font-medium text-slate-800">{item.label}</p>
+                <p className="text-xs text-slate-500">
+                  {item.billingUnit === 'FLAT'
+                    ? `Forfait · ${formatFcfa(item.unitPrice)}`
+                    : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                  {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ — à confirmer' : ''}
+                </p>
                 <p className="text-xs text-slate-500">
                   {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
                 </p>

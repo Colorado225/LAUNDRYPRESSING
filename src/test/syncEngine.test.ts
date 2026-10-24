@@ -156,7 +156,7 @@ async function seedOrder(tenantId = TENANT, label = 'Chemise') {
   return createOrderLocal(tenantId, {
     customerName: 'Awa Koné',
     customerPhone: '+2250700000001',
-    items: [{ label, price: 2500 }],
+    items: [{ label, price: 2500, priceReason: 'Prestation de test' }],
   })
 }
 

@@ -1,4 +1,8 @@
-import type { CatalogEntryRow } from '@/types/database'
+import type {
+  CatalogBillingUnit,
+  CatalogEntryRow,
+  CatalogPricingMode,
+} from '@/types/database'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { newId } from '@/lib/ids'
 import { db, type LocalCatalogEntry } from './localDb'
@@ -20,9 +24,15 @@ export interface CatalogEntryInput {
   article: string
   service: string
   price: number
+  pricingMode?: CatalogPricingMode
+  billingUnit?: CatalogBillingUnit
+  minimumQuantity?: number | null
+  billingIncrement?: number | null
+  minimumCharge?: number | null
+  conditions?: string | null
 }
 
-function toLocal(row: CatalogEntryRow): LocalCatalogEntry {
+function toLocal(row: CatalogEntryRow, familyName: string | null = null): LocalCatalogEntry {
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -31,6 +41,11 @@ function toLocal(row: CatalogEntryRow): LocalCatalogEntry {
     price: row.price,
     pricingMode: row.pricing_mode,
     billingUnit: row.billing_unit,
+    familyName,
+    minimumQuantity: row.minimum_quantity,
+    billingIncrement: row.billing_increment,
+    minimumCharge: row.minimum_charge,
+    conditions: row.conditions,
     requiresReview: row.requires_review,
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -55,7 +70,15 @@ export async function getCachedCatalog(
     .map((entree) => ({
       ...entree,
       pricingMode: entree.pricingMode ?? (entree.price === 0 ? 'UNCONFIGURED' : 'FIXED'),
-      billingUnit: entree.billingUnit ?? 'PIECE',
+      billingUnit:
+        (entree.pricingMode ?? (entree.price === 0 ? 'UNCONFIGURED' : 'FIXED')) === 'QUOTE'
+          ? 'FLAT'
+          : entree.billingUnit ?? 'PIECE',
+      familyName: entree.familyName ?? null,
+      minimumQuantity: entree.minimumQuantity ?? null,
+      billingIncrement: entree.billingIncrement ?? null,
+      minimumCharge: entree.minimumCharge ?? null,
+      conditions: entree.conditions ?? null,
       // Une entrée mise en cache par une ancienne version n'a pas de preuve de
       // validation : elle reste masquée jusqu'au prochain rafraîchissement serveur.
       requiresReview: entree.requiresReview ?? true,
@@ -68,9 +91,8 @@ function tarifProposable(entree: LocalCatalogEntry): boolean {
   return (
     entree.isActive &&
     !entree.requiresReview &&
-    entree.billingUnit === 'PIECE' &&
-    (entree.pricingMode === 'FIXED' || entree.pricingMode === 'FROM') &&
-    entree.price > 0
+    entree.pricingMode !== 'UNCONFIGURED' &&
+    (entree.pricingMode === 'QUOTE' || entree.price > 0)
   )
 }
 
@@ -82,7 +104,7 @@ export function uniqueArticles(entrees: LocalCatalogEntry[]): string[] {
   )
 }
 
-/** Prestations proposées pour un article donné, hors tarifs à confirmer/devis. */
+/** Prestations utilisables pour un article donné, y compris les devis à confirmer. */
 export function servicesForArticle(
   entrees: LocalCatalogEntry[],
   article: string,
@@ -109,9 +131,36 @@ export async function refreshCatalog(tenantId: string): Promise<boolean> {
 
     if (error || !data) return false
 
+    const articleIds = [...new Set(data.flatMap((row) => (row.article_id ? [row.article_id] : [])))]
+    const familleParArticle = new Map<string, string>()
+    if (articleIds.length > 0) {
+      const { data: articles, error: erreurArticles } = await supabase
+        .from('catalog_articles')
+        .select('id,family_id')
+        .eq('tenant_id', tenantId)
+        .in('id', articleIds)
+      if (erreurArticles || !articles) return false
+
+      const familyIds = [...new Set(articles.map((article) => article.family_id))]
+      const { data: familles, error: erreurFamilles } = await supabase
+        .from('catalog_families')
+        .select('id,name')
+        .eq('tenant_id', tenantId)
+        .in('id', familyIds)
+      if (erreurFamilles || !familles) return false
+
+      const nomParFamille = new Map(familles.map((famille) => [famille.id, famille.name]))
+      articles.forEach((article) => {
+        const name = nomParFamille.get(article.family_id)
+        if (name) familleParArticle.set(article.id, name)
+      })
+    }
+
     await db.transaction('rw', db.catalogEntries, async () => {
       await db.catalogEntries.where('tenantId').equals(tenantId).delete()
-      await db.catalogEntries.bulkPut(data.map(toLocal))
+      await db.catalogEntries.bulkPut(
+        data.map((row) => toLocal(row, row.article_id ? (familleParArticle.get(row.article_id) ?? null) : null)),
+      )
     })
 
     return true
@@ -134,6 +183,12 @@ export async function createCatalogEntry(
       article: input.article.trim(),
       service: input.service.trim(),
       price: input.price,
+      ...(input.pricingMode !== undefined ? { pricing_mode: input.pricingMode } : {}),
+      ...(input.billingUnit !== undefined ? { billing_unit: input.billingUnit } : {}),
+      ...(input.minimumQuantity !== undefined ? { minimum_quantity: input.minimumQuantity } : {}),
+      ...(input.billingIncrement !== undefined ? { billing_increment: input.billingIncrement } : {}),
+      ...(input.minimumCharge !== undefined ? { minimum_charge: input.minimumCharge } : {}),
+      ...(input.conditions !== undefined ? { conditions: input.conditions } : {}),
     })
     .select('*')
     .single()
@@ -150,13 +205,17 @@ export async function updateCatalogEntry(
 ): Promise<void> {
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
-    .from('catalog_entries')
+    .from('catalog_entries') // tenant_id est aussi vérifié en filtre après la mise à jour.
     .update({
       ...(input.article !== undefined ? { article: input.article.trim() } : {}),
       ...(input.service !== undefined ? { service: input.service.trim() } : {}),
-      ...(input.price !== undefined
-        ? { price: input.price, pricing_mode: input.price > 0 ? 'FIXED' : 'UNCONFIGURED' }
-        : {}),
+      ...(input.price !== undefined ? { price: input.price } : {}),
+      ...(input.pricingMode !== undefined ? { pricing_mode: input.pricingMode } : {}),
+      ...(input.billingUnit !== undefined ? { billing_unit: input.billingUnit } : {}),
+      ...(input.minimumQuantity !== undefined ? { minimum_quantity: input.minimumQuantity } : {}),
+      ...(input.billingIncrement !== undefined ? { billing_increment: input.billingIncrement } : {}),
+      ...(input.minimumCharge !== undefined ? { minimum_charge: input.minimumCharge } : {}),
+      ...(input.conditions !== undefined ? { conditions: input.conditions } : {}),
       ...(input.requiresReview !== undefined ? { requires_review: input.requiresReview } : {}),
       ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
     })

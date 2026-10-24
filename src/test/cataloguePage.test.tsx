@@ -145,7 +145,70 @@ describe('Catalogue — administration des tarifs existants', () => {
       article: 'Chemise délicate',
       service: 'Lavage et repassage',
       price: 1800,
+      pricingMode: 'FIXED',
+      billingUnit: 'PIECE',
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
       requiresReview: false,
+    })
+    demonter()
+  })
+
+  it('configure un tarif à partir du kilogramme avec minimum, pas et plancher', async () => {
+    await monter()
+    const selects = [...hote.querySelectorAll('select')]
+    const numeros = [...hote.querySelectorAll<HTMLInputElement>('input[type="number"]')]
+    const article = hote.querySelector<HTMLInputElement>('input[placeholder="Chemise"]')
+    const service = hote.querySelector<HTMLInputElement>('input[placeholder="Lavage"]')
+    const prix = hote.querySelector<HTMLInputElement>('input[placeholder="1500"]')
+    const conditions = hote.querySelector<HTMLTextAreaElement>('textarea')
+
+    await act(async () => {
+      const setSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      if (selects[0]) {
+        setSelect?.call(selects[0], 'FROM')
+        selects[0].dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      if (selects[1]) {
+        setSelect?.call(selects[1], 'KG')
+        selects[1].dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      for (const [element, value] of [
+        [article, 'Drap'],
+        [service, 'Lavage au kilo'],
+        [prix, '1200'],
+        [numeros[1], '1.5'],
+        [numeros[2], '0.5'],
+        [numeros[3], '2500'],
+      ] as const) {
+        if (!element) continue
+        setInput?.call(element, value)
+        element.dispatchEvent(new Event('input', { bubbles: true }))
+        element.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      if (conditions) {
+        const setText = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setText?.call(conditions, 'Poids final vérifié à la réception')
+        conditions.dispatchEvent(new Event('input', { bubbles: true }))
+        conditions.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    await act(async () => bouton('Ajouter').click())
+
+    expect(depot.createCatalogEntry).toHaveBeenCalledWith(TENANT, {
+      article: 'Drap',
+      service: 'Lavage au kilo',
+      price: 1200,
+      pricingMode: 'FROM',
+      billingUnit: 'KG',
+      minimumQuantity: 1.5,
+      billingIncrement: 0.5,
+      minimumCharge: 2500,
+      conditions: 'Poids final vérifié à la réception',
     })
     demonter()
   })
@@ -167,6 +230,12 @@ describe('Catalogue — administration des tarifs existants', () => {
       article: 'Chemise',
       service: 'Lavage et repassage',
       price: 1000,
+      pricingMode: 'FIXED',
+      billingUnit: 'PIECE',
+      minimumQuantity: null,
+      billingIncrement: null,
+      minimumCharge: null,
+      conditions: null,
       requiresReview: false,
     })
     demonter()

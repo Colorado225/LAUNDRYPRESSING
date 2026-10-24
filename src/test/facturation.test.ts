@@ -53,9 +53,21 @@ function ligne(partial: Partial<LocalOrderItem> & Pick<LocalOrderItem, 'id'>): L
     fabricType: null,
     specialInstructions: null,
     price: 1_500,
+    quantity: 1,
+    billedQuantity: 1,
+    billingUnit: 'PIECE',
+    unitPrice: 1_500,
+    pricingMode: 'FIXED',
+    priceStatus: 'CONFIRMED',
     catalogEntryId: null,
     articleName: 'Chemise',
     serviceName: 'Lavage',
+    familyNameSnapshot: null,
+    catalogUnitPriceSnapshot: null,
+    minimumQuantitySnapshot: null,
+    billingIncrementSnapshot: null,
+    minimumChargeSnapshot: null,
+    conditionsSnapshot: null,
     priceReason: null,
     ...partial,
   }
@@ -117,7 +129,10 @@ describe('lignesFacture', () => {
     expect(lignes).toHaveLength(2)
     expect(lignes[0]).toEqual({
       libelle: 'Chemise — Lavage',
+      quantiteMesuree: 2,
       quantite: 2,
+      unite: 'PIECE',
+      prixStatut: 'CONFIRMED',
       prixUnitaire: 1_500,
       total: 3_000,
     })
@@ -136,6 +151,33 @@ describe('lignesFacture', () => {
       ligne({ id: 'l1', articleName: null, serviceName: null, label: 'Couverture' }),
     ])
     expect(lignes[0]?.libelle).toBe('Couverture')
+  })
+
+  it('conserve la quantité mesurée, la quantité facturée et le statut estimé', () => {
+    const [lignePesee] = lignesFacture([
+      ligne({
+        id: 'kg-1',
+        label: 'Couette',
+        articleName: 'Couette',
+        serviceName: 'Lavage au poids',
+        price: 9_750,
+        quantity: 6.4,
+        billedQuantity: 6.5,
+        billingUnit: 'KG',
+        unitPrice: 1_500,
+        priceStatus: 'ESTIMATED',
+      }),
+    ])
+
+    expect(lignePesee).toEqual({
+      libelle: 'Couette — Lavage au poids',
+      quantiteMesuree: 6.4,
+      quantite: 6.5,
+      unite: 'KG',
+      prixStatut: 'ESTIMATED',
+      prixUnitaire: 1_500,
+      total: 9_750,
+    })
   })
 
   it('renvoie une liste vide sans ligne', () => {

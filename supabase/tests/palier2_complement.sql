@@ -224,6 +224,7 @@ begin
   -- 2.3 Dérogation motivée : acceptée et journalisée.
   update public.order_items
   set    price = 4200,
+         unit_price = 4200,
          price_reason = 'Geste commercial : tache ancienne signalée par le client'
   where  id = 'ffffffff-0000-4000-8000-0000000000f1';
 
@@ -257,11 +258,11 @@ begin
 
   -- 2.5 Une ligne libre (sans entrée de catalogue) reste possible.
   insert into public.order_items
-    (order_id, tenant_id, label, price)
+    (order_id, tenant_id, label, price, price_reason)
   values
     ('dddddddd-0000-4000-8000-0000000000d1',
      '11111111-1111-4111-8111-111111111111',
-     'Retouche ourlet', 1500);
+     'Retouche ourlet', 1500, 'Ourlet demandé au comptoir.');
   raise notice 'OK 2.5 — ligne libre acceptée';
 end;
 $$;

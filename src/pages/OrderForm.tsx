@@ -26,6 +26,12 @@ import {
   uniqueArticles,
 } from '@/db/catalogRepository'
 import type { LocalCatalogEntry } from '@/db/localDb'
+import type {
+  CatalogBillingUnit,
+  CatalogPricingMode,
+  OrderItemPriceStatus,
+} from '@/types/database'
+import { calculerTarif, libelleUnite } from '@/lib/catalogPricing'
 
 /**
  * Création de commande — 100 % locale, en trois étapes.
@@ -51,14 +57,38 @@ const EMPTY_ITEM: OrderItemDraft = {
   fabricType: '',
   specialInstructions: '',
   price: 0,
+  quantity: 1,
+  billedQuantity: 1,
+  billingUnit: 'PIECE',
+  unitPrice: 0,
+  pricingMode: 'FIXED',
+  priceStatus: 'CONFIRMED',
   catalogEntryId: undefined,
   articleName: undefined,
   serviceName: undefined,
+  familyNameSnapshot: null,
+  catalogUnitPriceSnapshot: null,
+  minimumQuantitySnapshot: null,
+  billingIncrementSnapshot: null,
+  minimumChargeSnapshot: null,
+  conditionsSnapshot: null,
   priceReason: undefined,
 }
 
 interface OrderItemDraft extends OrderItemInput {
   mode: 'catalog' | 'free'
+  quantity: number
+  billedQuantity: number
+  billingUnit: CatalogBillingUnit
+  unitPrice: number
+  pricingMode: CatalogPricingMode
+  priceStatus: OrderItemPriceStatus
+  familyNameSnapshot: string | null
+  catalogUnitPriceSnapshot: number | null
+  minimumQuantitySnapshot: number | null
+  billingIncrementSnapshot: number | null
+  minimumChargeSnapshot: number | null
+  conditionsSnapshot: string | null
 }
 
 /** Règlement choisi à l'étape 3 ; aucun argent ne circule ici. */
@@ -66,9 +96,16 @@ type Paiement = 'plus-tard' | 'especes'
 
 const ETAPES = [
   { titre: 'Client', icon: UserRound },
-  { titre: 'Vêtements', icon: Shirt },
+  { titre: 'Lignes', icon: Shirt },
   { titre: 'Paiement', icon: Wallet },
 ] as const
+
+function etiquetteTarif(entree: LocalCatalogEntry): string {
+  if (entree.pricingMode === 'QUOTE') return 'Sur devis'
+  const prix = formatFcfa(entree.price)
+  const prefixe = entree.pricingMode === 'FROM' ? 'À partir de ' : ''
+  return `${prefixe}${prix} / ${libelleUnite(entree.billingUnit)}`
+}
 
 const clientSchema = createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true })
 const articlesSchema = createOrderSchema.pick({ items: true })
@@ -115,6 +152,7 @@ export default function OrderForm() {
 
   const articles = useMemo(() => uniqueArticles(catalog), [catalog])
   const catalogueDisponible = articles.length > 0
+  const tarifsActifsExistants = catalog.some((entree) => entree.isActive)
 
   const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
 
@@ -142,7 +180,28 @@ export default function OrderForm() {
   }
 
   const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
-    setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+    setItems((current) =>
+      current.map((item, i) => {
+        if (i !== index) return item
+        const next = { ...item, ...patch }
+        if (next.quantity <= 0 || next.unitPrice <= 0) {
+          return { ...next, price: 0, billedQuantity: Math.max(0, next.quantity) }
+        }
+        try {
+          const calculation = calculerTarif({
+            quantite: next.quantity,
+            prixUnitaire: next.unitPrice,
+            unite: next.billingUnit,
+            quantiteMinimum: next.minimumQuantitySnapshot,
+            increment: next.billingIncrementSnapshot,
+            minimumFacturable: next.minimumChargeSnapshot,
+          })
+          return { ...next, price: calculation.total, billedQuantity: calculation.quantiteFacturee }
+        } catch {
+          return { ...next, price: 0, billedQuantity: Math.max(0, next.quantity) }
+        }
+      }),
+    )
   }
 
   const addItem = () =>
@@ -155,47 +214,69 @@ export default function OrderForm() {
     setItems((current) => (current.length === 1 ? current : current.filter((_, i) => i !== index)))
   }
 
-  const choisirArticle = (index: number, article: string) => {
-    const prestations = servicesForArticle(catalog, article)
-    const premiere = prestations[0]
-
+  const appliquerPrestation = (index: number, entree: LocalCatalogEntry) => {
     updateItem(index, {
-      articleName: article,
-      serviceName: premiere?.service,
-      catalogEntryId: premiere?.id,
-      price: premiere?.price ?? 0,
-      label: premiere ? `${article} — ${premiere.service}` : article,
-    })
-  }
-
-  const choisirPrestation = (index: number, entryId: string) => {
-    const entree = catalog.find((candidate) => candidate.id === entryId)
-    if (!entree) return
-
-    updateItem(index, {
+      mode: 'catalog',
       catalogEntryId: entree.id,
       articleName: entree.article,
       serviceName: entree.service,
-      price: entree.price,
+      familyNameSnapshot: entree.familyName,
+      catalogUnitPriceSnapshot: entree.price,
+      minimumQuantitySnapshot: entree.minimumQuantity,
+      billingIncrementSnapshot: entree.billingIncrement,
+      minimumChargeSnapshot: entree.minimumCharge,
+      conditionsSnapshot: entree.conditions,
+      pricingMode: entree.pricingMode,
+      billingUnit: entree.billingUnit,
+      quantity: 1,
+      billedQuantity: 1,
+      unitPrice: entree.pricingMode === 'QUOTE' ? 0 : entree.price,
+      priceStatus: entree.pricingMode === 'QUOTE' ? 'ESTIMATED' : 'CONFIRMED',
+      priceReason: undefined,
       label: `${entree.article} — ${entree.service}`,
     })
   }
 
+  const choisirArticle = (index: number, article: string) => {
+    const premiere = servicesForArticle(catalog, article)[0]
+    if (premiere) appliquerPrestation(index, premiere)
+  }
+
+  const choisirPrestation = (index: number, entryId: string) => {
+    const entree = catalog.find((candidate) => candidate.id === entryId)
+    if (entree) appliquerPrestation(index, entree)
+  }
+
   const basculerMode = (index: number, mode: 'catalog' | 'free') => {
+    const current = items[index]
+    if (!current) return
     if (mode === 'free') {
+      const tarifLibre = current.price > 0 ? current.price : current.unitPrice
       updateItem(index, {
         mode,
         catalogEntryId: undefined,
         articleName: undefined,
         serviceName: undefined,
+        familyNameSnapshot: null,
+        catalogUnitPriceSnapshot: null,
+        minimumQuantitySnapshot: null,
+        billingIncrementSnapshot: null,
+        minimumChargeSnapshot: null,
+        conditionsSnapshot: null,
+        pricingMode: 'FIXED',
+        billingUnit: 'PIECE',
+        quantity: 1,
+        billedQuantity: 1,
+        unitPrice: tarifLibre,
+        priceStatus: 'CONFIRMED',
+        priceReason: undefined,
       })
       return
     }
 
-    const article = items[index]?.articleName ?? articles[0]
+    const article = current.articleName ?? articles[0]
     if (!article) return
     choisirArticle(index, article)
-    updateItem(index, { mode })
   }
 
   /**
@@ -234,27 +315,35 @@ export default function OrderForm() {
       // donnerait une commande gratuite par simple oubli de saisie.
       const sansPrix = items.findIndex((item) => item.price <= 0)
       if (sansPrix >= 0) {
-        setErrors([`Vêtement ${sansPrix + 1} : indiquez un prix supérieur à zéro.`])
+        setErrors([`Ligne ${sansPrix + 1} : indiquez un prix supérieur à zéro.`])
         return false
       }
 
       // Tarif dérogatoire : le serveur refuse un prix différent du catalogue
       // sans motif (22023). On bloque ici pour éviter un aller-retour inutile.
-      const derogeSansMotif = items.findIndex((item) => {
-        const prixCatalogue = catalog.find((entree) => entree.id === item.catalogEntryId)?.price
-        return (
-          item.mode === 'catalog' &&
-          item.catalogEntryId !== undefined &&
-          prixCatalogue !== undefined &&
-          item.price !== prixCatalogue &&
-          (item.priceReason ?? '').trim().length < 10
-        )
-      })
+      const derogeSansMotif = items.findIndex((item) =>
+        item.mode === 'catalog' &&
+        item.pricingMode !== 'QUOTE' &&
+        item.catalogUnitPriceSnapshot !== null &&
+        item.unitPrice !== item.catalogUnitPriceSnapshot &&
+        (item.priceReason ?? '').trim().length < 10,
+      )
 
       if (derogeSansMotif >= 0) {
         setErrors([
-          `Vêtement ${derogeSansMotif + 1} : un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).`,
+          `Ligne ${derogeSansMotif + 1} : un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).`,
         ])
+        return false
+      }
+
+      const sousLeMinimum = items.findIndex(
+        (item) =>
+          item.pricingMode === 'FROM' &&
+          item.catalogUnitPriceSnapshot !== null &&
+          item.unitPrice < item.catalogUnitPriceSnapshot,
+      )
+      if (sousLeMinimum >= 0) {
+        setErrors([`Ligne ${sousLeMinimum + 1} : le tarif ne peut pas être inférieur au minimum annoncé.`])
         return false
       }
 
@@ -392,7 +481,7 @@ export default function OrderForm() {
           <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-                Vêtements
+                Lignes de commande
               </h2>
               <button
                 type="button"
@@ -400,15 +489,15 @@ export default function OrderForm() {
                 className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal active:bg-slate-50"
               >
                 <Plus size={16} aria-hidden />
-                Ajouter
+                Ajouter une ligne
               </button>
             </div>
 
             {!catalogueDisponible && (
               <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                Aucune prestation au catalogue pour l’instant : les lignes sont saisies
-                librement. Le propriétaire peut installer une grille de départ depuis
-                l’onglet « Prestations ».
+                {tarifsActifsExistants
+                  ? 'Aucun tarif actif n’est encore utilisable : les tarifs hérités doivent être confirmés ou les unités configurées. Une ligne libre reste possible avec un motif obligatoire.'
+                  : 'Aucune prestation active au catalogue : une ligne libre peut être saisie, avec un motif obligatoire de 10 caractères minimum.'}
               </p>
             )}
 
@@ -461,19 +550,46 @@ export default function OrderForm() {
                             <option value="">Choisir une prestation…</option>
                             {servicesForArticle(catalog, item.articleName ?? '').map((entree) => (
                               <option key={entree.id} value={entree.id}>
-                                {entree.service} — {formatFcfa(entree.price)}
+                                {entree.service} — {etiquetteTarif(entree)}
                               </option>
                             ))}
                           </select>
                         </Field>
                       </>
                     ) : (
-                      <Field label="Vêtement" htmlFor={`item-label-${index}`}>
+                      <Field label="Article ou prestation" htmlFor={`item-label-${index}`}>
                         <input
                           id={`item-label-${index}`}
                           value={item.label}
                           onChange={(event) => updateItem(index, { label: event.target.value })}
                           placeholder="Costume 3 pièces"
+                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                        />
+                      </Field>
+                    )}
+
+                    {item.billingUnit !== 'FLAT' && (
+                      <Field
+                        label={`Quantité (${libelleUnite(item.billingUnit)})`}
+                        htmlFor={`item-quantity-${index}`}
+                        hint={
+                          item.minimumQuantitySnapshot || item.billingIncrementSnapshot
+                            ? `Minimum ${item.minimumQuantitySnapshot ?? '—'} · pas de ${item.billingIncrementSnapshot ?? '—'}`
+                            : undefined
+                        }
+                      >
+                        <input
+                          id={`item-quantity-${index}`}
+                          type="number"
+                          min={1 / 1000}
+                          step={['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(item.billingUnit) ? 1 : 0.001}
+                          inputMode="decimal"
+                          value={item.quantity}
+                          onChange={(event) =>
+                            updateItem(index, {
+                              quantity: event.target.value === '' ? 0 : Number(event.target.value),
+                            })
+                          }
                           className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                         />
                       </Field>
@@ -507,24 +623,30 @@ export default function OrderForm() {
 
                     <div className="flex items-end gap-2">
                       <Field
-                        label="Prix (FCFA)"
+                        label={
+                          item.pricingMode === 'QUOTE'
+                            ? 'Montant du devis confirmé (FCFA)'
+                            : `Prix unitaire (${libelleUnite(item.billingUnit)}, FCFA)`
+                        }
                         htmlFor={`item-price-${index}`}
                         hint={
-                          item.mode === 'catalog' && item.catalogEntryId
-                            ? 'Prix du catalogue — corrigeable au comptoir'
-                            : undefined
+                          item.pricingMode === 'QUOTE'
+                            ? 'Le devis doit être confirmé avant l’enregistrement.'
+                            : item.catalogUnitPriceSnapshot !== null
+                              ? `Référence catalogue : ${formatFcfa(item.catalogUnitPriceSnapshot)} par ${libelleUnite(item.billingUnit)}.`
+                              : 'Une ligne libre nécessite un motif.'
                         }
                       >
                         <input
                           id={`item-price-${index}`}
                           type="number"
-                          min={0}
+                          min={1}
                           step={1}
                           inputMode="numeric"
-                          value={item.price === 0 ? '' : item.price}
+                          value={item.unitPrice === 0 ? '' : item.unitPrice}
                           onChange={(event) =>
                             updateItem(index, {
-                              price: event.target.value === '' ? 0 : Number(event.target.value),
+                              unitPrice: event.target.value === '' ? 0 : Number(event.target.value),
                             })
                           }
                           placeholder="5000"
@@ -536,43 +658,82 @@ export default function OrderForm() {
                         type="button"
                         onClick={() => removeItem(index)}
                         disabled={items.length === 1}
-                        aria-label={`Supprimer le vêtement ${index + 1}`}
+                        aria-label={`Supprimer la ligne ${index + 1}`}
                         className="mb-0 inline-flex size-12 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
                       >
                         <Trash2 size={18} aria-hidden />
                       </button>
                     </div>
 
-                    {(() => {
-                      const prixCatalogue = catalog.find(
-                        (entree) => entree.id === item.catalogEntryId,
-                      )?.price
-                      const deroge =
-                        item.mode === 'catalog' &&
-                        prixCatalogue !== undefined &&
-                        item.price !== prixCatalogue
+                    {['KG', 'M2', 'METER'].includes(item.billingUnit) && (
+                      <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={item.priceStatus === 'ESTIMATED'}
+                          onChange={(event) =>
+                            updateItem(index, {
+                              priceStatus: event.target.checked ? 'ESTIMATED' : 'CONFIRMED',
+                            })
+                          }
+                          className="size-4 accent-amber-600"
+                        />
+                        Poids ou mesure estimé : à confirmer avant le traitement
+                      </label>
+                    )}
 
-                      if (!deroge) return null
+                    {item.pricingMode === 'QUOTE' && (
+                      <label className="flex items-center gap-2 rounded-xl border border-brand-teal/30 bg-brand-teal/5 px-3 py-2 text-sm text-brand-navy sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={item.priceStatus === 'CONFIRMED'}
+                          disabled={item.unitPrice <= 0}
+                          onChange={(event) =>
+                            updateItem(index, {
+                              priceStatus: event.target.checked ? 'CONFIRMED' : 'ESTIMATED',
+                            })
+                          }
+                          className="size-4 accent-brand-teal"
+                        />
+                        J’ai confirmé ce montant final avec le client
+                      </label>
+                    )}
 
-                      return (
-                        <Field
-                          label="Motif du tarif dérogatoire"
-                          htmlFor={`item-reason-${index}`}
-                          hint={`Prix du catalogue : ${formatFcfa(prixCatalogue)}. Un motif est exigé et journalisé.`}
-                        >
-                          <input
-                            id={`item-reason-${index}`}
-                            value={item.priceReason ?? ''}
-                            onChange={(event) =>
-                              updateItem(index, { priceReason: event.target.value })
-                            }
-                            maxLength={300}
-                            placeholder="Geste commercial : tache ancienne signalée par le client"
-                            className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
-                          />
-                        </Field>
-                      )
-                    })()}
+                    {item.price > 0 && (
+                      <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700 sm:col-span-2">
+                        {item.billingUnit === 'FLAT'
+                          ? 'Forfait × 1'
+                          : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré${item.priceStatus === 'ESTIMATED' ? ' (estimé)' : ''} · ${item.billedQuantity} ${libelleUnite(item.billingUnit)} facturé${item.billingUnit === 'PIECE' ? 'e' : 's'}`}
+                        {item.minimumChargeSnapshot && item.price === item.minimumChargeSnapshot
+                          ? ` · minimum facturable ${formatFcfa(item.minimumChargeSnapshot)}`
+                          : ''}
+                        {item.conditionsSnapshot ? ` · ${item.conditionsSnapshot}` : ''}
+                      </p>
+                    )}
+
+                    {(item.mode === 'free' ||
+                      !item.catalogEntryId ||
+                      (item.pricingMode !== 'QUOTE' &&
+                        item.catalogUnitPriceSnapshot !== null &&
+                        item.unitPrice !== item.catalogUnitPriceSnapshot)) && (
+                      <Field
+                        label={item.catalogEntryId ? 'Motif du tarif dérogatoire' : 'Motif de la ligne libre'}
+                        htmlFor={`item-reason-${index}`}
+                        hint={
+                          item.catalogEntryId && item.catalogUnitPriceSnapshot !== null
+                            ? `Référence catalogue : ${formatFcfa(item.catalogUnitPriceSnapshot)} par ${libelleUnite(item.billingUnit)}. Motif de 10 caractères minimum.`
+                            : 'Motif obligatoire (10 caractères minimum) : prestation exceptionnelle, demande client…'
+                        }
+                      >
+                        <input
+                          id={`item-reason-${index}`}
+                          value={item.priceReason ?? ''}
+                          onChange={(event) => updateItem(index, { priceReason: event.target.value })}
+                          maxLength={300}
+                          placeholder="Demande particulière du client, retouche…"
+                          className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
+                        />
+                      </Field>
+                    )}
                   </div>
                 </li>
               ))}
@@ -602,7 +763,7 @@ export default function OrderForm() {
                   <dd className="font-semibold text-slate-800">{dueDate || 'Non précisée'}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-slate-500">Nombre de vêtements</dt>
+                  <dt className="text-xs text-slate-500">Lignes de commande</dt>
                   <dd className="font-semibold text-slate-800">{items.length}</dd>
                 </div>
               </dl>
@@ -612,7 +773,13 @@ export default function OrderForm() {
                   <li key={index} className="flex items-start justify-between gap-3 py-2 text-sm">
                     <span className="min-w-0">
                       <span className="block font-semibold text-slate-800">
-                        {item.label || `Vêtement ${index + 1}`}
+                        {item.label || `Ligne ${index + 1}`}
+                      </span>
+                      <span className="block text-xs text-slate-500">
+                        {item.billingUnit === 'FLAT'
+                          ? `Forfait · ${formatFcfa(item.unitPrice)}`
+                          : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)} / ${libelleUnite(item.billingUnit)}`}
+                        {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ' : ''}
                       </span>
                       {(item.fabricType || item.specialInstructions) && (
                         <span className="block text-xs text-slate-500">

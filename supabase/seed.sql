@@ -51,13 +51,15 @@ values
    5000, 'pending', null);
 
 -- 4. Lignes de commande
-insert into public.order_items (order_id, tenant_id, label, fabric_type, special_instructions, price)
+insert into public.order_items (
+  order_id, tenant_id, label, fabric_type, special_instructions, price, price_reason
+)
 values
   ('aaaaaaaa-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111',
-   'Costume 3 pièces', 'Laine froide', 'Empèsage fort', 5000),
+   'Costume 3 pièces', 'Laine froide', 'Empèsage fort', 5000, 'Prestation de démonstration.'),
   ('aaaaaaaa-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111',
-   'Chemise', 'Coton', 'Broderie fragile', 3500),
+   'Chemise', 'Coton', 'Broderie fragile', 3500, 'Prestation de démonstration.'),
   ('aaaaaaaa-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111',
-   'Boubou brodé', 'Bazin riche', 'Broderie fragile — nettoyage à sec uniquement', 12000),
+   'Boubou brodé', 'Bazin riche', 'Broderie fragile — nettoyage à sec uniquement', 12000, 'Prestation de démonstration.'),
   ('bbbbbbbb-0000-4000-8000-000000000001', '22222222-2222-4222-8222-222222222222',
-   'Pagne Wax', 'Wax', null, 5000);
+   'Pagne Wax', 'Wax', null, 5000, 'Prestation de démonstration.');
