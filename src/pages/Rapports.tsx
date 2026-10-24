@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Banknote,
   BarChart3,
@@ -13,13 +13,18 @@ import {
 } from 'lucide-react'
 import { useAllCashPayments, useAllLocalItems, useLocalOrders } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
+import { isSupabaseConfigured } from '@/lib/env'
 import { can } from '@/lib/permissions'
+import { listStockConsumptionCosts } from '@/services/stockService'
+import { shiftDay } from '@/services/dashboardService'
 import { formatFcfa } from '@/lib/formatters'
 import {
   PERIODES,
   PERIODE_LABELS,
+  bornesPeriode,
   computeRapport,
   rapportCsv,
+  type CoutConsommableParLigne,
   type Periode,
   type Rapport,
 } from '@/lib/reporting'
@@ -43,6 +48,7 @@ import {
  */
 export default function Rapports() {
   const role = useTenantStore((state) => state.role)
+  const tenantId = useTenantStore((state) => state.tenantId)
   const autorise = can(role, 'dashboard.view')
 
   const orders = useLocalOrders()
@@ -51,11 +57,60 @@ export default function Rapports() {
 
   const [periode, setPeriode] = useState<Periode>(30)
   const [exportEnCours, setExportEnCours] = useState(false)
+  const [stockCosts, setStockCosts] = useState<CoutConsommableParLigne[] | null>(null)
+  const [stockCostStatus, setStockCostStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
+
+  const stockCostItemIds = useMemo(() => {
+    if (orders === undefined) return []
+    const courant = bornesPeriode(periode)
+    const precedent = bornesPeriode(periode, shiftDay(courant.debut, -1))
+    const idsCommandes = new Set(orders
+      .filter((order) => {
+        const date = order.createdAt.slice(0, 10)
+        return date >= precedent.debut && date <= courant.fin && order.status !== 'cancelled'
+      })
+      .map((order) => order.id))
+    return (items ?? []).filter((item) => idsCommandes.has(item.orderId)).map((item) => item.id).sort()
+  }, [orders, items, periode])
+  const stockCostItemIdsKey = stockCostItemIds.join(',')
+  const stockCostItemIdsCount = stockCostItemIds.length
+  const commandesChargees = orders !== undefined
+
+  useEffect(() => {
+    let vivant = true
+    setStockCosts(null)
+    if (!commandesChargees) {
+      setStockCostStatus('loading')
+      return () => { vivant = false }
+    }
+    if (!tenantId || !isSupabaseConfigured) {
+      setStockCostStatus('unavailable')
+      return () => { vivant = false }
+    }
+    setStockCostStatus('loading')
+    if (stockCostItemIdsCount === 0) {
+      setStockCosts([])
+      setStockCostStatus('ready')
+      return () => { vivant = false }
+    }
+    void listStockConsumptionCosts(tenantId, stockCostItemIdsKey.split(',')).then((resultat) => {
+      if (!vivant) return
+      setStockCosts(resultat)
+      setStockCostStatus('ready')
+    }).catch(() => {
+      if (!vivant) return
+      setStockCostStatus('unavailable')
+    })
+    return () => { vivant = false }
+  }, [tenantId, commandesChargees, stockCostItemIdsKey, stockCostItemIdsCount])
 
   const rapport: Rapport | null = useMemo(() => {
     if (orders === undefined) return null
-    return computeRapport(orders, items ?? [], cashPayments ?? [], { jours: periode })
-  }, [orders, items, cashPayments, periode])
+    return computeRapport(orders, items ?? [], cashPayments ?? [], {
+      jours: periode,
+      stockCosts: stockCostStatus === 'ready' ? stockCosts ?? [] : null,
+    })
+  }, [orders, items, cashPayments, periode, stockCosts, stockCostStatus])
 
   if (!autorise) {
     return (
@@ -149,7 +204,7 @@ export default function Rapports() {
         })}
       </div>
 
-      <section aria-label="Indicateurs de la période" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <section aria-label="Indicateurs de la période" className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <Carte
           libelle="Facturé"
           valeur={formatFcfa(rapport.facture)}
@@ -177,7 +232,29 @@ export default function Rapports() {
           variation={rapport.variation.panierMoyen}
           icone={<ShoppingBag size={18} aria-hidden />}
         />
+        <Carte
+          libelle="Consommables imputés"
+          valeur={rapport.coutConsommables === null ? '—' : formatFcfa(rapport.coutConsommables)}
+          detail={stockCostStatus === 'loading' ? 'Calcul en cours…' : `${rapport.lignesAvecConsommation} ligne(s) associée(s)`}
+          variation={rapport.variation.coutConsommables}
+          icone={<TrendingDown size={18} aria-hidden />}
+        />
+        <Carte
+          libelle="Marge après consommables"
+          valeur={rapport.margeApresConsommables === null ? '—' : formatFcfa(rapport.margeApresConsommables)}
+          detail="Avant charges fixes et salaires"
+          variation={rapport.variation.margeApresConsommables}
+          icone={<TrendingUp size={18} aria-hidden />}
+        />
       </section>
+
+      <p className="rounded-xl bg-sky-50 px-4 py-3 text-xs text-sky-950" role="status">
+        {stockCostStatus === 'loading'
+          ? 'Chargement des coûts de consommables depuis le serveur…'
+          : stockCostStatus === 'unavailable'
+            ? 'Coûts indisponibles hors ligne. Les sorties de stock associées à une ligne de commande seront prises en compte après connexion.'
+            : `${rapport.mouvementsSansCout > 0 ? `${rapport.mouvementsSansCout} mouvement(s) lié(s) n’ont pas de coût unitaire.` : 'Les coûts affichés proviennent des sorties liées aux lignes de commande.'} Les mouvements non associés, les salaires, le loyer et les charges restent exclus : la marge est partielle, pas un bénéfice net.`}
+      </p>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -300,11 +377,11 @@ export default function Rapports() {
       </section>
 
       <p className="rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-900">
-        <strong>Périmètre des chiffres.</strong> Ce rapport lit les commandes et les
-        encaissements enregistrés sur cette tablette. Les paiements Mobile Money, qui
-        viennent du serveur, n’y figurent pas : le montant « encaissé » ne compte que
-        les espèces. Les commandes créées sur une autre tablette du même pressing
-        apparaissent après synchronisation.
+        <strong>Périmètre des chiffres.</strong> Les commandes et espèces proviennent des données
+        synchronisées sur cette tablette ; les paiements Mobile Money du serveur ne figurent pas
+        dans « encaissé ». La comparaison porte sur la période précédente de même durée. L’export
+        CSV contient la synthèse, la comparaison, le détail quotidien, les statuts et les principales
+        prestations. Les commandes d’une autre tablette apparaissent après synchronisation.
       </p>
     </div>
   )

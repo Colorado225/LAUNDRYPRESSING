@@ -242,8 +242,11 @@ tout seul et aucun crédit SMS n'est consommé.
 
 Onglet **Stock** → choisir l'article → **Entrée** ou **Sortie**. Une sortie
 supérieure au stock restant est refusée : le stock ne devient jamais négatif.
-Le journal des mouvements est définitif ; une erreur se corrige par un mouvement
-inverse, pas en réécrivant l'histoire.
+Pour une sortie consommée sur une commande, choisir si possible la ligne concernée
+(commande, client et prestation) dans **Imputer à une ligne de commande**. Le coût
+unitaire alors connu est figé sur le mouvement ; les sorties générales peuvent
+rester non imputées. Le journal des mouvements est définitif : une erreur se
+corrige par un mouvement inverse, pas en réécrivant l'histoire.
 
 > Le stock et les dépenses sont des écrans de **bureau** : ils demandent une
 > connexion.
@@ -493,11 +496,18 @@ jours**, aujourd'hui compris.
   quatorze est écrite sous l'axe pour rester lisible.
 - **Répartition par statut**, **activité par jour de la semaine** (pour caler
   les lessives) et **top 5 des prestations**.
-- **Exporter en CSV** télécharge la série quotidienne, prête pour un tableur.
+- **Consommables imputés** et **marge après consommables** utilisent les sorties
+  associées à une ligne de commande et leur coût unitaire figé. Cette marge est
+  partielle : elle n'inclut ni les sorties non imputées, ni salaires, loyer ou
+  charges ; ce n'est pas un bénéfice net.
+- **Exporter en CSV** télécharge la synthèse, les variations, le détail quotidien,
+  la répartition des statuts et les cinq prestations principales, prêts pour un
+  tableur configuré en français.
 
 > Les montants « encaissé » ne comptent que les **espèces** : les paiements
-> Mobile Money viennent du serveur et ne sont pas stockés sur la tablette. Le
-> rapport l'indique en bas de page plutôt que d'afficher un total trompeur.
+> Mobile Money viennent du serveur et ne sont pas stockés sur la tablette. Les
+> coûts de consommables nécessitent une connexion ; hors ligne, le rapport affiche
+> leur indisponibilité au lieu d'assimiler l'absence de données à un coût nul.
 
 ### 5.11 Écrire au support
 

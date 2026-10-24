@@ -437,6 +437,7 @@ export type StockMovementRow = {
   kind: 'in' | 'out'
   quantity: number
   unit_cost: number | null
+  order_item_id: string | null
   supplier_id: string | null
   reason: string | null
   created_by: string | null
@@ -862,7 +863,7 @@ export interface Database {
         Row: StockMovementRow
         Insert: InsertOf<
           StockMovementRow,
-          'id' | 'unit_cost' | 'supplier_id' | 'reason' | 'created_by' | 'created_at'
+          'id' | 'unit_cost' | 'order_item_id' | 'supplier_id' | 'reason' | 'created_by' | 'created_at'
         >
         Update: Partial<Omit<StockMovementRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -952,6 +953,10 @@ export interface Database {
       }
     }
     Functions: {
+      report_stock_consumption_costs: {
+        Args: { p_order_item_ids: string[] }
+        Returns: { order_item_id: string; cost_amount: number; missing_cost_movements: number }[]
+      }
       save_laundry_model: {
         Args: { p_model: Json; p_services: Json }
         Returns: string

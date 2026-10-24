@@ -4,9 +4,9 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : palier 4 terminé, conformité MVP vérifiée** (abonnement, multi-boutiques, supervision de
-l'éditeur, support). Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont
-livrés : le produit est complet au périmètre de l'audit. La correspondance avec
+**État actuel : paliers 0 à 4 terminés ; lot 2 validé et commité, lot 3 implémenté en attente de validation** :
+modèles au kilo/forfait, coûts de consommables imputés, rapports comparatifs et export CSV détaillé.
+Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont livrés ; ces lots complètent le périmètre ERP demandé. La correspondance avec
 les douze écrans de la maquette est tenue dans
 [`docs/CONFORMITE-MVP.md`](docs/CONFORMITE-MVP.md).
 
@@ -30,6 +30,8 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 10 | **Abonnement** (formules, échéance, période de grâce, lecture seule si échu) | ✅ palier 4 |
 | 11 | **Multi-boutiques** (sélecteur de boutique, rôle par boutique, en-tête validé) | ✅ palier 4 |
 | 12 | **Supervision et support** (console éditeur, demandes des pressings) | ✅ palier 4 |
+| 13 | **Modèles commerciaux** (tarifs au kilo ou au forfait, prestations incluses, poids et reçus historisés) | ✅ lot 2 |
+| 14 | **Rentabilité et rapports** (coût des consommables imputés, comparaison de périodes, export CSV détaillé) | 🧪 lot 3 — à valider |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
 statistiques avancées, gestion du personnel, facturation PDF, suivi client public,
@@ -213,7 +215,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (550 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
+| `npm test` | Suite Vitest complète (613 tests : synchronisation, rôles, caisse, clients, stock, rentabilité, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run simulateur` | Faux CinetPay local (`0.0.0.0:54321`) pour tester le paiement en mode `test` |
@@ -285,10 +287,10 @@ pas en `npm run dev`).
 │   │   ├── Facture.tsx           # facture A4 imprimable (texte, sans lib PDF)
 │   │   ├── Atelier.tsx           # scan QR → changement de statut
 │   │   ├── Clients.tsx           # fiche client + historique (palier 3)
-│   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
+│   │   ├── Stock.tsx             # articles, mouvements, coût unitaire et imputation commande
 │   │   ├── Depenses.tsx          # dépenses paginées côté serveur (palier 3)
 │   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
-│   │   ├── Rapports.tsx          # courbes 7/30/90 j + export CSV (écran 11)
+│   │   ├── Rapports.tsx          # comparaisons, marge partielle, export CSV complet (écran 11)
 │   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
 │   │   ├── Support.tsx           # demandes d'assistance (palier 4)
 │   │   ├── Supervision.tsx       # console de l'éditeur (palier 4)
@@ -299,7 +301,7 @@ pas en `npm run dev`).
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
 │   │   ├── customerService.ts     # clients, historique, fiche serveur
 │   │   ├── tenantService.ts       # lecture / renommage du pressing (propriétaire)
-│   │   ├── stockService.ts        # articles, mouvements, seuils, fournisseurs
+│   │   ├── stockService.ts        # mouvements, fournisseurs, coûts imputés et agrégats
 │   │   ├── expenseService.ts      # dépenses catégorisées (propriétaire)
 │   │   ├── dashboardService.ts    # calculs locaux du tableau de bord
 │   │   └── qrService.ts          # génération / analyse des codes QR
@@ -334,6 +336,7 @@ pas en `npm run dev`).
 │   ├── migrations/006_palier3.sql # clients, stock, dépenses, vue des totaux
 │   ├── migrations/016_laundry_models.sql # modèles commerciaux au kilo/forfait
 │   ├── migrations/017_laundry_model_order_lines.sql # instantanés dans les commandes
+│   ├── migrations/018_stock_consumption_costs.sql # coûts des consommables imputés
 │   ├── seed.sql                  # jeu de démonstration (2 pressings)
 │   ├── tests/isolation.sql       # preuve d'isolation sur une vraie base
 │   └── tests/palier3.sql         # 17 contrôles clients / stock / dépenses

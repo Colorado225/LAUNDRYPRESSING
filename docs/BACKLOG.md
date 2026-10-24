@@ -7,11 +7,11 @@ paiement Mobile Money).
 
 Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
-> **Mise à jour du 23 octobre 2026.** Les paliers 2 à 4 ont livré plusieurs
-> éléments qui figuraient dans ce backlog : catalogue et tarification, acomptes
-> et reçus, fiches clients, stock, dépenses, tableau de bord, abonnement SaaS,
-> multi-boutiques, gestion des accès et support. Ils ont été **retirés** des
-> tableaux ci-dessous ; l'historique Git et le `CHANGELOG` en gardent la trace.
+> **Mise à jour du 24 octobre 2026.** Les paliers 2 à 4 ont livré plusieurs
+> éléments de ce backlog. Le lot 2 a ajouté les modèles commerciaux au kilo et
+> au forfait ; le lot 3 a permis d'imputer des sorties de stock à des commandes,
+> complété les comparaisons et enrichi l'export CSV. Les éléments achevés sont
+> marqués ci-dessous ; les limites restantes restent explicites.
 
 ---
 
@@ -31,8 +31,8 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Gestion des employés (pointage, plannings) | Hors périmètre. Les **rôles**, eux, existent depuis le palier 1 et le rattachement des comptes depuis le palier 4. |
 | Livraison / tournées | Hors périmètre. |
 | Bons de réduction et fidélité | Nécessite un moteur de promotions ; le module clients (palier 3) en est le préalable. |
-| Suivi du coût des consommables par prestation | Exige de lier chaque sortie de stock à une commande ; le grand livre actuel ne le permet pas encore. |
-| Comparaison de périodes et export des rapports | Le tableau de bord (palier 3) couvre le jour et la semaine ; l'export reste à faire. |
+| Suivi du coût des consommables par prestation | **Implémenté, en attente de validation (lot 3)** — une sortie peut être imputée à une ligne de commande ; le coût unitaire connu est figé et la marge après consommables imputés est estimée. Les recettes de consommation automatiques par prestation et les sorties non imputées restent hors calcul. |
+| Comparaison de périodes et export des rapports | **Implémenté, en attente de validation (lot 3)** — comparaison de périodes égales et export CSV de la synthèse, des variations, des jours, des statuts et des prestations. |
 | Performance et charge de travail par employé | L'attribution existe (palier 2) ; l'agrégation par employé reste à construire. |
 
 ## 3. Plateforme

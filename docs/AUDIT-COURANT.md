@@ -1,8 +1,8 @@
 # Audit courant — Pressing Pro
 
-**Date :** 23 octobre 2026
-**Révision auditée :** branche `arena/17b0abba-laundrypressing`, palier 4
-(après fusion de la PR #1 et des paliers 0 à 4)
+**Date de mise à jour :** 24 octobre 2026
+**Révision auditée :** branche active `arena/d0871a16-laundrypressing`, palier 4,
+lot 2 validé et lot 3 implémenté (en attente de validation utilisateur)
 **Méthode :** inventaire automatisé du code (analyse des imports, comptage des
 tables, politiques et tests), puis lecture ciblée des zones sensibles
 (authentification, synchronisation, paiement, RLS).
@@ -21,15 +21,15 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | --- | --- |
 | Fichiers TypeScript / TSX dans `src/` | 78 (dont 10 de test) |
 | Lignes de code applicatif | 13 477 (hors dossier `src/test/`) |
-| Migrations | 9 (`001_init` → `009_audit`) |
+| Migrations | 18 (`001_init` → `018_stock_consumption_costs`) |
 | Tables PostgreSQL | 22 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
 | Politiques RLS | 67 (dont 30 restrictives posées par le palier 4) |
 | Fonctions SQL | 32 (dont `create_tenant_for_user`,  `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
-| Fichiers de tests | 38 Vitest (32 sous `src/`, 6 pour les scripts) + 11 fichiers SQL |
-| Tests automatisés | 550 |
+| Fichiers de tests | 51 Vitest (45 sous `src/`, 6 pour les scripts) + 19 fichiers SQL |
+| Tests automatisés | 613 |
 | Contrôles SQL exécutés | 175 (isolations, rôles, paliers 1 à 4, inscription, audit, notifications, recette réelle) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
@@ -52,6 +52,7 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `/atelier` | `Atelier.tsx` — scan caméra | différé (html5-qrcode) |
 | `/offline` | `Offline.tsx` — écran de repli | différé |
 | `/catalogue` | `Catalogue.tsx` — prestations et tarifs (propriétaire) | différé |
+| `/modeles-commerciaux` | `ModelesCommerciaux.tsx` — modèles au kilo et au forfait (propriétaire) | différé |
 | `/caisse` | `Caisse.tsx` — encaissements et clôture journalière | différé |
 | `/commandes/:orderId/recu` | `Receipt.tsx` — reçu 80 mm imprimable | différé |
 | `/tableau-de-bord` | `TableauDeBord.tsx` — indicateurs du propriétaire | différé |
@@ -89,7 +90,10 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `supabase/migrations/005_palier2_complement.sql` | attribution, réclamations, remboursements, motif de transition |
 | `supabase/migrations/006_palier3.sql` | clients, fournisseurs, stock + grand livre, dépenses, vue `expense_totals` |
 | `supabase/migrations/007_palier4.sql` | formules et abonnements, lecture seule, multi-boutiques, supervision, support |
-| `supabase/tests/palier4.sql` | 28 contrôles : abonnement, grâce, blocage d'écriture, en-tête de boutique, console, support |
+| `supabase/migrations/016_laundry_models.sql` | modèles de lavage au kilo ou au forfait et prestations associées |
+| `supabase/migrations/017_laundry_model_order_lines.sql` | instantanés durables du modèle et des règles tarifaires sur les lignes de commande |
+| `supabase/migrations/018_stock_consumption_costs.sql` | coût unitaire figé des sorties imputées, agrégats réservés au propriétaire |
+| `supabase/tests/stock_consumption_costs.sql` | isolation du coût, coût figé et refus d’écriture au réceptionniste |
 | `supabase/tests/isolation.sql` | rejoue PostgREST (`request.jwt.claims`) et exige `42501` |
 | `supabase/tests/roles.sql` | 11 contrôles de la matrice de rôles côté serveur |
 | `supabase/tests/palier1.sql` | verrou optimiste, historique, guichet unique |
@@ -104,12 +108,14 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | Fichier | Rôle |
 | --- | --- |
 | `src/pages/Catalogue.tsx` + `src/services/catalogService.ts` | prestations, tarifs, prix historisé |
+| `src/pages/ModelesCommerciaux.tsx` + `src/lib/laundryModelPricing.ts` | modèles au kilo/forfait, poids réel, seuils, dépassements et instantanés de tarifs |
 | `src/pages/Caisse.tsx` + `src/services/cashService.ts` | encaissements, solde, clôture |
 | `src/pages/Receipt.tsx` | reçu 80 mm |
 | `src/pages/Clients.tsx` + `src/services/customerService.ts` | fiche par téléphone, historique local, coordonnées serveur |
 | `src/pages/Stock.tsx` + `src/services/stockService.ts` | articles, seuils, mouvements, fournisseurs |
 | `src/pages/Depenses.tsx` + `src/services/expenseService.ts` | dépenses catégorisées (propriétaire) |
 | `src/pages/TableauDeBord.tsx` + `src/services/dashboardService.ts` | agrégats locaux, compléments serveur |
+| `src/pages/Rapports.tsx` + `src/lib/reporting.ts` | périodes 7/30/90 jours, comparaison, marge partielle et export CSV complet |
 | `src/lib/permissions.ts` | 14 capacités, matrice propriétaire / réceptionniste / artisan |
 
 ### 2.5 Paiement
@@ -130,7 +136,8 @@ Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.
 | `scripts/sql-verify.sh` | rejoue migrations et tests SQL sur un PostgreSQL jetable |
 | `scripts/recette.mjs` | 7 contrôles **en lecture seule** sur un projet déployé (`npm run recette`) |
 | `src/lib/pagination.ts` | découpe locale (commandes) **et** curseur serveur (dépenses), testés |
-| `src/lib/reporting.ts` | calculs purs des rapports : bornes de période, séries, variations, export CSV |
+| `src/lib/reporting.ts` | calculs purs des rapports : bornes, comparaisons, coûts imputés, marge partielle, export CSV complet |
+| `src/services/stockService.ts` | stock immuable, imputation des sorties aux lignes, instantané du coût et agrégats de coût réservés au propriétaire |
 | `src/lib/parametres.ts` | validation du pressing, tailles lisibles, règle de purgeabilité |
 | `src/db/maintenance.ts` | résumé, export JSON et purge des commandes synchronisées |
 | `src/lib/facturation.ts` | numéro déterministe, regroupement des lignes, montant en lettres |
@@ -160,6 +167,8 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 | Domaine | État | Palier prévu |
 | --- | --- | --- |
 | Catalogue (articles, prestations, prix) | **Livré** — catalogue article × prestation, prix historisé, dérogation motivée | Fait |
+| Modèles commerciaux au kilo et au forfait | **Livré, lot 2 validé** — poids, minimums, conditions, prestations et instantanés en commande | Fait |
+| Rentabilité des consommables et rapports CSV | **Implémenté, lot 3 en attente de validation** — sorties imputées et marge partielle, comparaisons, export détaillé | Lot 3 |
 | Encaissement espèces, acomptes, solde dû | **Livré** — encaissement idempotent, solde recalculé | Fait |
 | Reçus imprimables, clôture de caisse | **Livré** — reçu 80 mm, clôture quotidienne, remboursements déduits | Fait |
 | Workflow complet (tri, séchage, contrôle qualité) | **Livré** — 8 étapes, transitions contrôlées, attribution, réclamations | Fait |
@@ -167,9 +176,9 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 | Clients (fiche, historique) | **Livré** — fiche par téléphone, historique, total dépensé, coordonnées | Fait |
 | Stocks, fournisseurs, dépenses | **Livré** — articles, seuils, grand livre immuable, fournisseurs, dépenses propriétaire | Fait |
 | Tableau de bord propriétaire | **Livré** — activité, chiffre d'affaires, encours, retards, alertes, dépenses | Fait |
-| Abonnement, multi-boutiques | Absent | Palier 4 |
+| Abonnement, multi-boutiques | **Livré** — formules, échéance, rôle par boutique et supervision | Fait |
 | Navigation et actions par rôle | **Livré** — 14 capacités, navigation filtrée, garde-fou SQL | Fait |
-| Verrou optimiste sur les commandes | Absent — `upsert` sans `version` | Palier 1 |
+| Verrou optimiste sur les commandes | **Livré** — comparaison de version, conflit visible et arbitrage | Fait |
 | Journal d'audit des actions sensibles | **Livré** — table `audit_log`, 7 déclencheurs, écran `/audit` propriétaire | Palier 5 |
 | Intégration continue | **Ajoutée** au palier 0 | Fait |
 
@@ -209,9 +218,9 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | --- | --- | --- |
 | Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 550 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, commande, isolation, CinetPay, paiement simulé, notifications, authentification éditeur |
-| Build | `npm run build` | compilation TypeScript + PWA (précache 81 fichiers, 1 369 KiB) |
-| SQL réel | `npm run sql:verify` | migrations `001`→`011`, jeu de démonstration, 175 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support, journal d’audit, recette à deux pressings) sur un PostgreSQL 16 jetable |
+| Tests | `npm test` | 613 tests dans 51 fichiers : QR, synchronisation, rôles, caisse, clients, stock, modèles commerciaux, coûts imputés, rapports, factures, abonnement, isolation, CinetPay et scripts |
+| Build | `npm run build` | compilation TypeScript + PWA (précache 119 fichiers, 1 617 KiB) |
+| SQL | migrations et tests 001→018 | schéma, RLS, rôles, tarification commerciale, instantané du coût, agrégation de consommables, et droits propriétaire vérifiés sous PGlite |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
 
 `sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`

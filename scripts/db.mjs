@@ -59,6 +59,7 @@ export const FICHIERS_SCHEMA = [
   'supabase/migrations/015_catalogue_reference_lifecycle.sql',
   'supabase/migrations/016_laundry_models.sql',
   'supabase/migrations/017_laundry_model_order_lines.sql',
+  'supabase/migrations/018_stock_consumption_costs.sql',
   'supabase/seed.sql',
 ]
 
@@ -80,6 +81,7 @@ export const FICHIERS_TESTS = [
   'supabase/tests/order_item_pricing.sql',
   'supabase/tests/catalogue_reference_lifecycle.sql',
   'supabase/tests/laundry_models.sql',
+  'supabase/tests/stock_consumption_costs.sql',
 ]
 
 /** Table de suivi : une ligne par fichier déjà appliqué. */

@@ -70,6 +70,14 @@ export interface Variation {
   facture: number | null
   commandes: number | null
   panierMoyen: number | null
+  coutConsommables: number | null
+  margeApresConsommables: number | null
+}
+
+export interface CoutConsommableParLigne {
+  order_item_id: string
+  cost_amount: number
+  missing_cost_movements: number
 }
 
 export interface Rapport {
@@ -93,6 +101,12 @@ export interface Rapport {
   parStatut: PartStatut[]
   topPrestations: LignePrestation[]
   parJourSemaine: JourSemaine[]
+  /** Coûts directs saisis par sortie de stock et rattachés à une ligne. */
+  coutConsommables: number | null
+  /** Facturé moins les consommables imputés ; n’inclut pas les charges fixes. */
+  margeApresConsommables: number | null
+  lignesAvecConsommation: number
+  mouvementsSansCout: number
   /** Comparaison avec la période précédente, de même durée. */
   variation: Variation
 }
@@ -174,7 +188,12 @@ export function computeRapport(
   orders: LocalOrder[],
   items: LocalOrderItem[],
   cashPayments: LocalCashPayment[],
-  options: { jours: number; aujourdhui?: string } = { jours: 30 },
+  options: {
+    jours: number
+    aujourdhui?: string
+    /** `null` signifie que la lecture serveur n’est pas disponible ; `[]` = aucun coût imputé. */
+    stockCosts?: CoutConsommableParLigne[] | null
+  } = { jours: 30 },
 ): Rapport {
   const aujourdhui = options.aujourdhui ?? todayIso()
   const { debut, fin } = bornesPeriode(options.jours, aujourdhui)
@@ -270,7 +289,26 @@ export function computeRapport(
   // Période précédente : mêmes bornes moins la durée, pour comparer des
   // semaines complètes plutôt que des jours ouvrés isolés.
   const precedent = bornesPeriode(options.jours, shiftDay(debut, -1))
+  const commandesPrecedentes = orders.filter((order) => {
+    const jour = jourDe(order.createdAt)
+    return jour >= precedent.debut && jour <= precedent.fin && order.status !== 'cancelled'
+  })
   const avant = totauxPeriode(orders, precedent.debut, precedent.fin)
+  const coutsDisponibles = options.stockCosts != null
+
+  const coutsPourCommandes = (commandes: LocalOrder[]) => {
+    if (!coutsDisponibles) return null
+    const idsCommandes = new Set(commandes.map((order) => order.id))
+    const idsLignes = new Set(items.filter((item) => idsCommandes.has(item.orderId)).map((item) => item.id))
+    const lignesAvecCout = (options.stockCosts ?? []).filter((row) => idsLignes.has(row.order_item_id))
+    return {
+      montant: lignesAvecCout.reduce((total, row) => total + row.cost_amount, 0),
+      lignes: lignesAvecCout.length,
+      mouvementsSansCout: lignesAvecCout.reduce((total, row) => total + row.missing_cost_movements, 0),
+    }
+  }
+  const coutsCourants = coutsPourCommandes(retenues)
+  const coutsPrecedents = coutsPourCommandes(commandesPrecedentes)
 
   return {
     debut,
@@ -286,6 +324,11 @@ export function computeRapport(
     parStatut,
     topPrestations,
     parJourSemaine,
+    coutConsommables: coutsCourants?.montant ?? null,
+    margeApresConsommables:
+      coutsCourants === null ? null : facture - coutsCourants.montant,
+    lignesAvecConsommation: coutsCourants?.lignes ?? 0,
+    mouvementsSansCout: coutsCourants?.mouvementsSansCout ?? 0,
     variation: {
       facture: variationPourcent(facture, avant.facture),
       commandes: variationPourcent(retenues.length, avant.commandes),
@@ -293,23 +336,70 @@ export function computeRapport(
         retenues.length > 0 ? facture / retenues.length : 0,
         avant.panierMoyen,
       ),
+      coutConsommables:
+        coutsCourants === null || coutsPrecedents === null
+          ? null
+          : variationPourcent(coutsCourants.montant, coutsPrecedents.montant),
+      margeApresConsommables:
+        coutsCourants === null || coutsPrecedents === null
+          ? null
+          : variationPourcent(
+              facture - coutsCourants.montant,
+              avant.facture - coutsPrecedents.montant,
+            ),
     },
   }
 }
 
+/** Protège les cellules contenant séparateurs, retours à la ligne ou formules de tableur. */
+function celluleCsv(valeur: string | number): string {
+  const texte = String(valeur)
+  const protege = typeof valeur === 'string' && /^[=+\-@\t\r]/.test(texte) ? `'${texte}` : texte
+  return /[;"\r\n]/.test(protege) ? `"${protege.replace(/"/g, '""')}"` : protege
+}
+
+function ligneCsv(valeurs: Array<string | number>): string {
+  return valeurs.map(celluleCsv).join(';')
+}
+
 /**
- * Export CSV de la série quotidienne.
- *
- * Séparateur `;` et virgule décimale : c'est ce qu'attend un tableur configuré
- * en français. Les montants restent entiers (le franc CFA n'a pas de centime).
+ * Export complet compatible avec les tableurs francophones : synthèse,
+ * comparaison, série quotidienne, statuts et prestations. Le séparateur `;`
+ * évite les conflits avec la virgule décimale ; les montants sont en FCFA.
  * Le BOM est ajouté à l'écriture du fichier, pas ici : ce module reste pur.
  */
 export function rapportCsv(rapport: Rapport): string {
-  const lignes = ['date;facture;encaisse;commandes']
+  const lignes = [
+    ligneCsv(['Synthèse', 'Indicateur', 'Valeur']),
+    ligneCsv(['Période', `${rapport.debut} → ${rapport.fin}`, rapport.jours]),
+    ligneCsv(['Synthèse', 'Facturé (FCFA)', rapport.facture]),
+    ligneCsv(['Synthèse', 'Espèces encaissées (FCFA)', rapport.encaisse]),
+    ligneCsv(['Synthèse', 'Commandes', rapport.commandes]),
+    ligneCsv(['Synthèse', 'Annulations', rapport.annulees]),
+    ligneCsv(['Synthèse', 'Panier moyen (FCFA)', rapport.panierMoyen]),
+    ligneCsv(['Synthèse', 'Coûts de consommables imputés (FCFA)', rapport.coutConsommables ?? 'indisponible']),
+    ligneCsv(['Synthèse', 'Marge après consommables imputés (FCFA)', rapport.margeApresConsommables ?? 'indisponible']),
+    ligneCsv(['Synthèse', 'Lignes avec consommation imputée', rapport.lignesAvecConsommation]),
+    ligneCsv(['Synthèse', 'Mouvements sans coût unitaire', rapport.mouvementsSansCout]),
+    ligneCsv(['Comparaison', 'Variation du facturé (%)', rapport.variation.facture ?? 'n.d.']),
+    ligneCsv(['Comparaison', 'Variation des commandes (%)', rapport.variation.commandes ?? 'n.d.']),
+    ligneCsv(['Comparaison', 'Variation du coût consommables (%)', rapport.variation.coutConsommables ?? 'n.d.']),
+    ligneCsv(['Comparaison', 'Variation de la marge après consommables (%)', rapport.variation.margeApresConsommables ?? 'n.d.']),
+    '',
+    ligneCsv(['Série quotidienne']),
+    ligneCsv(['Date', 'Facturé (FCFA)', 'Espèces (FCFA)', 'Commandes']),
+  ]
   for (const point of rapport.parJour) {
-    lignes.push(`${point.date};${point.facture};${point.encaisse};${point.commandes}`)
+    lignes.push(ligneCsv([point.date, point.facture, point.encaisse, point.commandes]))
   }
-  lignes.push('')
-  lignes.push(`total;${rapport.facture};${rapport.encaisse};${rapport.commandes}`)
+  lignes.push(ligneCsv(['Total', rapport.facture, rapport.encaisse, rapport.commandes]))
+  lignes.push('', ligneCsv(['Répartition par statut']), ligneCsv(['Statut', 'Commandes', 'Part (%)']))
+  for (const part of rapport.parStatut) {
+    if (part.count > 0) lignes.push(ligneCsv([part.label, part.count, Math.round(part.part * 100)]))
+  }
+  lignes.push('', ligneCsv(['Prestations les plus demandées']), ligneCsv(['Prestation', 'Lignes', 'Facturé (FCFA)']))
+  for (const prestation of rapport.topPrestations) {
+    lignes.push(ligneCsv([prestation.label, prestation.count, prestation.amount]))
+  }
   return lignes.join('\n')
 }
