@@ -115,6 +115,7 @@ export async function createOrderLocal(
       laundryMinimumWeightKgSnapshot: item.laundryMinimumWeightKgSnapshot ?? null,
       laundryBillingIncrementKgSnapshot: item.laundryBillingIncrementKgSnapshot ?? null,
       laundryMinimumChargeSnapshot: item.laundryMinimumChargeSnapshot ?? null,
+      familyPackageSnapshot: item.familyPackageSnapshot ?? null,
     }
   })
 
@@ -503,6 +504,9 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
 }
 
 export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
+  if (item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE') {
+    throw new Error('Un forfait famille doit être transmis par le RPC atomique de composition.');
+  }
   // L'API reçoit une ligne forfaitaire cohérente pour son premier contrôle,
   // puis le déclencheur commercial valide le poids et restaure les instantanés.
   const modeleCommercial = Boolean(item.laundryModelId)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -29,6 +29,7 @@ const MAX_POLLS = 4
 const POLL_DELAY_MS = 3000
 
 export default function PaymentReturn() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const orderId = searchParams.get('order') ?? searchParams.get('orderId') ?? ''
   const transactionId = searchParams.get('transaction_id') ?? searchParams.get('transactionId')
@@ -38,6 +39,7 @@ export default function PaymentReturn() {
   const [order, setOrder] = useState<LocalOrder | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const pollsRef = useRef(0)
+  const receiptNavigationStarted = useRef(false)
   // `runId` relance la vérification (sondage automatique ou bouton manuel)
   // sans récursion : chaque passage planifie le suivant via setTimeout.
   const [runId, setRunId] = useState(0)
@@ -113,6 +115,21 @@ export default function PaymentReturn() {
       if (timer) window.clearTimeout(timer)
     }
   }, [orderId, runId])
+
+  // Le reçu ne s'ouvre qu'après confirmation serveur explicite : le navigateur
+  // ne peut jamais transformer un retour CinetPay en succès supposé.
+  useEffect(() => {
+    if (
+      view !== 'payée' ||
+      !order ||
+      state?.paymentStatus !== 'paid' ||
+      !state.fromServer
+    ) return
+
+    if (receiptNavigationStarted.current) return
+    receiptNavigationStarted.current = true
+    navigate(`/commandes/${order.id}/recu`, { replace: true })
+  }, [view, order, state, navigate])
 
   const handleManualRefresh = () => {
     pollsRef.current = 0
@@ -214,7 +231,7 @@ function visualFor(view: ViewState) {
     },
     payée: {
       title: 'Paiement confirmé',
-      description: 'La commande est réglée. Vous pouvez préparer les vêtements.',
+      description: 'La commande est réglée. Le reçu s’ouvre automatiquement pour être remis au client.',
       classes: 'border-emerald-200 bg-emerald-50 text-emerald-900',
       icon: <CheckCircle2 size={28} aria-hidden />,
     },

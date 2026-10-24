@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   Banknote,
   BarChart3,
@@ -10,10 +11,14 @@ import {
   ShoppingBag,
   TrendingDown,
   TrendingUp,
+  Users,
 } from 'lucide-react'
 import { useAllCashPayments, useAllLocalItems, useLocalOrders } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import { isSupabaseConfigured } from '@/lib/env'
+import { todayIso } from '@/constants/orders'
+import { computeEmployeeWorkload } from '@/lib/employeeWorkload'
+import { fetchTeamMembers, type TeamMember } from '@/services/tenantMembers'
 import { can } from '@/lib/permissions'
 import { listStockConsumptionCosts } from '@/services/stockService'
 import { shiftDay } from '@/services/dashboardService'
@@ -46,9 +51,13 @@ import {
  * n'est ajoutée au bundle, qui doit rester léger sur une tablette d'entrée de
  * gamme en 3G (même raison que le chargement différé des écrans).
  */
+const EMPTY_TEAM_MEMBERS: TeamMember[] = []
+
 export default function Rapports() {
+  const prefersReducedMotion = useReducedMotion()
   const role = useTenantStore((state) => state.role)
   const tenantId = useTenantStore((state) => state.tenantId)
+  const currentUserId = useTenantStore((state) => state.userId)
   const autorise = can(role, 'dashboard.view')
 
   const orders = useLocalOrders()
@@ -59,6 +68,14 @@ export default function Rapports() {
   const [exportEnCours, setExportEnCours] = useState(false)
   const [stockCosts, setStockCosts] = useState<CoutConsommableParLigne[] | null>(null)
   const [stockCostStatus, setStockCostStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
+  const [teamData, setTeamData] = useState<{
+    tenantId: string | null
+    members: TeamMember[]
+    status: 'loading' | 'ready' | 'unavailable'
+  }>({ tenantId: null, members: [], status: 'loading' })
+  const teamMatchesTenant = teamData.tenantId === tenantId
+  const teamMembers = teamMatchesTenant ? teamData.members : EMPTY_TEAM_MEMBERS
+  const teamStatus = teamMatchesTenant ? teamData.status : tenantId ? 'loading' : 'unavailable'
 
   const stockCostItemIds = useMemo(() => {
     if (orders === undefined) return []
@@ -104,6 +121,26 @@ export default function Rapports() {
     return () => { vivant = false }
   }, [tenantId, commandesChargees, stockCostItemIdsKey, stockCostItemIdsCount])
 
+  useEffect(() => {
+    let vivant = true
+    if (!tenantId || !autorise || !isSupabaseConfigured) {
+      setTeamData({ tenantId, members: [], status: 'unavailable' })
+      return () => { vivant = false }
+    }
+
+    setTeamData({ tenantId, members: [], status: 'loading' })
+    void fetchTeamMembers(tenantId)
+      .then((members) => {
+        if (!vivant) return
+        setTeamData({ tenantId, members, status: 'ready' })
+      })
+      .catch(() => {
+        if (!vivant) return
+        setTeamData({ tenantId, members: [], status: 'unavailable' })
+      })
+    return () => { vivant = false }
+  }, [tenantId, autorise])
+
   const rapport: Rapport | null = useMemo(() => {
     if (orders === undefined) return null
     return computeRapport(orders, items ?? [], cashPayments ?? [], {
@@ -111,6 +148,16 @@ export default function Rapports() {
       stockCosts: stockCostStatus === 'ready' ? stockCosts ?? [] : null,
     })
   }, [orders, items, cashPayments, periode, stockCosts, stockCostStatus])
+
+  const workforce = useMemo(() => {
+    if (!orders || !rapport) return null
+    return computeEmployeeWorkload(orders, teamMembers, {
+      start: rapport.debut,
+      end: rapport.fin,
+      today: todayIso(),
+      currentUserId,
+    })
+  }, [orders, rapport, teamMembers, currentUserId])
 
   if (!autorise) {
     return (
@@ -138,7 +185,16 @@ export default function Rapports() {
     try {
       // BOM UTF-8 : sans lui, Excel affiche « FCFA » et les accents en
       // caractères parasites sur un poste Windows configuré en français.
-      const contenu = `\uFEFF${rapportCsv(rapport)}`
+      const equipeCsv = teamStatus === 'ready' && workforce
+        ? workforce.rows.map((row) => ({
+            employee: row.label,
+            activeOrders: row.activeOrders,
+            overdueOrders: row.overdueOrders,
+            receivedInPeriod: row.receivedInPeriod,
+            deliveredFromPeriod: row.deliveredFromPeriod,
+          }))
+        : undefined
+      const contenu = `\uFEFF${rapportCsv(rapport, equipeCsv)}`
       const blob = new Blob([contenu], { type: 'text/csv;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const lien = document.createElement('a')
@@ -256,7 +312,67 @@ export default function Rapports() {
             : `${rapport.mouvementsSansCout > 0 ? `${rapport.mouvementsSansCout} mouvement(s) lié(s) n’ont pas de coût unitaire.` : 'Les coûts affichés proviennent des sorties liées aux lignes de commande.'} Les mouvements non associés, les salaires, le loyer et les charges restent exclus : la marge est partielle, pas un bénéfice net.`}
       </p>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section aria-label="Charge et activité de l’équipe" className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4 sm:px-5">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+              <Users size={16} aria-hidden /> Charge et activité par membre
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              En cours : {workforce?.activeOrders ?? 0} · en retard : {workforce?.overdueOrders ?? 0} · sans attribution : {workforce?.unassignedActiveOrders ?? 0}
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {rapport.debut.split('-').reverse().join('/')} – {rapport.fin.split('-').reverse().join('/')}
+          </span>
+        </div>
+
+        {teamStatus === 'loading' ? (
+          <p className="px-4 py-5 text-sm text-slate-500 sm:px-5" role="status">Chargement de l’équipe…</p>
+        ) : workforce && (
+          <>
+            {teamStatus === 'unavailable' && (
+              <p className="mx-4 mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900 sm:mx-5">
+                Noms de l’équipe indisponibles hors ligne : les attributions non reconnues sont regroupées sans afficher d’identifiant.
+              </p>
+            )}
+            {teamStatus === 'ready' && teamMembers.length === 0 && (
+              <p className="mx-4 mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600 sm:mx-5">
+                Aucun membre d’équipe n’est disponible pour cette boutique.
+              </p>
+            )}
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[44rem] text-left text-sm">
+                <thead className="border-y border-slate-100 bg-slate-50 text-[0.68rem] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th scope="col" className="px-4 py-2.5 font-semibold sm:px-5">Membre</th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-semibold">En cours</th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-semibold">En retard</th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-semibold">Créées sur la période</th>
+                    <th scope="col" className="px-4 py-2.5 text-right font-semibold sm:px-5">Livrées parmi celles-ci</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {workforce.rows.map((row, index) => (
+                    <tr key={row.member?.userId ?? `${row.label}-${index}`}>
+                      <th scope="row" className="px-4 py-3 font-medium text-slate-800 sm:px-5">{row.label}</th>
+                      <td className="px-3 py-3 text-right tabular-nums text-slate-700">{row.activeOrders}</td>
+                      <td className={`px-3 py-3 text-right tabular-nums ${row.overdueOrders > 0 ? 'font-semibold text-rose-700' : 'text-slate-600'}`}>{row.overdueOrders}</td>
+                      <td className="px-3 py-3 text-right tabular-nums text-slate-600">{row.receivedInPeriod}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-600 sm:px-5">{row.deliveredFromPeriod}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="px-4 py-3 text-xs text-slate-500 sm:px-5">
+              Les chiffres de période reposent sur la date de création et l’attribution actuelle. Les réattributions passées ne sont pas historisées : ce tableau mesure la charge visible et l’activité rattachée aujourd’hui, pas la productivité individuelle ni le délai réel de traitement.
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="chart-surface rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
             Chiffre d’affaires par jour
@@ -278,7 +394,7 @@ export default function Rapports() {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="chart-surface rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
           <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
             <PieChart size={15} aria-hidden /> Répartition par statut
           </h2>
@@ -308,7 +424,7 @@ export default function Rapports() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="chart-surface rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
             Activité par jour de la semaine
           </h2>
@@ -317,13 +433,19 @@ export default function Rapports() {
           </p>
 
           <ul className="mt-3 space-y-2">
-            {rapport.parJourSemaine.map((jour) => (
+            {rapport.parJourSemaine.map((jour, index) => (
               <li key={jour.label} className="flex items-center gap-2 text-sm">
                 <span className="w-12 shrink-0 text-slate-600">{jour.label}</span>
                 <span className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
-                  <span
+                  <motion.span
                     className="block h-full rounded-full bg-brand-teal"
-                    style={{ width: `${(jour.facture / maximumSemaine) * 100}%` }}
+                    initial={prefersReducedMotion ? false : { width: 0 }}
+                    animate={{ width: `${(jour.facture / maximumSemaine) * 100}%` }}
+                    transition={{
+                      duration: prefersReducedMotion ? 0 : 0.52,
+                      delay: prefersReducedMotion ? 0 : index * 0.055,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
                   />
                 </span>
                 <span className="w-24 shrink-0 text-right tabular-nums text-xs text-slate-500">
@@ -389,6 +511,7 @@ export default function Rapports() {
 
 /** Graphique en barres de la série quotidienne. */
 function GraphiqueJours({ rapport, maximum }: { rapport: Rapport; maximum: number }) {
+  const prefersReducedMotion = useReducedMotion()
   const points = rapport.parJour
   const largeur = 720
   const hauteur = 220
@@ -413,6 +536,12 @@ function GraphiqueJours({ rapport, maximum }: { rapport: Rapport; maximum: numbe
         className="h-56 w-full"
         preserveAspectRatio="none"
       >
+        <defs>
+          <linearGradient id="rapport-bar-gradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#2dd4bf" />
+            <stop offset="100%" stopColor="#0f766e" />
+          </linearGradient>
+        </defs>
         {/* Lignes de repère : quart, moitié, trois quarts du maximum. */}
         {[0.25, 0.5, 0.75, 1].map((fraction) => {
           const y = margeHaute + zoneHaute - zoneHaute * fraction
@@ -436,16 +565,29 @@ function GraphiqueJours({ rapport, maximum }: { rapport: Rapport; maximum: numbe
           const y = margeHaute + zoneHaute - hauteurBarre
           return (
             <g key={point.date}>
-              <rect
+              <motion.rect
+                initial={prefersReducedMotion ? false : { y: margeHaute + zoneHaute, height: 0, opacity: 0.35 }}
+                animate={{
+                  y,
+                  height: Math.max(hauteurBarre, point.facture > 0 ? 2 : 0),
+                  opacity: 1,
+                }}
+                transition={{
+                  duration: prefersReducedMotion ? 0 : 0.52,
+                  delay: prefersReducedMotion ? 0 : Math.min(index * 0.006, 0.42),
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                whileHover={prefersReducedMotion ? undefined : { scaleX: 1.18, fill: '#f59e0b' }}
+                style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
                 x={x}
                 y={y}
                 width={largeurBarre}
                 height={Math.max(hauteurBarre, point.facture > 0 ? 2 : 0)}
                 rx={Math.min(3, largeurBarre / 2)}
-                fill="#0f766e"
+                fill="url(#rapport-bar-gradient)"
               >
                 <title>{`${point.label} : ${formatFcfa(point.facture)} (${point.commandes} commande(s))`}</title>
-              </rect>
+              </motion.rect>
               {index % intervalleLabel === 0 && (
                 <text
                   x={index * pas + pas / 2}
@@ -480,8 +622,17 @@ function Carte({
   variation?: number | null
   icone: ReactNode
 }) {
+  const prefersReducedMotion = useReducedMotion()
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <motion.div
+      className="metric-card rounded-2xl border border-slate-200 bg-white p-4"
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      whileHover={prefersReducedMotion ? undefined : { y: -5, scale: 1.025, rotateX: 1, rotateY: -0.8 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }}
+      style={{ transformPerspective: 900 }}
+    >
       <div className="flex items-center justify-between text-slate-400">
         <span className="text-xs font-semibold uppercase tracking-wide">{libelle}</span>
         {icone}
@@ -506,6 +657,6 @@ function Carte({
           </span>
         )}
       </div>
-    </div>
+    </motion.div>
   )
 }

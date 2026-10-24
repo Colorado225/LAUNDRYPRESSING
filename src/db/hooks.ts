@@ -77,6 +77,22 @@ export function usePendingOrderCount(): number {
   )
 }
 
+/** Nombre total d'éléments locaux en attente d'envoi au pressing. */
+export function usePendingSyncCount(): number {
+  const tenantId = useTenantStore((state) => state.tenantId)
+
+  return useLiveQuery(async () => {
+    if (!tenantId) return 0
+    const [orders, payments, issues, notifications] = await Promise.all([
+      db.orders.where('[tenantId+synced]').equals([tenantId, 0]).count(),
+      db.cashPayments.where('[tenantId+synced]').equals([tenantId, 0]).count(),
+      db.orderIssues.where('[tenantId+synced]').equals([tenantId, 0]).count(),
+      db.notifications.where('[tenantId+synced]').equals([tenantId, 0]).count(),
+    ])
+    return orders + payments + issues + notifications
+  }, [tenantId]) ?? 0
+}
+
 /**
  * Création de commande locale.
  * Fonctionne sans réseau : aucune requête n'est émise ici.

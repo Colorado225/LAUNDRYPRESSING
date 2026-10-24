@@ -54,6 +54,10 @@ export function calculateLaundryModelPrice(
   const increment = model.billing_increment_kg
   const minimumCharge = model.minimum_charge ?? 0
 
+  if (model.model_type === 'FAMILY_PACKAGE') {
+    throw new RangeError('Un forfait famille se calcule à partir de ses pièces, pas de son poids.')
+  }
+
   if (model.model_type === 'PER_KG') {
     const price = model.price_per_kg
     if (price === null || price <= 0) throw new RangeError('Le prix au kilo doit être renseigné.')

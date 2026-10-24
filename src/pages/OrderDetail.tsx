@@ -206,7 +206,9 @@ export default function OrderDetail() {
               <div className="min-w-0">
                 <p className="font-medium text-slate-800">{item.label}</p>
                 <p className="text-xs text-slate-500">
-                  {item.laundryModelId
+                  {item.familyPackageSnapshot
+                    ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
+                    : item.laundryModelId
                     ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
                     : item.billingUnit === 'FLAT'
                       ? `Forfait · ${formatFcfa(item.unitPrice)}`
@@ -217,6 +219,9 @@ export default function OrderDetail() {
                   {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
                 </p>
                 {item.laundryServicesSnapshot && <p className="text-xs text-slate-500">Prestations : {item.laundryServicesSnapshot}</p>}
+                {item.familyPackageSnapshot && <ul className="mt-1 text-xs text-slate-600" aria-label="Composition du forfait famille">
+                  {item.familyPackageSnapshot.contents.map((content) => <li key={content.articleId}>{content.quantity} × {content.articleName} · {content.familyName}</li>)}
+                </ul>}
                 <OrderMeasurementEditor
                   orderId={order.id}
                   item={item}

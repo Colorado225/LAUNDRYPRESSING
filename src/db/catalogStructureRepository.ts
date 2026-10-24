@@ -25,6 +25,15 @@ export type CatalogServiceInput = Pick<CatalogServiceRow, 'name'> &
 
 const MESSAGE_RLS = 'Seul le propriétaire peut gérer la structure du catalogue.'
 
+export async function initializeCatalogModelTemplates(): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('initialize_catalog_model_templates')
+  if (!error) return
+  // Tolère un client temporairement plus récent que le schéma distant : le
+  // catalogue reste gérable, mais les modèles apparaîtront après la migration.
+  if (error.code === 'PGRST202' || error.code === '42883' || /function .* does not exist/i.test(error.message)) return
+  throw erreurCatalogue(error)
+}
+
 function erreurCatalogue(error: { message: string; code?: string }): Error {
   if (error.code === '42501' || /row-level security/i.test(error.message)) {
     return new Error(MESSAGE_RLS)

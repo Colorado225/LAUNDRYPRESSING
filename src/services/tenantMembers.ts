@@ -32,7 +32,8 @@ export async function fetchTeamMembers(tenantId: string): Promise<TeamMember[]> 
     .select('user_id, role, display_name')
     .eq('tenant_id', tenantId)
 
-  if (error || !data) return []
+  if (error) throw error
+  if (!data) return []
 
   const ordre: TenantRole[] = ['owner', 'receptionist', 'artisan']
 

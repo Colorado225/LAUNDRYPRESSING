@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Banknote, CloudOff, FileText, Loader2, Printer, ReceiptText, Undo2, Wifi } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCashPayments, useOrderRefunds, useQueueCashPayment } from '@/db/hooks'
@@ -35,6 +35,7 @@ export default function CashPanel({
   order: LocalOrder
   autoOpen?: boolean
 }) {
+  const navigate = useNavigate()
   const role = useTenantStore((state) => state.role)
   const paiements = useCashPayments(order.id)
   const remboursements = useOrderRefunds(order.id)
@@ -78,10 +79,11 @@ export default function CashPanel({
     setEnvoi(true)
     try {
       await encaisser(order.id, valeur, note.trim() || null)
-      toast.success(`Encaissement de ${formatFcfa(valeur)} enregistré`, { icon: '💵' })
+      toast.success(`Encaissement de ${formatFcfa(valeur)} enregistré · reçu prêt à imprimer`, { icon: '💵' })
       setOuvert(false)
       setMontant('')
       setNote('')
+      navigate(`/commandes/${order.id}/recu`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Impossible d'enregistrer le paiement")
     } finally {
@@ -102,6 +104,11 @@ export default function CashPanel({
       toast.error('Indiquez un montant valide.')
       return
     }
+    if (valeur > remboursable) {
+      toast.error(`Le montant ne peut pas dépasser ${formatFcfa(remboursable)}.`)
+      return
+    }
+    if (!window.confirm(`Confirmer le remboursement de ${formatFcfa(valeur)} ?`)) return
 
     setEnvoiRemboursement(true)
     try {

@@ -8,10 +8,11 @@ paiement Mobile Money).
 Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
 > **Mise à jour du 24 octobre 2026.** Les paliers 2 à 4 ont livré plusieurs
-> éléments de ce backlog. Le lot 2 a ajouté les modèles commerciaux au kilo et
-> au forfait ; le lot 3 a permis d'imputer des sorties de stock à des commandes,
-> complété les comparaisons et enrichi l'export CSV. Les éléments achevés sont
-> marqués ci-dessous ; les limites restantes restent explicites.
+> éléments de ce backlog. Le lot 2 couvre les modèles commerciaux, dont les
+> forfaits famille ; le lot 3 couvre les coûts de stock imputés, les rapports
+> comparatifs et l'export CSV. Les deux lots passent les contrôles automatisés
+> (638 tests, typecheck, lint et build). La recette d'une vraie sortie de stock
+> dans un pressing reste à effectuer ; les limites restantes restent explicites.
 
 ---
 
@@ -31,9 +32,9 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Gestion des employés (pointage, plannings) | Hors périmètre. Les **rôles**, eux, existent depuis le palier 1 et le rattachement des comptes depuis le palier 4. |
 | Livraison / tournées | Hors périmètre. |
 | Bons de réduction et fidélité | Nécessite un moteur de promotions ; le module clients (palier 3) en est le préalable. |
-| Suivi du coût des consommables par prestation | **Implémenté, en attente de validation (lot 3)** — une sortie peut être imputée à une ligne de commande ; le coût unitaire connu est figé et la marge après consommables imputés est estimée. Les recettes de consommation automatiques par prestation et les sorties non imputées restent hors calcul. |
-| Comparaison de périodes et export des rapports | **Implémenté, en attente de validation (lot 3)** — comparaison de périodes égales et export CSV de la synthèse, des variations, des jours, des statuts et des prestations. |
-| Performance et charge de travail par employé | L'attribution existe (palier 2) ; l'agrégation par employé reste à construire. |
+| Suivi du coût des consommables par prestation | **Implémenté et vérifié automatiquement (lot 3)** — une sortie peut être imputée à une ligne de commande ; le coût unitaire connu est figé et la marge après consommables imputés est estimée. Les recettes de consommation automatiques par prestation et les sorties non imputées restent hors calcul ; une recette métier sur de vraies sorties reste à effectuer. |
+| Comparaison de périodes et export des rapports | **Implémenté et vérifié automatiquement (lot 3)** — comparaison de périodes égales et export CSV de la synthèse, des variations, des jours, des statuts et des prestations. La recette utilisateur reste à effectuer. |
+| Performance et charge de travail par employé | **Charge actuelle et activité agrégées dans Rapports** — commandes ouvertes, retards, commandes créées sur la période et livrées parmi celles-ci, avec export CSV. Le modèle actuel ne garde pas l'historique des réattributions ni les horodatages de chaque étape : une vraie mesure de productivité/délai individuel nécessite un journal d'affectation et de transitions, qui reste à concevoir. |
 
 ## 3. Plateforme
 
@@ -60,6 +61,7 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Sujet | Détail |
 | --- | --- |
 | Couverture de code | Pas encore mesurée (pas de `@vitest/coverage-v8`) ; à activer avec un seuil minimum. |
+| Validation UX sur tablette physique | Premier essai terrain signalé comme effectué le 24/10/2026 ; la prochaine itération porte sur l'atelier (file filtrable, échéances prioritaires). Aucun suivi télémétrique n'est ajouté. |
 | Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
 | Pagination **serveur** des commandes | Les commandes lisent Dexie et sont paginées côté rendu (20 par page). Les dépenses, elles, sont déjà paginées par curseur côté serveur ; la même mécanique servira quand les commandes passeront au serveur. |

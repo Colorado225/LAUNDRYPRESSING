@@ -1,8 +1,8 @@
 # Audit courant — Pressing Pro
 
 **Date de mise à jour :** 24 octobre 2026
-**Révision auditée :** branche active `arena/d0871a16-laundrypressing`, palier 4,
-lot 2 validé et lot 3 implémenté (en attente de validation utilisateur)
+**Révision auditée :** branche active `arena/6a467918-laundrypressing`, palier 4,
+lots 2 et 3 vérifiés automatiquement ; améliorations UX hors ligne, comptoir et atelier intégrées
 **Méthode :** inventaire automatisé du code (analyse des imports, comptage des
 tables, politiques et tests), puis lecture ciblée des zones sensibles
 (authentification, synchronisation, paiement, RLS).
@@ -19,18 +19,18 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 
 | Élément | Valeur |
 | --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 78 (dont 10 de test) |
-| Lignes de code applicatif | 13 477 (hors dossier `src/test/`) |
-| Migrations | 18 (`001_init` → `018_stock_consumption_costs`) |
-| Tables PostgreSQL | 22 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
-| Politiques RLS | 67 (dont 30 restrictives posées par le palier 4) |
-| Fonctions SQL | 32 (dont `create_tenant_for_user`,  `current_tenant_id`, `guard_order_update`, `record_cash_payment`, `close_cash_session`, `attach_customer_to_order`, `apply_stock_movement`, `subscription_state`, `tenant_writable`, `platform_set_subscription`) |
-| Déclencheurs | 18 |
+| Fichiers TypeScript / TSX dans `src/` | 148 (94 applicatifs, 53 tests et 1 fichier de support) |
+| Lignes de code applicatif | 24 938 (hors dossier `src/test/`) |
+| Migrations | 19 (`001_init` → `019_catalogue_commercial_models`) |
+| Tables PostgreSQL | 38 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
+| Politiques RLS | 91 |
+| Fonctions SQL | 60 (fonctions/procédures du schéma `public`) |
+| Déclencheurs | 56 (hors déclencheurs internes PostgreSQL) |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
-| Fichiers de tests | 51 Vitest (45 sous `src/`, 6 pour les scripts) + 19 fichiers SQL |
-| Tests automatisés | 613 |
-| Contrôles SQL exécutés | 175 (isolations, rôles, paliers 1 à 4, inscription, audit, notifications, recette réelle) |
+| Fichiers de tests | 59 Vitest (53 sous `src/`, 6 pour les scripts) + 23 fichiers SQL sous `supabase/tests/` |
+| Tests automatisés | 638 (suite relancée le 24/10/2026 après ajouts stock, rapport d’équipe et améliorations UX de l’atelier) |
+| Contrôles SQL exécutés | 175 lors des recettes antérieures (jusqu'aux migrations précédentes) ; tests SQL ajoutés pour 019 non rejoués localement faute de `psql` |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
 
@@ -168,7 +168,7 @@ atteignables sont les tests et les déclarations, ce qui est attendu.
 | --- | --- | --- |
 | Catalogue (articles, prestations, prix) | **Livré** — catalogue article × prestation, prix historisé, dérogation motivée | Fait |
 | Modèles commerciaux au kilo et au forfait | **Livré, lot 2 validé** — poids, minimums, conditions, prestations et instantanés en commande | Fait |
-| Rentabilité des consommables et rapports CSV | **Implémenté, lot 3 en attente de validation** — sorties imputées et marge partielle, comparaisons, export détaillé | Lot 3 |
+| Rentabilité des consommables et rapports CSV | **Lot 3 vérifié automatiquement** — sorties imputées et marge partielle, comparaisons, export détaillé ; recette métier avec de vraies sorties encore à effectuer | Fait (recette réelle restante) |
 | Encaissement espèces, acomptes, solde dû | **Livré** — encaissement idempotent, solde recalculé | Fait |
 | Reçus imprimables, clôture de caisse | **Livré** — reçu 80 mm, clôture quotidienne, remboursements déduits | Fait |
 | Workflow complet (tri, séchage, contrôle qualité) | **Livré** — 8 étapes, transitions contrôlées, attribution, réclamations | Fait |

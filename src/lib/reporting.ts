@@ -80,6 +80,14 @@ export interface CoutConsommableParLigne {
   missing_cost_movements: number
 }
 
+export interface RapportEquipeCsv {
+  employee: string
+  activeOrders: number
+  overdueOrders: number
+  receivedInPeriod: number
+  deliveredFromPeriod: number
+}
+
 export interface Rapport {
   /** Première et dernière date couvertes, incluses. */
   debut: string
@@ -368,7 +376,7 @@ function ligneCsv(valeurs: Array<string | number>): string {
  * évite les conflits avec la virgule décimale ; les montants sont en FCFA.
  * Le BOM est ajouté à l'écriture du fichier, pas ici : ce module reste pur.
  */
-export function rapportCsv(rapport: Rapport): string {
+export function rapportCsv(rapport: Rapport, equipe?: RapportEquipeCsv[]): string {
   const lignes = [
     ligneCsv(['Synthèse', 'Indicateur', 'Valeur']),
     ligneCsv(['Période', `${rapport.debut} → ${rapport.fin}`, rapport.jours]),
@@ -400,6 +408,22 @@ export function rapportCsv(rapport: Rapport): string {
   lignes.push('', ligneCsv(['Prestations les plus demandées']), ligneCsv(['Prestation', 'Lignes', 'Facturé (FCFA)']))
   for (const prestation of rapport.topPrestations) {
     lignes.push(ligneCsv([prestation.label, prestation.count, prestation.amount]))
+  }
+  if (equipe !== undefined) {
+    lignes.push(
+      '',
+      ligneCsv(['Charge et activité de l’équipe']),
+      ligneCsv(['Membre', 'Commandes en cours', 'En retard', 'Reçues sur la période', 'Livrées parmi les reçues']),
+    )
+    for (const membre of equipe) {
+      lignes.push(ligneCsv([
+        membre.employee,
+        membre.activeOrders,
+        membre.overdueOrders,
+        membre.receivedInPeriod,
+        membre.deliveredFromPeriod,
+      ]))
+    }
   }
   return lignes.join('\n')
 }

@@ -3,10 +3,13 @@ import type { LaundryModelRow } from '@/types/database'
 import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
 
 const base = {
+  pricing_basis: 'KG' as const,
   price_per_kg: 1_000,
   package_price: null,
   included_weight_kg: null,
   overage_price_per_kg: null,
+  included_pieces: null,
+  overage_price_per_piece: null,
   minimum_weight_kg: null,
   billing_increment_kg: 0.1,
   minimum_charge: null,

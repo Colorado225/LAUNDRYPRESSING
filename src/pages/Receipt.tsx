@@ -131,7 +131,9 @@ export default function Receipt() {
                 {item.serviceName ? ` — ${item.serviceName}` : ''}
                 {item.fabricType ? ` (${item.fabricType})` : ''}
                 <span className="block text-[10px]">
-                  {item.laundryModelId
+                  {item.familyPackageSnapshot
+                    ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
+                    : item.laundryModelId
                     ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
                     : item.billingUnit === 'FLAT'
                       ? `Forfait ${formatFcfa(item.unitPrice)}`
@@ -139,6 +141,7 @@ export default function Receipt() {
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ' : ''}
                 </span>
                 {item.laundryServicesSnapshot && <span className="block text-[9px]">Prestations : {item.laundryServicesSnapshot}</span>}
+                {item.familyPackageSnapshot && <span className="block text-[9px]">Composition : {item.familyPackageSnapshot.contents.map((content) => `${content.quantity} × ${content.articleName}`).join(', ')}</span>}
               </td>
               <td className="text-right whitespace-nowrap">{formatFcfa(item.price)}</td>
             </tr>

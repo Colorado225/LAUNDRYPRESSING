@@ -104,9 +104,11 @@ Le bouton **Précédent** permet de revenir corriger une étape déjà validée.
    CinetPay exige une référence de commande déjà enregistrée.
 5. Appuyer sur **Enregistrer la commande**.
 
-Le **téléphone** suffit à retrouver le client : les commandes passées avec le
-même numéro — avec ou sans indicatif `+225` — sont regroupées dans son
-historique.
+À partir de trois chiffres, le champ **Téléphone** propose des coordonnées
+repérées dans les commandes déjà enregistrées sur cette tablette (avec ou sans
+indicatif `+225`). Choisir une suggestion préremplit le nom et le numéro ; la
+nouvelle commande reste indépendante. Le total estimatif est signalé avant
+l'enregistrement lorsqu'une mesure ou un tarif doit encore être confirmé.
 
 La commande est immédiatement visible dans la liste, **même sans réseau**. Un
 badge orange indique qu'elle attend l'envoi vers le serveur.
@@ -177,9 +179,12 @@ les secrets et met à jour les fonctions sans modification du script.
 1. Ouvrir la commande → **Encaisser**.
 2. Saisir le montant remis (acompte ou solde). Le **reste à payer** est recalculé
    à partir des encaissements réels : il ne se saisit jamais à la main.
-3. Un **reçu 80 mm** est disponible via **Reçu** : référence, téléphone,
-   articles, montant reçu et **reste à payer**.
-4. Le reçu s'imprime même hors ligne, puisque les données sont sur la tablette.
+3. Après confirmation de l'encaissement, le **reçu 80 mm s'ouvre automatiquement**,
+   prêt à imprimer. Il contient la référence, le téléphone, les articles, le montant
+   encaissé et le **reste à payer**. Le bouton **Reçu** permet aussi de le rouvrir.
+4. Cliquer sur **Imprimer le reçu** pour choisir l'imprimante thermique ou
+   **Enregistrer au format PDF**. Le reçu reste disponible hors ligne, car les
+   données viennent de la tablette.
 
 ### 3.4 bis Éditer une facture A4
 
@@ -265,12 +270,16 @@ Quand le client se présente, ouvrir la commande et la faire passer en **Livrée
 Onglet **Atelier**. La caméra n'est activée qu'à ce moment-là : le reste de
 l'application reste léger.
 
+La file des commandes peut être recherchée par nom, téléphone ou référence et
+filtrée par étape. Les retards et les dates promises les plus proches remontent
+en tête de liste ; la date de remise promise apparaît sur chaque commande.
+
 ### 4.2 Scanner une étiquette
 
 1. Appuyer sur **Scanner une étiquette** et autoriser l'accès à la caméra
    (une seule fois).
 2. Présenter le **QR code** de l'étiquette devant l'objectif.
-3. La fiche de la commande s'affiche : client, total, paiement, liste des vêtements.
+3. La fiche de la commande s'affiche : client, total, paiement, vêtements et progression visuelle de l'étape actuelle. Le résultat du scan est annoncé à l'écran.
 
 **Si la caméra ne fonctionne pas** (autorisée refusée, objectif sale, étiquette
 abîmée) : saisir le code à la main dans le champ de recherche
@@ -278,26 +287,28 @@ abîmée) : saisir le code à la main dans le champ de recherche
 
 ### 4.3 Faire avancer une commande
 
-Depuis la fiche affichée, choisir le statut suivant :
+Depuis la fiche affichée, la progression indique l'étape actuelle et le bouton
+principal propose directement **l'étape suivante**. Les autres statuts possibles
+restent disponibles en dessous.
 
-**Reçue → En lavage → Repassage → Prête → Livrée**
-
-- Le bouton **Revenir à « … »** corrige une erreur de manipulation.
-- Une commande **annulée** ne peut plus être payée.
+- Le propriétaire peut revenir à une étape précédente pour corriger une erreur.
+- L'annulation demande une confirmation ; une commande **annulée** ne peut plus être payée.
 
 Le statut change **immédiatement** sur la tablette, sans réseau. Il est transmis
 au serveur dès le retour de la connexion.
 
 ### 4.4 Vérifier que tout est envoyé
 
-En haut de l'écran, le badge de synchronisation indique :
+En haut de l'écran, le badge indique l'état, le nombre d'éléments en attente
+(commandes, encaissements, réclamations et notifications locales) et la date de
+la dernière synchronisation réussie pour ce pressing.
 
 | Badge | Signification |
 | --- | --- |
-| 🟢 **Synchronisé** | Tout est enregistré sur le serveur. |
-| 🟠 **Hors ligne** | Pas de réseau : les commandes attendent sur la tablette. |
+| 🟢 **Synchronisé** | Aucun élément local n'attend son envoi. |
+| 🟠 **Hors ligne** | Pas de réseau : le travail reste enregistré sur la tablette. |
 | 🔵 **Synchronisation…** | Envoi en cours. |
-| 🔴 **Erreur de synchro** | Un envoi a échoué ; le texte de l'erreur est affiché à côté. |
+| 🔴 **Erreur de synchro** | L'erreur et la marche à suivre sont affichées ; le bouton **Synchroniser** permet de réessayer quand le réseau est disponible. |
 
 Le bouton **Synchroniser** force un envoi immédiat.
 
@@ -405,24 +416,24 @@ La structure du catalogue se gère **en ligne**. La grille de tarifs déjà mise
 en cache reste consultable pour prendre des commandes hors connexion ; les
 modifications de références et de tarifs attendent le retour du réseau.
 
-#### Modèles au kilo et forfaits de poids
+#### Modèles commerciaux et forfaits famille
 
 Menu **Modèles commerciaux** (propriétaire uniquement) : créer une offre **au
-kilo** ou un **forfait de poids**, puis renseigner le tarif, le poids inclus ou
-minimum, l'incrément de facturation, le minimum facturable, les conditions,
-exclusions, délai, collecte/livraison et les prestations incluses ou facturées
-en supplément. Le simulateur montre le calcul avant enregistrement.
+kilo**, un **forfait de poids** ou un **forfait famille**. Pour un forfait
+famille, indiquer le prix global, le nombre de pièces incluses, le supplément
+par pièce éventuel et les familles ou articles admissibles (sans sélection,
+tous les articles actifs sont proposés).
 
 À l'étape **Lignes** d'une nouvelle commande, choisir **Au kilo / forfait**,
-sélectionner un modèle et saisir le poids mesuré. Le kilo applique le minimum
-et l'incrément configurés ; le forfait applique le prix inclus et son supplément
-au-delà. Si aucun supplément n'a été défini, le poids dépassant le forfait exige
-un montant final validé avec le client. Le poids, le modèle, les prestations et
-les règles de prix utilisées sont figés sur la ligne de commande ; une
-modification ou un archivage ultérieur du modèle ne recalcule pas l'historique.
-Les modèles actifs déjà mis en cache peuvent être consultés hors ligne ;
-la synchronisation vérifie encore que le modèle est actif et que le montant
-correspond au tarif serveur.
+sélectionner le modèle et saisir soit le poids mesuré, soit la composition du
+forfait famille article par article. Le prix famille est calculé en fonction du
+nombre total de pièces ; si aucun supplément par pièce n'est défini, saisir le
+prix global confirmé avec le client lorsque la composition dépasse le nombre
+inclus. Le modèle, les quantités, les noms d'articles et les paramètres tarifaires
+sont enregistrés localement, même hors connexion. À la synchronisation, le
+forfait famille et sa composition sont transmis ensemble par une opération
+atomique, sans créer de doublon lors d'une nouvelle tentative. La composition
+reste visible dans le détail de commande et sur le reçu.
 
 ### 5.6 Créer les articles de stock et les fournisseurs
 
@@ -500,9 +511,19 @@ jours**, aujourd'hui compris.
   associées à une ligne de commande et leur coût unitaire figé. Cette marge est
   partielle : elle n'inclut ni les sorties non imputées, ni salaires, loyer ou
   charges ; ce n'est pas un bénéfice net.
+- **Charge et activité par membre** indiquent les commandes encore en cours,
+  les retards, les commandes créées sur la période et lesquelles sont
+  actuellement livrées. Les montants et identifiants de compte ne sont pas
+  affichés.
 - **Exporter en CSV** télécharge la synthèse, les variations, le détail quotidien,
-  la répartition des statuts et les cinq prestations principales, prêts pour un
-  tableur configuré en français.
+  la répartition des statuts, les cinq prestations principales et, lorsque la
+  liste de l'équipe est disponible, la charge par membre, prêts pour un tableur
+  configuré en français.
+
+> L'attribution affichée est l'affectation actuelle. Les changements
+> d'affectation passés et les horodatages de chaque étape ne sont pas conservés :
+> ces indicateurs ne constituent pas une mesure de productivité individuelle
+> ni un délai de traitement.
 
 > Les montants « encaissé » ne comptent que les **espèces** : les paiements
 > Mobile Money viennent du serveur et ne sont pas stockés sur la tablette. Les
