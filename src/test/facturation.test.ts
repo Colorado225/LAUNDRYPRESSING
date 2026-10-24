@@ -187,6 +187,12 @@ describe('lignesFacture', () => {
 
 describe('construireFacture', () => {
   const items = [ligne({ id: 'l1' }), ligne({ id: 'l2' }), ligne({ id: 'l3', price: 6_000 })]
+
+  it('refuse de produire une facture si une mesure est encore estimée', () => {
+    expect(() =>
+      construireFacture(commande(), [ligne({ id: 'estimée', priceStatus: 'ESTIMATED' })], []),
+    ).toThrow(/toutes les mesures ne sont pas confirmées/)
+  })
   const paiements = [
     paiement({ id: 'p2', amount: 2_000, receivedAt: '2026-03-15T08:00:00.000Z' }),
     paiement({ id: 'p1', amount: 2_000, receivedAt: '2026-03-14T10:00:00.000Z' }),

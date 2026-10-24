@@ -167,6 +167,17 @@ export const orderItemInputSchema = z.object({
   }
 })
 
+export const orderItemMeasurementSchema = z.object({
+  quantity: z
+    .number({ message: 'Indiquez une mesure valide.' })
+    .positive('La mesure doit être supérieure à zéro.')
+    .max(1_000_000)
+    .refine((value) => Number(value.toFixed(3)) === value, 'Trois décimales maximum pour la mesure.'),
+  priceStatus: z.enum(['CONFIRMED', 'ESTIMATED']),
+})
+
+export type UpdateOrderItemMeasurementInput = z.infer<typeof orderItemMeasurementSchema>
+
 export const createOrderSchema = z.object({
   customerName: z
     .string()

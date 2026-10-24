@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/localDb'
-import { createOrderLocal, updateOrderStatusLocal } from '@/db/ordersRepository'
+import {
+  createOrderLocal,
+  updateOrderItemMeasurementLocal,
+  updateOrderStatusLocal,
+} from '@/db/ordersRepository'
 import { useSyncStore } from '@/stores/syncStore'
 import { useTenantStore } from '@/lib/tenantContext'
 
@@ -249,6 +253,35 @@ describe('syncPendingOrders — envoi nominal', () => {
     expect(sentItems[0]?.order_id).toBe(order.id)
 
     expect(useSyncStore.getState().pendingCount).toBe(0)
+  })
+
+  it('synchronise une mesure corrigée hors ligne avec la version et les snapshots conservés', async () => {
+    const { order, items } = await seedOrder()
+    await syncPendingOrders()
+    await updateOrderItemMeasurementLocal(TENANT, order.id, items[0]!.id, {
+      quantity: 3,
+      priceStatus: 'CONFIRMED',
+    })
+    remote.calls.length = 0
+
+    const result = await syncPendingOrders()
+
+    expect(result).toMatchObject({ attempted: 1, succeeded: 1, failed: 0, conflicts: 0 })
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
+      'orders:update',
+      'order_items:upsert',
+    ])
+    const sentItems = remote.calls[1]?.rows as Array<Record<string, unknown>>
+    expect(sentItems[0]).toMatchObject({
+      quantity: 3,
+      billed_quantity: 3,
+      price: 7500,
+      price_status: 'CONFIRMED',
+      unit_price: 2500,
+      billing_unit: 'PIECE',
+    })
+    expect(sentItems[0]).not.toHaveProperty('payment_status')
+    expect((await db.orders.get(order.id))?.synced).toBe(1)
   })
 
   it('met à jour avec le jeton de version au lieu de réinsérer', async () => {

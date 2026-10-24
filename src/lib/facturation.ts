@@ -139,6 +139,10 @@ export function construireFacture(
   items: LocalOrderItem[],
   paiements: LocalCashPayment[],
 ): DocumentFacture {
+  if (items.some((item) => item.priceStatus === 'ESTIMATED')) {
+    throw new Error('La facture est bloquée tant que toutes les mesures ne sont pas confirmées.')
+  }
+
   const lignes = lignesFacture(items)
   const solde = computeBalance(order.totalAmount, order.paymentStatus, paiements)
 

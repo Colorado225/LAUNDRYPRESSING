@@ -59,6 +59,28 @@ export default function Facture() {
   }
 
   const { order, items } = data
+  const mesureAConfirmer = items.some((item) => item.priceStatus === 'ESTIMATED')
+
+  if (mesureAConfirmer) {
+    return (
+      <div className="space-y-4">
+        <Link
+          to={`/commandes/${order.id}`}
+          className="inline-flex min-h-12 items-center gap-2 text-sm font-semibold text-slate-600"
+        >
+          <ArrowLeft size={16} aria-hidden /> Retour à la commande
+        </Link>
+        <section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950">
+          <h1 className="text-lg font-bold">Facture en attente de confirmation</h1>
+          <p className="mt-2 text-sm">
+            Au moins une mesure est encore estimée. Confirmez ou corrigez toutes les lignes dans le
+            détail de la commande avant d’émettre la facture.
+          </p>
+        </section>
+      </div>
+    )
+  }
+
   const facture = construireFacture(order, items, paiements)
 
   const imprimer = () => imprimerDocument({ format: 'A4' })

@@ -1,11 +1,13 @@
 import { useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { OrderStatus } from '@/types/database'
+import type { UpdateOrderItemMeasurementInput } from '@/schemas/order'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
   countPendingOrders,
   createOrderLocal,
   updateOrderAssignmentLocal,
+  updateOrderItemMeasurementLocal,
   updateOrderStatusLocal,
   updateOrderDueDateLocal,
 } from './ordersRepository'
@@ -90,6 +92,19 @@ export function useCreateOrder() {
         )
       }
       return createOrderLocal(tenantId, input)
+    },
+    [tenantId],
+  )
+}
+
+/** Confirme ou corrige une mesure locale; la ligne et son total restent hors ligne. */
+export function useUpdateOrderItemMeasurement() {
+  const tenantId = useTenantStore((state) => state.tenantId)
+
+  return useCallback(
+    async (orderId: string, itemId: string, input: UpdateOrderItemMeasurementInput) => {
+      if (!tenantId) throw new Error('Aucun pressing sélectionné.')
+      return updateOrderItemMeasurementLocal(tenantId, orderId, itemId, input)
     },
     [tenantId],
   )

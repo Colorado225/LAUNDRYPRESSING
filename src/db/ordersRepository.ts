@@ -8,7 +8,12 @@ import type {
 import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
 import { calculerTarif } from '@/lib/catalogPricing'
-import { createOrderSchema, type CreateOrderInput } from '@/schemas/order'
+import {
+  createOrderSchema,
+  orderItemMeasurementSchema,
+  type CreateOrderInput,
+  type UpdateOrderItemMeasurementInput,
+} from '@/schemas/order'
 import {
   db,
   type LocalOrder,
@@ -111,6 +116,88 @@ export async function createOrderLocal(
   })
 
   return { order, items }
+}
+
+/**
+ * Confirme ou corrige une mesure de ligne en transaction locale unique.
+ *
+ * Le prix unitaire et les paramètres du catalogue restent figés. Seuls la
+ * quantité mesurée, sa confirmation, le total de ligne et le total commande
+ * changent. L'upsert de la ligne au retour du réseau déclenche l'historique
+ * tarifaire serveur, sans toucher aux états de paiement.
+ */
+export async function updateOrderItemMeasurementLocal(
+  tenantId: string,
+  orderId: string,
+  itemId: string,
+  input: UpdateOrderItemMeasurementInput,
+): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
+  const validated = orderItemMeasurementSchema.parse(input)
+
+  return db.transaction('rw', db.orders, db.orderItems, async () => {
+    const order = await db.orders.get(orderId)
+    const item = await db.orderItems.get(itemId)
+    if (!order || !item || item.orderId !== orderId) {
+      throw new Error('Commande ou ligne introuvable dans la base locale.')
+    }
+    if (order.tenantId !== tenantId || item.tenantId !== tenantId) {
+      throw new Error('Cette ligne n’appartient pas au pressing sélectionné.')
+    }
+    if (order.status === 'delivered' || order.status === 'cancelled') {
+      throw new Error('Une commande terminée ou annulée ne peut plus être corrigée.')
+    }
+    if (order.paymentStatus === 'paid') {
+      throw new Error('La commande est soldée : corrigez-la après régularisation du paiement.')
+    }
+    if (item.billingUnit === 'FLAT') {
+      throw new Error('Un forfait ne comporte pas de mesure à confirmer.')
+    }
+
+    const calcul = calculerTarif({
+      quantite: validated.quantity,
+      prixUnitaire: item.unitPrice,
+      unite: item.billingUnit,
+      quantiteMinimum: item.minimumQuantitySnapshot,
+      increment: item.billingIncrementSnapshot,
+      minimumFacturable: item.minimumChargeSnapshot,
+    })
+    const itemMisAJour: LocalOrderItem = {
+      ...item,
+      quantity: calcul.quantiteMesuree,
+      billedQuantity: calcul.quantiteFacturee,
+      price: calcul.total,
+      priceStatus: validated.priceStatus,
+    }
+
+    if (
+      itemMisAJour.quantity === item.quantity &&
+      itemMisAJour.billedQuantity === item.billedQuantity &&
+      itemMisAJour.price === item.price &&
+      itemMisAJour.priceStatus === item.priceStatus
+    ) {
+      return { order, item }
+    }
+
+    const toutesLesLignes = await db.orderItems.where('orderId').equals(orderId).toArray()
+    const nouveauTotal = toutesLesLignes.reduce(
+      (total, ligne) => total + (ligne.id === itemId ? itemMisAJour.price : ligne.price),
+      0,
+    )
+    if (!Number.isSafeInteger(nouveauTotal)) {
+      throw new Error('Le total de la commande dépasse le montant pris en charge.')
+    }
+
+    const commandeMiseAJour: LocalOrder = {
+      ...order,
+      totalAmount: nouveauTotal,
+      updatedAt: nowIso(),
+      synced: 0,
+      syncError: null,
+    }
+    await db.orderItems.put(itemMisAJour)
+    await db.orders.put(commandeMiseAJour)
+    return { order: commandeMiseAJour, item: itemMisAJour }
+  })
 }
 
 /**

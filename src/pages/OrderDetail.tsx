@@ -10,6 +10,7 @@ import {
 import toast from 'react-hot-toast'
 import PaymentButton from '@/components/PaymentButton'
 import QrCodeDisplay from '@/components/QrCodeDisplay'
+import OrderMeasurementEditor from '@/components/OrderMeasurementEditor'
 import { useLocalOrder, useUpdateOrderStatus } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
@@ -78,6 +79,7 @@ export default function OrderDetail() {
   }
 
   const { order, items } = data
+  const mesureAConfirmer = items.some((item) => item.priceStatus === 'ESTIMATED')
   const statusMeta = ORDER_STATUSES[order.status]
   const nextStatus = getNextStatus(order.status)
   const previousStatus = getPreviousStatus(order.status)
@@ -211,6 +213,17 @@ export default function OrderDetail() {
                 <p className="text-xs text-slate-500">
                   {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
                 </p>
+                <OrderMeasurementEditor
+                  orderId={order.id}
+                  item={item}
+                  editable={
+                    can(role, 'orders.editDetails') &&
+                    !order.syncConflict &&
+                    order.status !== 'delivered' &&
+                    order.status !== 'cancelled' &&
+                    order.paymentStatus !== 'paid'
+                  }
+                />
               </div>
               <span className="font-semibold text-brand-navy">
                 {seeAmounts ? formatFcfa(item.price) : '—'}
@@ -218,6 +231,12 @@ export default function OrderDetail() {
             </li>
           ))}
         </ul>
+        {mesureAConfirmer && (
+          <p role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            Facturation bloquée : confirmez ou corrigez chaque mesure estimée ci-dessus avant
+            d’encaisser ou d’émettre une facture.
+          </p>
+        )}
       </section>
 
       {/* Prise en charge : attribution à un employé */}
@@ -230,10 +249,10 @@ export default function OrderDetail() {
       <NotifyPanel order={order} />
 
       {/* Caisse : espèces, acompte, solde et reçu */}
-      {seeAmounts && <CashPanel order={order} autoOpen={reglerMaintenant} />}
+      {seeAmounts && !mesureAConfirmer && <CashPanel order={order} autoOpen={reglerMaintenant} />}
 
       {/* Paiement Mobile Money — initiation réservée au comptoir */}
-      {can(role, 'payments.initiate') && <PaymentButton order={order} />}
+      {can(role, 'payments.initiate') && !mesureAConfirmer && <PaymentButton order={order} />}
 
       {/* Étiquette QR — impression 80 mm */}
       <QrCodeDisplay order={order} items={items} tenantName={tenantName} />
