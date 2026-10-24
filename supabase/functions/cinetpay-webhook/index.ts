@@ -16,8 +16,8 @@ import { createAdminClient } from '../_shared/supabaseClients.ts'
  *     `POST /v2/payment/check` : impossible de marquer une commande payée sans
  *     une transaction réellement acceptée chez CinetPay.
  *  3. Le montant encaissé est comparé au montant attendu.
- *  4. Traitement idempotent : CinetPay peut notifier plusieurs fois la même
- *     transaction ; une commande déjà payée n'est pas modifiée à nouveau.
+ *  4. Finalisation atomique : transaction et commande sont mises à jour dans
+ *     une seule RPC PostgreSQL ; les notifications rejouées restent idempotentes.
  *
  * Cette fonction est déployée avec `verify_jwt = false` (CinetPay ne peut pas
  * fournir de JWT Supabase) — la sécurité vient des points 1 à 3.
@@ -151,90 +151,95 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   if (check.status !== 'ACCEPTED') {
-    await admin
+    const { data: updatedRows, error: updateError } = await admin
       .from('payment_transactions')
       .update({
         status: check.status === 'REFUSED' ? 'refused' : 'pending',
         payment_method: paymentMethod,
         operator_label: operatorLabel,
         signature_verified: signatureVerified,
-        provider_payload: { notification: payload, check: check.raw },
+        provider_payload: { mode: config.mode, notification: payload, check: check.raw },
       })
       .eq('id', transaction.id)
+      .neq('status', 'paid')
+      .select('id')
 
+    if (updateError) {
+      console.error('[cinetpay-webhook] mise à jour statut', updateError)
+      return apiError('payment_update_failed', 'Erreur interne.', 500)
+    }
+
+    if (!updatedRows?.length) {
+      return json({ status: 'already_paid', ignored: check.status }, 200)
+    }
     return json({ status: check.status }, 200)
   }
 
-  // Contrôle du montant : une transaction acceptée du mauvais montant est
-  // enregistrée mais la commande n'est pas marquée payée.
-  if (check.amount !== null && check.amount !== transaction.amount) {
-    console.error('[cinetpay-webhook] montant incohérent', {
+  // Un montant absent est aussi invalide qu'un montant différent : le statut
+  // ACCEPTED seul ne suffit jamais à marquer la commande payée.
+  if (check.amount === null || check.amount !== transaction.amount) {
+    console.error('[cinetpay-webhook] montant absent ou incohérent', {
       transactionId,
       attendu: transaction.amount,
       recu: check.amount,
     })
-    await admin
+
+    if (transaction.status === 'paid') {
+      return json({ status: 'already_paid', ignored: 'amount_mismatch' }, 200)
+    }
+
+    const { data: updatedRows, error: updateError } = await admin
       .from('payment_transactions')
       .update({
         status: 'error',
         payment_method: paymentMethod,
         operator_label: operatorLabel,
         signature_verified: signatureVerified,
-        provider_payload: { notification: payload, check: check.raw, error: 'montant_incoherent' },
+        provider_payload: {
+          mode: config.mode,
+          notification: payload,
+          check: check.raw,
+          error: 'amount_mismatch',
+        },
       })
       .eq('id', transaction.id)
-
-    return json({ status: 'amount_mismatch' }, 200)
-  }
-
-  // Idempotence : si déjà payée, on ne fait rien de plus.
-  if (transaction.status !== 'paid') {
-    const paidAt = new Date().toISOString()
-
-    // Compare-and-set sur le statut lu plus haut : deux notifications
-    // simultanées ne peuvent pas toutes deux marquer la commande comme payée.
-    // La seconde ne touche aucune ligne et s'arrête là.
-    const { data: updatedRows, error: updateError } = await admin
-      .from('payment_transactions')
-      .update({
-        status: 'paid',
-        payment_method: paymentMethod,
-        operator_label: operatorLabel,
-        signature_verified: signatureVerified,
-        paid_at: paidAt,
-        provider_payload: { notification: payload, check: check.raw },
-      })
-      .eq('id', transaction.id)
-      .eq('status', transaction.status)
+      .neq('status', 'paid')
       .select('id')
 
     if (updateError) {
-      console.error('[cinetpay-webhook] mise à jour transaction', updateError)
+      console.error('[cinetpay-webhook] enregistrement du montant incohérent', updateError)
       return apiError('payment_update_failed', 'Erreur interne.', 500)
     }
 
-    if (!updatedRows || updatedRows.length === 0) {
-      // Une notification concurrente a déjà traité cette transaction.
-      console.warn('[cinetpay-webhook] notification concurrente ignorée', { transactionId })
-      return json({ status: 'concurrent', ignored: true }, 200)
+    if (!updatedRows?.length) {
+      return json({ status: 'already_paid', ignored: 'amount_mismatch' }, 200)
     }
-
-    const { error: orderError } = await admin
-      .from('orders')
-      .update({
-        payment_status: 'paid',
-        payment_method: paymentMethod,
-        updated_at: paidAt,
-      })
-      .eq('id', transaction.order_id)
-
-    if (orderError) {
-      console.error('[cinetpay-webhook] mise à jour commande', orderError)
-      return apiError('order_update_failed', 'Erreur interne.', 500)
-    }
+    return json({ status: 'amount_mismatch' }, 200)
   }
 
-  return json({ status: 'ACCEPTED', payment_method: paymentMethod }, 200)
+  // La RPC verrouille la transaction, puis met à jour transaction et commande
+  // dans une seule transaction PostgreSQL. Elle répare aussi la commande si
+  // une notification ACCEPTED rejouée retrouve déjà la transaction payée.
+  const { data: finalized, error: finalizeError } = await admin.rpc(
+    'finalize_cinetpay_payment',
+    {
+      p_transaction_id: transaction.id,
+      p_amount: check.amount,
+      p_payment_method: paymentMethod,
+      p_operator_label: operatorLabel,
+      p_signature_verified: signatureVerified,
+      p_provider_payload: JSON.parse(
+        JSON.stringify({ mode: config.mode, notification: payload, check: check.raw }),
+      ),
+    },
+  )
+
+  if (finalizeError) {
+    console.error('[cinetpay-webhook] finalisation atomique', finalizeError)
+    return apiError('payment_finalize_failed', 'Erreur interne.', 500)
+  }
+
+  return json({ status: 'ACCEPTED', payment_method: paymentMethod, finalized }, 200)
 })
 
 /** Accepte `application/x-www-form-urlencoded` (format CinetPay) et JSON. */

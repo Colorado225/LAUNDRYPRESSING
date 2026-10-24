@@ -587,10 +587,13 @@ son navigateur avant la redirection. Chaque notification est traitée ainsi :
    16 champs (voir `_shared/cinetpay.ts`).
 3. Relecture du statut réel par appel serveur à `POST /v2/payment/check` :
    **une notification n'est jamais crue sur parole**.
-4. Comparaison du montant encaissé avec le montant attendu. En cas d'incohérence,
-   la transaction passe en `error` et la commande **n'est pas** marquée payée.
-5. Mise à jour idempotente : une transaction déjà `paid` est définitive ; une
-   notification tardive de refus ne peut pas annuler un paiement encaissé.
+4. Comparaison stricte du montant vérifié avec le montant attendu : un montant
+   absent ou différent est refusé et la commande **n'est pas** marquée payée.
+5. La RPC `finalize_cinetpay_payment` verrouille la transaction et met à jour
+   `payment_transactions` + `orders` dans une seule transaction SQL. Un échec
+   annule les deux écritures ; une notification `ACCEPTED` rejouée répare aussi
+   une éventuelle commande désynchronisée. Une notification tardive de refus
+   n'annule jamais un paiement déjà encaissé.
 
 Réponses HTTP : `200` sur succès ou transaction inconnue (pour éviter les relances
 infinies), `401` sur signature invalide, `503` si CinetPay est injoignable — dans ce
@@ -606,9 +609,13 @@ avec un bouton de actualisation manuelle.
 
 ### Configuration
 
-Renseigner les trois valeurs dans `.env`, puis lancer `npm run setup` : les
-secrets sont poussés côté Supabase et les deux fonctions déployées
-automatiquement (§3.3).
+Renseigner les trois valeurs dans `.env`, puis, après validation du projet
+cible, lancer `npm run setup` : les migrations en attente (dont
+`012_cinetpay_atomic.sql`), les secrets et les deux fonctions sont installés
+automatiquement (§3.3). Cette commande peut aussi provisionner le pressing et
+le compte propriétaire si leurs variables sont renseignées ; elle écrit sur
+Supabase. Pour les mises à jour suivantes, `npm run deploy:fonctions` suffit
+une fois les migrations appliquées.
 
 ```env
 CINETPAY_API_KEY=...

@@ -11,6 +11,10 @@
  *    `/v2/payment/check` : on ne fait jamais confiance au contenu du webhook.
  */
 
+// La configuration de l'Edge Function est lue à l'exécution dans Deno. Cette
+// déclaration locale permet également de tester les fonctions pures sous Node.
+declare const Deno: { env: { get(name: string): string | undefined } }
+
 export type CinetPayStatus = 'ACCEPTED' | 'REFUSED' | 'PENDING'
 
 export interface CinetPayConfig {

@@ -53,6 +53,7 @@ export const FICHIERS_SCHEMA = [
   'supabase/migrations/009_audit.sql',
   'supabase/migrations/010_notifications.sql',
   'supabase/migrations/011_superadmin_single.sql',
+  'supabase/migrations/012_cinetpay_atomic.sql',
   'supabase/seed.sql',
 ]
 
@@ -68,6 +69,7 @@ export const FICHIERS_TESTS = [
   'supabase/tests/inscription.sql',
   'supabase/tests/audit.sql',
   'supabase/tests/notifications.sql',
+  'supabase/tests/cinetpay_atomic.sql',
   'supabase/tests/recette_reelle.sql',
 ]
 

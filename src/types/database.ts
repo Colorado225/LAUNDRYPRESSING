@@ -6,6 +6,15 @@
  *   npx supabase gen types typescript --project-id <id> > src/types/database.ts
  */
 
+/** Valeurs JSON acceptées par les colonnes et fonctions PostgreSQL. */
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
 /** Rôles autorisés dans un pressing (voir contrainte SQL sur `tenant_users.role`). */
 export type TenantRole = 'owner' | 'receptionist' | 'artisan'
 
@@ -749,6 +758,17 @@ export interface Database {
           remaining: number
           duplicate: boolean
         }
+      }
+      finalize_cinetpay_payment: {
+        Args: {
+          p_transaction_id: string
+          p_amount: number
+          p_payment_method?: string | null
+          p_operator_label?: string | null
+          p_signature_verified?: boolean
+          p_provider_payload?: Json
+        }
+        Returns: Json
       }
       close_cash_session: {
         Args: {
