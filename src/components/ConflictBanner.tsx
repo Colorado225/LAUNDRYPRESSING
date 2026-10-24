@@ -51,8 +51,8 @@ export default function ConflictBanner({ order }: { order: LocalOrder }) {
       </p>
 
       <p className="mt-2 text-sm leading-relaxed">
-        Vos changements n’ont pas été appliqués pour ne pas écraser ceux de l’autre tablette.
-        Choisissez la version à conserver :
+        Une modification concurrente a été détectée : les mesures, les lignes et le total de cette
+        tablette n’ont pas écrasé ceux de l’autre appareil. Choisissez la version à conserver.
       </p>
 
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -78,8 +78,9 @@ export default function ConflictBanner({ order }: { order: LocalOrder }) {
       </div>
 
       <p className="mt-2 text-xs leading-relaxed text-rose-800">
-        « Garder mes modifications » écrasera l’autre tablette. « Prendre la version du serveur »
-        remplacera la commande sur cet appareil.
+        « Garder mes modifications » renverra vos mesures, lignes et total après relecture de la
+        version serveur. « Prendre la version du serveur » remplacera ces données locales par les
+        lignes et mesures du serveur.
       </p>
     </section>
   )

@@ -133,11 +133,11 @@ begin
 
   -- Une ligne libre (sans catalogue) reste possible.
   insert into public.order_items
-    (order_id, tenant_id, label, price)
+    (order_id, tenant_id, label, price, price_reason)
   values
     ('cccccccc-0000-4000-8000-0000000000c1',
      '11111111-1111-4111-8111-111111111111',
-     'Retouche spéciale', 1000);
+     'Retouche spéciale', 1000, 'Retouche demandée au comptoir.');
   raise notice 'OK 2.2 — ligne libre acceptée';
 end;
 $$;

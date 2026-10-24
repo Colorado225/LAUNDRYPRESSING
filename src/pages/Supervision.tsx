@@ -243,7 +243,7 @@ export default function Supervision() {
         <button
           type="button"
           onClick={() => void charger()}
-          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
         >
           <RefreshCw size={16} aria-hidden /> Rafraîchir
         </button>
@@ -310,7 +310,7 @@ export default function Supervision() {
                         void appliquer(pressing.tenant_id, event.target.value, 'active', 30)
                       }
                       aria-label={`Formule de ${pressing.tenant_name}`}
-                      className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs"
+                      className="min-h-12 rounded-lg border border-slate-300 bg-white px-2 text-xs"
                     >
                       {plans.map((plan) => (
                         <option key={plan.code} value={plan.code}>
@@ -323,7 +323,7 @@ export default function Supervision() {
                       onClick={() =>
                         void appliquer(pressing.tenant_id, pressing.plan_code ?? 'pro', 'active', 30)
                       }
-                      className="min-h-9 rounded-lg bg-brand-teal px-2.5 text-xs font-bold text-white"
+                      className="min-h-12 rounded-lg bg-brand-teal px-2.5 text-xs font-bold text-white"
                     >
                       +30 j
                     </button>
@@ -332,7 +332,7 @@ export default function Supervision() {
                       onClick={() =>
                         void appliquer(pressing.tenant_id, pressing.plan_code ?? 'pro', 'suspended', 0)
                       }
-                      className="min-h-9 rounded-lg border border-rose-300 px-2.5 text-xs font-bold text-rose-700"
+                      className="min-h-12 rounded-lg border border-rose-300 px-2.5 text-xs font-bold text-rose-700"
                     >
                       Suspendre
                     </button>
@@ -355,24 +355,24 @@ export default function Supervision() {
               value={nomBoutique}
               onChange={(event) => setNomBoutique(event.target.value)}
               placeholder="Nom de la boutique"
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-sm"
             />
             <input
               value={telBoutique}
               onChange={(event) => setTelBoutique(event.target.value)}
               placeholder="Téléphone (facultatif)"
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-sm"
             />
             <input
               value={proprietaire}
               onChange={(event) => setProprietaire(event.target.value)}
               placeholder="Identifiant Supabase du propriétaire (facultatif)"
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-3 font-mono text-xs"
+              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 font-mono text-xs"
             />
             <select
               value={planBoutique}
               onChange={(event) => setPlanBoutique(event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm"
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm"
             >
               {plans.map((plan) => (
                 <option key={plan.code} value={plan.code}>
@@ -384,7 +384,7 @@ export default function Supervision() {
               type="button"
               onClick={() => void ouvrirBoutique()}
               disabled={creation}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-bold text-white disabled:opacity-60"
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-bold text-white disabled:opacity-60"
             >
               {creation ? <Loader2 className="animate-spin" size={16} aria-hidden /> : <Plus size={16} aria-hidden />}
               Ouvrir la boutique
@@ -401,7 +401,7 @@ export default function Supervision() {
             <select
               value={tenantCible}
               onChange={(event) => setTenantCible(event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm"
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm"
             >
               <option value="">Choisir une boutique…</option>
               {pressings.map((pressing) => (
@@ -414,12 +414,12 @@ export default function Supervision() {
               value={compteCible}
               onChange={(event) => setCompteCible(event.target.value)}
               placeholder="Identifiant Supabase du compte"
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-3 font-mono text-xs"
+              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 font-mono text-xs"
             />
             <select
               value={roleCible}
               onChange={(event) => setRoleCible(event.target.value as TenantRole)}
-              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm"
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-2 text-sm"
             >
               <option value="owner">Propriétaire</option>
               <option value="receptionist">Réceptionniste</option>
@@ -429,7 +429,7 @@ export default function Supervision() {
               type="button"
               onClick={() => void rattacher()}
               disabled={ajout}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white disabled:opacity-60"
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white disabled:opacity-60"
             >
               {ajout ? <Loader2 className="animate-spin" size={16} aria-hidden /> : <UserPlus size={16} aria-hidden />}
               Rattacher
@@ -499,7 +499,7 @@ export default function Supervision() {
                       <button
                         type="button"
                         onClick={() => void repondre(demande.id)}
-                        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand-teal px-3 text-sm font-bold text-white"
+                        className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-3 text-sm font-bold text-white"
                       >
                         <CheckCircle2 size={16} aria-hidden /> Répondre et clôturer
                       </button>
@@ -509,7 +509,7 @@ export default function Supervision() {
                           setReponsePour(null)
                           setReponse('')
                         }}
-                        className="min-h-10 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600"
+                        className="min-h-12 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600"
                       >
                         Annuler
                       </button>
@@ -519,7 +519,7 @@ export default function Supervision() {
                   <button
                     type="button"
                     onClick={() => setReponsePour(demande.id)}
-                    className="mt-2 min-h-10 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600"
+                    className="mt-2 min-h-12 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600"
                   >
                     Répondre
                   </button>

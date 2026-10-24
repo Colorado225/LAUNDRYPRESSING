@@ -132,14 +132,14 @@ export default function CashPanel({
         <div className="flex flex-wrap gap-2">
           <Link
             to={`/commandes/${order.id}/recu`}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
+            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
           >
             <Printer size={14} aria-hidden />
             Reçu
           </Link>
           <Link
             to={`/commandes/${order.id}/facture`}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
+            className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
           >
             <FileText size={14} aria-hidden />
             Facture
@@ -295,7 +295,7 @@ export default function CashPanel({
               <button
                 type="button"
                 onClick={ouvrirRemboursement}
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
               >
                 Rembourser jusqu’à {formatFcfa(remboursable)}
               </button>

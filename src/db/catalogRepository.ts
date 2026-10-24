@@ -1,4 +1,8 @@
-import type { CatalogEntryRow } from '@/types/database'
+import type {
+  CatalogBillingUnit,
+  CatalogEntryRow,
+  CatalogPricingMode,
+} from '@/types/database'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { newId } from '@/lib/ids'
 import { db, type LocalCatalogEntry } from './localDb'
@@ -20,43 +24,102 @@ export interface CatalogEntryInput {
   article: string
   service: string
   price: number
+  pricingMode?: CatalogPricingMode
+  billingUnit?: CatalogBillingUnit
+  minimumQuantity?: number | null
+  billingIncrement?: number | null
+  minimumCharge?: number | null
+  conditions?: string | null
 }
 
-function toLocal(row: CatalogEntryRow): LocalCatalogEntry {
+function toLocal(
+  row: CatalogEntryRow,
+  familyName: string | null = null,
+  referencesActive = true,
+): LocalCatalogEntry {
   return {
     id: row.id,
     tenantId: row.tenant_id,
     article: row.article,
     service: row.service,
     price: row.price,
+    pricingMode: row.pricing_mode,
+    billingUnit: row.billing_unit,
+    familyName,
+    minimumQuantity: row.minimum_quantity,
+    billingIncrement: row.billing_increment,
+    minimumCharge: row.minimum_charge,
+    conditions: row.conditions,
+    requiresReview: row.requires_review,
     isActive: row.is_active,
+    referencesActive,
     sortOrder: row.sort_order,
   }
 }
 
-/** Copie locale du catalogue, triée pour l'affichage. */
-export async function getCachedCatalog(tenantId: string): Promise<LocalCatalogEntry[]> {
+/**
+ * Copie locale du catalogue, triée pour l'affichage.
+ *
+ * Les écrans de commande ne voient que les tarifs actifs. La gestion du
+ * catalogue peut demander les archives afin de les réactiver sans recréer une
+ * entrée ni casser les références des anciennes commandes.
+ */
+export async function getCachedCatalog(
+  tenantId: string,
+  options: { includeInactive?: boolean } = {},
+): Promise<LocalCatalogEntry[]> {
   const entrees = await db.catalogEntries.where('tenantId').equals(tenantId).toArray()
   return entrees
-    .filter((entree) => entree.isActive)
+    // Les propriétés ajoutées au cache sont normalisées à la lecture pour
+    // garder compatibles les données Dexie créées par une version précédente.
+    .map((entree) => ({
+      ...entree,
+      pricingMode: entree.pricingMode ?? (entree.price === 0 ? 'UNCONFIGURED' : 'FIXED'),
+      billingUnit:
+        (entree.pricingMode ?? (entree.price === 0 ? 'UNCONFIGURED' : 'FIXED')) === 'QUOTE'
+          ? 'FLAT'
+          : entree.billingUnit ?? 'PIECE',
+      familyName: entree.familyName ?? null,
+      minimumQuantity: entree.minimumQuantity ?? null,
+      billingIncrement: entree.billingIncrement ?? null,
+      minimumCharge: entree.minimumCharge ?? null,
+      conditions: entree.conditions ?? null,
+      // Une entrée mise en cache par une ancienne version n'a pas de preuve de
+      // validation : elle reste masquée jusqu'au prochain rafraîchissement serveur.
+      requiresReview: entree.requiresReview ?? true,
+      // Un ancien cache ne connaissait pas ces références structurées ; le
+      // prochain rafraîchissement serveur les vérifiera sans bloquer la saisie.
+      referencesActive: entree.referencesActive ?? true,
+    }))
+    .filter((entree) => options.includeInactive || entree.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.article.localeCompare(b.article, 'fr'))
 }
 
-/** Articles distincts du catalogue local (pour le sélecteur). */
+function tarifProposable(entree: LocalCatalogEntry): boolean {
+  return (
+    entree.isActive &&
+    entree.referencesActive !== false &&
+    !entree.requiresReview &&
+    entree.pricingMode !== 'UNCONFIGURED' &&
+    (entree.pricingMode === 'QUOTE' || entree.price > 0)
+  )
+}
+
+/** Articles distincts des tarifs prêts à être utilisés en commande. */
 export function uniqueArticles(entrees: LocalCatalogEntry[]): string[] {
-  const actives = entrees.filter((entree) => entree.isActive)
-  return [...new Set(actives.map((entree) => entree.article))].sort((a, b) =>
+  const proposables = entrees.filter(tarifProposable)
+  return [...new Set(proposables.map((entree) => entree.article))].sort((a, b) =>
     a.localeCompare(b, 'fr'),
   )
 }
 
-/** Prestations proposées pour un article donné. */
+/** Prestations utilisables pour un article donné, y compris les devis à confirmer. */
 export function servicesForArticle(
   entrees: LocalCatalogEntry[],
   article: string,
 ): LocalCatalogEntry[] {
   return entrees
-    .filter((entree) => entree.isActive && entree.article === article)
+    .filter((entree) => tarifProposable(entree) && entree.article === article)
     .sort((a, b) => a.service.localeCompare(b.service, 'fr'))
 }
 
@@ -77,9 +140,59 @@ export async function refreshCatalog(tenantId: string): Promise<boolean> {
 
     if (error || !data) return false
 
+    const articleIds = [...new Set(data.flatMap((row) => (row.article_id ? [row.article_id] : [])))]
+    const serviceIds = [...new Set(data.map((row) => row.service_id))]
+    const familleParArticle = new Map<string, string>()
+    const articleActifParId = new Map<string, boolean>()
+    const serviceActifParId = new Map<string, boolean>()
+
+    if (articleIds.length > 0) {
+      const { data: articles, error: erreurArticles } = await supabase
+        .from('catalog_articles')
+        .select('id,family_id,is_active')
+        .eq('tenant_id', tenantId)
+        .in('id', articleIds)
+      if (erreurArticles || !articles) return false
+
+      articles.forEach((article) => articleActifParId.set(article.id, article.is_active))
+      const familyIds = [...new Set(articles.map((article) => article.family_id))]
+      const { data: familles, error: erreurFamilles } = await supabase
+        .from('catalog_families')
+        .select('id,name')
+        .eq('tenant_id', tenantId)
+        .in('id', familyIds)
+      if (erreurFamilles || !familles) return false
+
+      const nomParFamille = new Map(familles.map((famille) => [famille.id, famille.name]))
+      articles.forEach((article) => {
+        const name = nomParFamille.get(article.family_id)
+        if (name) familleParArticle.set(article.id, name)
+      })
+    }
+
+    if (serviceIds.length > 0) {
+      const { data: services, error: erreurServices } = await supabase
+        .from('catalog_services')
+        .select('id,is_active')
+        .eq('tenant_id', tenantId)
+        .in('id', serviceIds)
+      if (erreurServices || !services) return false
+      services.forEach((service) => serviceActifParId.set(service.id, service.is_active))
+    }
+
     await db.transaction('rw', db.catalogEntries, async () => {
       await db.catalogEntries.where('tenantId').equals(tenantId).delete()
-      await db.catalogEntries.bulkPut(data.map(toLocal))
+      await db.catalogEntries.bulkPut(
+        data.map((row) => {
+          const articleActive = row.article_id ? articleActifParId.get(row.article_id) === true : true
+          const serviceActive = serviceActifParId.get(row.service_id) === true
+          return toLocal(
+            row,
+            row.article_id ? (familleParArticle.get(row.article_id) ?? null) : null,
+            articleActive && serviceActive,
+          )
+        }),
+      )
     })
 
     return true
@@ -102,6 +215,12 @@ export async function createCatalogEntry(
       article: input.article.trim(),
       service: input.service.trim(),
       price: input.price,
+      ...(input.pricingMode !== undefined ? { pricing_mode: input.pricingMode } : {}),
+      ...(input.billingUnit !== undefined ? { billing_unit: input.billingUnit } : {}),
+      ...(input.minimumQuantity !== undefined ? { minimum_quantity: input.minimumQuantity } : {}),
+      ...(input.billingIncrement !== undefined ? { billing_increment: input.billingIncrement } : {}),
+      ...(input.minimumCharge !== undefined ? { minimum_charge: input.minimumCharge } : {}),
+      ...(input.conditions !== undefined ? { conditions: input.conditions } : {}),
     })
     .select('*')
     .single()
@@ -112,26 +231,38 @@ export async function createCatalogEntry(
 
 /** Modifie une prestation existante (propriétaire, en ligne). */
 export async function updateCatalogEntry(
+  tenantId: string,
   entryId: string,
-  input: Partial<CatalogEntryInput> & { isActive?: boolean },
+  input: Partial<CatalogEntryInput> & { isActive?: boolean; requiresReview?: boolean },
 ): Promise<void> {
   const supabase = getSupabaseClient()
-  const { error } = await supabase
-    .from('catalog_entries')
+  const { data, error } = await supabase
+    .from('catalog_entries') // tenant_id est aussi vérifié en filtre après la mise à jour.
     .update({
       ...(input.article !== undefined ? { article: input.article.trim() } : {}),
       ...(input.service !== undefined ? { service: input.service.trim() } : {}),
       ...(input.price !== undefined ? { price: input.price } : {}),
+      ...(input.pricingMode !== undefined ? { pricing_mode: input.pricingMode } : {}),
+      ...(input.billingUnit !== undefined ? { billing_unit: input.billingUnit } : {}),
+      ...(input.minimumQuantity !== undefined ? { minimum_quantity: input.minimumQuantity } : {}),
+      ...(input.billingIncrement !== undefined ? { billing_increment: input.billingIncrement } : {}),
+      ...(input.minimumCharge !== undefined ? { minimum_charge: input.minimumCharge } : {}),
+      ...(input.conditions !== undefined ? { conditions: input.conditions } : {}),
+      ...(input.requiresReview !== undefined ? { requires_review: input.requiresReview } : {}),
       ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
     })
+    .eq('tenant_id', tenantId)
     .eq('id', entryId)
+    .select('id')
+    .maybeSingle()
 
   if (error) throw new Error(traduireErreurCatalogue(error.message, error.code))
+  if (!data) throw new Error('Tarif introuvable dans le catalogue de ce pressing.')
 }
 
 /** Désactive une prestation (historique préservé, elle n'est plus proposée). */
-export async function deactivateCatalogEntry(entryId: string): Promise<void> {
-  await updateCatalogEntry(entryId, { isActive: false })
+export async function deactivateCatalogEntry(tenantId: string, entryId: string): Promise<void> {
+  await updateCatalogEntry(tenantId, entryId, { isActive: false })
 }
 
 function traduireErreurCatalogue(message: string, code?: string): string {
@@ -209,6 +340,9 @@ export async function seedDefaultCatalog(tenantId: string): Promise<number> {
     article: entree.article,
     service: entree.service,
     price: entree.price,
+    pricing_mode: 'FIXED' as const,
+    billing_unit: 'PIECE' as const,
+    requires_review: true,
     sort_order: entree.sortOrder,
   }))
 

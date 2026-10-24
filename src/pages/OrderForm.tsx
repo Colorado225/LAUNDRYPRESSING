@@ -8,6 +8,8 @@ import {
   Lock,
   PenLine,
   Plus,
+  Package,
+  Scale,
   Trash2,
   UserRound,
   Shirt,
@@ -25,7 +27,15 @@ import {
   servicesForArticle,
   uniqueArticles,
 } from '@/db/catalogRepository'
-import type { LocalCatalogEntry } from '@/db/localDb'
+import type { LocalCatalogEntry, LocalLaundryModel } from '@/db/localDb'
+import { getCachedLaundryModels, refreshLaundryModels } from '@/db/laundryModelsRepository'
+import type {
+  CatalogBillingUnit,
+  CatalogPricingMode,
+  OrderItemPriceStatus,
+} from '@/types/database'
+import { calculerTarif, libelleUnite } from '@/lib/catalogPricing'
+import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
 
 /**
  * Création de commande — 100 % locale, en trois étapes.
@@ -51,14 +61,51 @@ const EMPTY_ITEM: OrderItemDraft = {
   fabricType: '',
   specialInstructions: '',
   price: 0,
+  quantity: 1,
+  billedQuantity: 1,
+  billingUnit: 'PIECE',
+  unitPrice: 0,
+  pricingMode: 'FIXED',
+  priceStatus: 'CONFIRMED',
   catalogEntryId: undefined,
   articleName: undefined,
   serviceName: undefined,
+  familyNameSnapshot: null,
+  catalogUnitPriceSnapshot: null,
+  minimumQuantitySnapshot: null,
+  billingIncrementSnapshot: null,
+  minimumChargeSnapshot: null,
+  conditionsSnapshot: null,
   priceReason: undefined,
+  laundryModelId: null,
+  laundryModelNameSnapshot: null,
+  laundryModelTypeSnapshot: null,
+  laundryWeightKg: null,
+  laundryPriceBreakdownSnapshot: null,
+  laundryServicesSnapshot: null,
+  laundryPricePerKgSnapshot: null,
+  laundryPackagePriceSnapshot: null,
+  laundryIncludedWeightKgSnapshot: null,
+  laundryOveragePricePerKgSnapshot: null,
+  laundryMinimumWeightKgSnapshot: null,
+  laundryBillingIncrementKgSnapshot: null,
+  laundryMinimumChargeSnapshot: null,
 }
 
 interface OrderItemDraft extends OrderItemInput {
-  mode: 'catalog' | 'free'
+  mode: 'catalog' | 'free' | 'laundry'
+  quantity: number
+  billedQuantity: number
+  billingUnit: CatalogBillingUnit
+  unitPrice: number
+  pricingMode: CatalogPricingMode
+  priceStatus: OrderItemPriceStatus
+  familyNameSnapshot: string | null
+  catalogUnitPriceSnapshot: number | null
+  minimumQuantitySnapshot: number | null
+  billingIncrementSnapshot: number | null
+  minimumChargeSnapshot: number | null
+  conditionsSnapshot: string | null
 }
 
 /** Règlement choisi à l'étape 3 ; aucun argent ne circule ici. */
@@ -66,9 +113,16 @@ type Paiement = 'plus-tard' | 'especes'
 
 const ETAPES = [
   { titre: 'Client', icon: UserRound },
-  { titre: 'Vêtements', icon: Shirt },
+  { titre: 'Lignes', icon: Shirt },
   { titre: 'Paiement', icon: Wallet },
 ] as const
+
+function etiquetteTarif(entree: LocalCatalogEntry): string {
+  if (entree.pricingMode === 'QUOTE') return 'Sur devis'
+  const prix = formatFcfa(entree.price)
+  const prefixe = entree.pricingMode === 'FROM' ? 'À partir de ' : ''
+  return `${prefixe}${prix} / ${libelleUnite(entree.billingUnit)}`
+}
 
 const clientSchema = createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true })
 const articlesSchema = createOrderSchema.pick({ items: true })
@@ -87,6 +141,7 @@ export default function OrderForm() {
   const [items, setItems] = useState<OrderItemDraft[]>([{ ...EMPTY_ITEM }])
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
   const [catalog, setCatalog] = useState<LocalCatalogEntry[]>([])
+  const [commercialModels, setCommercialModels] = useState<LocalLaundryModel[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
 
@@ -113,8 +168,23 @@ export default function OrderForm() {
     }
   }, [tenantId])
 
+  // Les modèles sont également lisibles hors ligne ; le serveur vérifiera
+  // leur activation et le montant au moment de la synchronisation.
+  useEffect(() => {
+    if (!tenantId) return
+    let actif = true
+    void getCachedLaundryModels(tenantId).then((models) => {
+      if (actif) setCommercialModels(models)
+    })
+    void refreshLaundryModels(tenantId).then((models) => {
+      if (actif) setCommercialModels(models)
+    }).catch(() => undefined)
+    return () => { actif = false }
+  }, [tenantId])
+
   const articles = useMemo(() => uniqueArticles(catalog), [catalog])
   const catalogueDisponible = articles.length > 0
+  const tarifsActifsExistants = catalog.some((entree) => entree.isActive)
 
   const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
 
@@ -142,7 +212,93 @@ export default function OrderForm() {
   }
 
   const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
-    setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+    setItems((current) =>
+      current.map((item, i) => {
+        if (i !== index) return item
+        const next = { ...item, ...patch }
+
+        if (next.laundryModelId && next.laundryModelTypeSnapshot) {
+          if (next.laundryModelTypeSnapshot === 'PER_KG') {
+            if (patch.quantity !== undefined) next.laundryWeightKg = next.quantity
+            if (patch.laundryWeightKg !== undefined) next.quantity = next.laundryWeightKg ?? 0
+          }
+          if (next.laundryModelTypeSnapshot === 'WEIGHT_PACKAGE') {
+            next.quantity = 1
+            if (patch.unitPrice !== undefined) {
+              return { ...next, price: next.unitPrice, billedQuantity: 1 }
+            }
+          }
+          const poids = next.laundryWeightKg ?? 0
+          if (poids <= 0 || !Number.isFinite(poids)) {
+            return { ...next, price: 0, billedQuantity: next.laundryModelTypeSnapshot === 'PER_KG' ? 0 : 1 }
+          }
+          try {
+            const result = calculateLaundryModelPrice({
+              model_type: next.laundryModelTypeSnapshot,
+              price_per_kg: next.laundryPricePerKgSnapshot ?? null,
+              package_price: next.laundryPackagePriceSnapshot ?? null,
+              included_weight_kg: next.laundryIncludedWeightKgSnapshot ?? null,
+              overage_price_per_kg: next.laundryOveragePricePerKgSnapshot ?? null,
+              minimum_weight_kg: next.laundryMinimumWeightKgSnapshot ?? null,
+              billing_increment_kg: next.laundryBillingIncrementKgSnapshot ?? null,
+              minimum_charge: next.laundryMinimumChargeSnapshot ?? null,
+            }, poids)
+            if (next.laundryModelTypeSnapshot === 'PER_KG') {
+              if (result.status === 'PRICED') {
+                return {
+                  ...next,
+                  quantity: poids,
+                  unitPrice: next.laundryPricePerKgSnapshot ?? 0,
+                  price: result.amount,
+                  billedQuantity: result.billedWeightKg,
+                  laundryPriceBreakdownSnapshot: result.breakdown,
+                }
+              }
+            } else if (result.status === 'PRICED') {
+              return {
+                ...next,
+                quantity: 1,
+                unitPrice: result.amount,
+                price: result.amount,
+                billedQuantity: 1,
+                pricingMode: 'FIXED',
+                priceStatus: 'CONFIRMED',
+                laundryPriceBreakdownSnapshot: result.breakdown,
+              }
+            } else {
+              return {
+                ...next,
+                quantity: 1,
+                price: next.unitPrice,
+                billedQuantity: 1,
+                pricingMode: 'QUOTE',
+                priceStatus: patch.priceStatus ?? 'ESTIMATED',
+                laundryPriceBreakdownSnapshot: result.breakdown,
+              }
+            }
+          } catch {
+            return { ...next, price: 0, billedQuantity: Math.max(0, next.quantity) }
+          }
+        }
+
+        if (next.quantity <= 0 || next.unitPrice <= 0) {
+          return { ...next, price: 0, billedQuantity: Math.max(0, next.quantity) }
+        }
+        try {
+          const calculation = calculerTarif({
+            quantite: next.quantity,
+            prixUnitaire: next.unitPrice,
+            unite: next.billingUnit,
+            quantiteMinimum: next.minimumQuantitySnapshot,
+            increment: next.billingIncrementSnapshot,
+            minimumFacturable: next.minimumChargeSnapshot,
+          })
+          return { ...next, price: calculation.total, billedQuantity: calculation.quantiteFacturee }
+        } catch {
+          return { ...next, price: 0, billedQuantity: Math.max(0, next.quantity) }
+        }
+      }),
+    )
   }
 
   const addItem = () =>
@@ -155,47 +311,160 @@ export default function OrderForm() {
     setItems((current) => (current.length === 1 ? current : current.filter((_, i) => i !== index)))
   }
 
-  const choisirArticle = (index: number, article: string) => {
-    const prestations = servicesForArticle(catalog, article)
-    const premiere = prestations[0]
-
+  const appliquerPrestation = (index: number, entree: LocalCatalogEntry) => {
     updateItem(index, {
-      articleName: article,
-      serviceName: premiere?.service,
-      catalogEntryId: premiere?.id,
-      price: premiere?.price ?? 0,
-      label: premiere ? `${article} — ${premiere.service}` : article,
-    })
-  }
-
-  const choisirPrestation = (index: number, entryId: string) => {
-    const entree = catalog.find((candidate) => candidate.id === entryId)
-    if (!entree) return
-
-    updateItem(index, {
+      mode: 'catalog',
       catalogEntryId: entree.id,
       articleName: entree.article,
       serviceName: entree.service,
-      price: entree.price,
+      familyNameSnapshot: entree.familyName,
+      catalogUnitPriceSnapshot: entree.price,
+      minimumQuantitySnapshot: entree.minimumQuantity,
+      billingIncrementSnapshot: entree.billingIncrement,
+      minimumChargeSnapshot: entree.minimumCharge,
+      conditionsSnapshot: entree.conditions,
+      pricingMode: entree.pricingMode,
+      billingUnit: entree.billingUnit,
+      quantity: 1,
+      billedQuantity: 1,
+      unitPrice: entree.pricingMode === 'QUOTE' ? 0 : entree.price,
+      priceStatus: entree.pricingMode === 'QUOTE' ? 'ESTIMATED' : 'CONFIRMED',
+      priceReason: undefined,
+      laundryModelId: null,
+      laundryModelNameSnapshot: null,
+      laundryModelTypeSnapshot: null,
+      laundryWeightKg: null,
+      laundryPriceBreakdownSnapshot: null,
+      laundryServicesSnapshot: null,
+      laundryPricePerKgSnapshot: null,
+      laundryPackagePriceSnapshot: null,
+      laundryIncludedWeightKgSnapshot: null,
+      laundryOveragePricePerKgSnapshot: null,
+      laundryMinimumWeightKgSnapshot: null,
+      laundryBillingIncrementKgSnapshot: null,
+      laundryMinimumChargeSnapshot: null,
       label: `${entree.article} — ${entree.service}`,
     })
   }
 
-  const basculerMode = (index: number, mode: 'catalog' | 'free') => {
+  const choisirArticle = (index: number, article: string) => {
+    const premiere = servicesForArticle(catalog, article)[0]
+    if (premiere) appliquerPrestation(index, premiere)
+  }
+
+  const choisirPrestation = (index: number, entryId: string) => {
+    const entree = catalog.find((candidate) => candidate.id === entryId)
+    if (entree) appliquerPrestation(index, entree)
+  }
+
+  const appliquerModeleCommercial = (index: number, model: LocalLaundryModel, poids = 1) => {
+    const result = calculateLaundryModelPrice({
+      model_type: model.modelType,
+      price_per_kg: model.pricePerKg,
+      package_price: model.packagePrice,
+      included_weight_kg: model.includedWeightKg,
+      overage_price_per_kg: model.overagePricePerKg,
+      minimum_weight_kg: model.minimumWeightKg,
+      billing_increment_kg: model.billingIncrementKg,
+      minimum_charge: model.minimumCharge,
+    }, poids)
+    const amount = result.status === 'PRICED' ? result.amount : 0
+    const unitPrice = model.modelType === 'PER_KG' ? model.pricePerKg ?? 0 : amount
+    const servicesSnapshot = model.services.length === 0
+      ? 'Aucune prestation associée'
+      : model.services.map((service) => `${service.inclusionMode === 'INCLUDED' ? 'Inclus' : 'Supplément'} : ${service.serviceName}`).join(', ').slice(0, 1000)
+
+    updateItem(index, {
+      mode: 'laundry',
+      label: model.name,
+      fabricType: '',
+      specialInstructions: '',
+      price: amount,
+      quantity: model.modelType === 'PER_KG' ? poids : 1,
+      billedQuantity: model.modelType === 'PER_KG' && result.status === 'PRICED' ? result.billedWeightKg : 1,
+      billingUnit: model.modelType === 'PER_KG' ? 'KG' : 'FLAT',
+      unitPrice,
+      pricingMode: result.status === 'QUOTE' ? 'QUOTE' : 'FIXED',
+      priceStatus: result.status === 'QUOTE' ? 'ESTIMATED' : 'CONFIRMED',
+      catalogEntryId: undefined,
+      articleName: undefined,
+      serviceName: model.modelType === 'PER_KG' ? 'Prestation au kilo' : 'Forfait de poids',
+      familyNameSnapshot: null,
+      catalogUnitPriceSnapshot: null,
+      minimumQuantitySnapshot: model.modelType === 'PER_KG' ? model.minimumWeightKg : null,
+      billingIncrementSnapshot: model.modelType === 'PER_KG' ? model.billingIncrementKg : null,
+      minimumChargeSnapshot: model.modelType === 'PER_KG' ? model.minimumCharge : null,
+      conditionsSnapshot: model.conditions,
+      priceReason: `Modèle commercial : ${model.name}`,
+      laundryModelId: model.id,
+      laundryModelNameSnapshot: model.name,
+      laundryModelTypeSnapshot: model.modelType,
+      laundryWeightKg: poids,
+      laundryPriceBreakdownSnapshot: result.breakdown,
+      laundryServicesSnapshot: servicesSnapshot,
+      laundryPricePerKgSnapshot: model.pricePerKg,
+      laundryPackagePriceSnapshot: model.packagePrice,
+      laundryIncludedWeightKgSnapshot: model.includedWeightKg,
+      laundryOveragePricePerKgSnapshot: model.overagePricePerKg,
+      laundryMinimumWeightKgSnapshot: model.minimumWeightKg,
+      laundryBillingIncrementKgSnapshot: model.billingIncrementKg,
+      laundryMinimumChargeSnapshot: model.minimumCharge,
+    })
+  }
+
+  const choisirModeleCommercial = (index: number, modelId: string) => {
+    const model = commercialModels.find((candidate) => candidate.id === modelId && candidate.isActive)
+    if (model) appliquerModeleCommercial(index, model)
+  }
+
+  const basculerMode = (index: number, mode: 'catalog' | 'free' | 'laundry') => {
+    const current = items[index]
+    if (!current) return
+    if (mode === 'laundry') {
+      const firstModel = commercialModels.find((model) => model.isActive)
+      if (firstModel) appliquerModeleCommercial(index, firstModel)
+      return
+    }
     if (mode === 'free') {
+      const tarifLibre = current.price > 0 ? current.price : current.unitPrice
       updateItem(index, {
         mode,
         catalogEntryId: undefined,
         articleName: undefined,
         serviceName: undefined,
+        familyNameSnapshot: null,
+        catalogUnitPriceSnapshot: null,
+        minimumQuantitySnapshot: null,
+        billingIncrementSnapshot: null,
+        minimumChargeSnapshot: null,
+        conditionsSnapshot: null,
+        pricingMode: 'FIXED',
+        billingUnit: 'PIECE',
+        quantity: 1,
+        billedQuantity: 1,
+        unitPrice: tarifLibre,
+        priceStatus: 'CONFIRMED',
+        priceReason: undefined,
+        laundryModelId: null,
+        laundryModelNameSnapshot: null,
+        laundryModelTypeSnapshot: null,
+        laundryWeightKg: null,
+        laundryPriceBreakdownSnapshot: null,
+        laundryServicesSnapshot: null,
+        laundryPricePerKgSnapshot: null,
+        laundryPackagePriceSnapshot: null,
+        laundryIncludedWeightKgSnapshot: null,
+        laundryOveragePricePerKgSnapshot: null,
+        laundryMinimumWeightKgSnapshot: null,
+        laundryBillingIncrementKgSnapshot: null,
+        laundryMinimumChargeSnapshot: null,
       })
       return
     }
 
-    const article = items[index]?.articleName ?? articles[0]
+    const article = current.articleName ?? articles[0]
     if (!article) return
     choisirArticle(index, article)
-    updateItem(index, { mode })
   }
 
   /**
@@ -234,27 +503,35 @@ export default function OrderForm() {
       // donnerait une commande gratuite par simple oubli de saisie.
       const sansPrix = items.findIndex((item) => item.price <= 0)
       if (sansPrix >= 0) {
-        setErrors([`Vêtement ${sansPrix + 1} : indiquez un prix supérieur à zéro.`])
+        setErrors([`Ligne ${sansPrix + 1} : indiquez un prix supérieur à zéro.`])
         return false
       }
 
       // Tarif dérogatoire : le serveur refuse un prix différent du catalogue
       // sans motif (22023). On bloque ici pour éviter un aller-retour inutile.
-      const derogeSansMotif = items.findIndex((item) => {
-        const prixCatalogue = catalog.find((entree) => entree.id === item.catalogEntryId)?.price
-        return (
-          item.mode === 'catalog' &&
-          item.catalogEntryId !== undefined &&
-          prixCatalogue !== undefined &&
-          item.price !== prixCatalogue &&
-          (item.priceReason ?? '').trim().length < 10
-        )
-      })
+      const derogeSansMotif = items.findIndex((item) =>
+        item.mode === 'catalog' &&
+        item.pricingMode !== 'QUOTE' &&
+        item.catalogUnitPriceSnapshot !== null &&
+        item.unitPrice !== item.catalogUnitPriceSnapshot &&
+        (item.priceReason ?? '').trim().length < 10,
+      )
 
       if (derogeSansMotif >= 0) {
         setErrors([
-          `Vêtement ${derogeSansMotif + 1} : un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).`,
+          `Ligne ${derogeSansMotif + 1} : un prix différent du catalogue exige un motif de 10 caractères minimum (geste commercial, tache, retouche…).`,
         ])
+        return false
+      }
+
+      const sousLeMinimum = items.findIndex(
+        (item) =>
+          item.pricingMode === 'FROM' &&
+          item.catalogUnitPriceSnapshot !== null &&
+          item.unitPrice < item.catalogUnitPriceSnapshot,
+      )
+      if (sousLeMinimum >= 0) {
+        setErrors([`Ligne ${sousLeMinimum + 1} : le tarif ne peut pas être inférieur au minimum annoncé.`])
         return false
       }
 
@@ -392,7 +669,7 @@ export default function OrderForm() {
           <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-                Vêtements
+                Lignes de commande
               </h2>
               <button
                 type="button"
@@ -400,40 +677,81 @@ export default function OrderForm() {
                 className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal active:bg-slate-50"
               >
                 <Plus size={16} aria-hidden />
-                Ajouter
+                Ajouter une ligne
               </button>
             </div>
 
             {!catalogueDisponible && (
               <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                Aucune prestation au catalogue pour l’instant : les lignes sont saisies
-                librement. Le propriétaire peut installer une grille de départ depuis
-                l’onglet « Prestations ».
+                {tarifsActifsExistants
+                  ? 'Aucun tarif actif n’est encore utilisable : les tarifs hérités doivent être confirmés ou les unités configurées. Une ligne libre reste possible avec un motif obligatoire.'
+                  : 'Aucune prestation active au catalogue : une ligne libre peut être saisie, avec un motif obligatoire de 10 caractères minimum.'}
               </p>
             )}
 
             <ul className="mt-3 space-y-3">
               {items.map((item, index) => (
                 <li key={index} className="rounded-xl bg-slate-50 p-3">
-                  {catalogueDisponible && (
-                    <div className="mb-3 flex gap-2">
-                      <ModeButton
-                        actif={item.mode === 'catalog'}
-                        onClick={() => basculerMode(index, 'catalog')}
-                        icon={<BookOpen size={14} aria-hidden />}
-                        label="Catalogue"
-                      />
-                      <ModeButton
-                        actif={item.mode === 'free'}
-                        onClick={() => basculerMode(index, 'free')}
-                        icon={<PenLine size={14} aria-hidden />}
-                        label="Saisie libre"
-                      />
-                    </div>
-                  )}
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {catalogueDisponible && <ModeButton
+                      actif={item.mode === 'catalog'}
+                      onClick={() => basculerMode(index, 'catalog')}
+                      icon={<BookOpen size={14} aria-hidden />}
+                      label="Catalogue à la pièce"
+                    />}
+                    <ModeButton
+                      actif={item.mode === 'free' || (item.mode === 'catalog' && !catalogueDisponible)}
+                      onClick={() => basculerMode(index, 'free')}
+                      icon={<PenLine size={14} aria-hidden />}
+                      label="Saisie libre"
+                    />
+                    {commercialModels.some((model) => model.isActive) && <ModeButton
+                      actif={item.mode === 'laundry'}
+                      onClick={() => basculerMode(index, 'laundry')}
+                      icon={item.laundryModelTypeSnapshot === 'WEIGHT_PACKAGE' ? <Package size={14} aria-hidden /> : <Scale size={14} aria-hidden />}
+                      label="Au kilo / forfait"
+                    />}
+                  </div>
 
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {item.mode === 'catalog' && catalogueDisponible ? (
+                    {item.mode === 'laundry' ? (
+                      <>
+                        <Field label="Modèle commercial" htmlFor={`item-laundry-model-${index}`}>
+                          <select
+                            id={`item-laundry-model-${index}`}
+                            value={item.laundryModelId ?? ''}
+                            onChange={(event) => choisirModeleCommercial(index, event.target.value)}
+                            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                          >
+                            {commercialModels.filter((model) => model.isActive).map((model) => (
+                              <option key={model.id} value={model.id}>
+                                {model.name} — {model.modelType === 'PER_KG' ? `${formatFcfa(model.pricePerKg ?? 0)} / kg` : `${formatFcfa(model.packagePrice ?? 0)} / forfait`}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field
+                          label="Poids mesuré (kg)"
+                          htmlFor={`item-laundry-weight-${index}`}
+                          hint={item.laundryPriceBreakdownSnapshot ?? 'Le tarif est calculé selon le modèle sélectionné.'}
+                        >
+                          <input
+                            id={`item-laundry-weight-${index}`}
+                            type="number"
+                            min={0.001}
+                            max={10000}
+                            step={0.001}
+                            inputMode="decimal"
+                            value={item.laundryWeightKg ?? ''}
+                            onChange={(event) => updateItem(index, { laundryWeightKg: event.target.value === '' ? 0 : Number(event.target.value) })}
+                            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                          />
+                        </Field>
+                        {item.laundryServicesSnapshot && (
+                          <p className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600 sm:col-span-2">Prestations : {item.laundryServicesSnapshot}</p>
+                        )}
+                      </>
+                    ) : item.mode === 'catalog' && catalogueDisponible ? (
                       <>
                         <Field label="Article" htmlFor={`item-article-${index}`}>
                           <select
@@ -461,19 +779,46 @@ export default function OrderForm() {
                             <option value="">Choisir une prestation…</option>
                             {servicesForArticle(catalog, item.articleName ?? '').map((entree) => (
                               <option key={entree.id} value={entree.id}>
-                                {entree.service} — {formatFcfa(entree.price)}
+                                {entree.service} — {etiquetteTarif(entree)}
                               </option>
                             ))}
                           </select>
                         </Field>
                       </>
                     ) : (
-                      <Field label="Vêtement" htmlFor={`item-label-${index}`}>
+                      <Field label="Article ou prestation" htmlFor={`item-label-${index}`}>
                         <input
                           id={`item-label-${index}`}
                           value={item.label}
                           onChange={(event) => updateItem(index, { label: event.target.value })}
                           placeholder="Costume 3 pièces"
+                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                        />
+                      </Field>
+                    )}
+
+                    {item.mode !== 'laundry' && item.billingUnit !== 'FLAT' && (
+                      <Field
+                        label={`Quantité (${libelleUnite(item.billingUnit)})`}
+                        htmlFor={`item-quantity-${index}`}
+                        hint={
+                          item.minimumQuantitySnapshot || item.billingIncrementSnapshot
+                            ? `Minimum ${item.minimumQuantitySnapshot ?? '—'} · pas de ${item.billingIncrementSnapshot ?? '—'}`
+                            : undefined
+                        }
+                      >
+                        <input
+                          id={`item-quantity-${index}`}
+                          type="number"
+                          min={1 / 1000}
+                          step={['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(item.billingUnit) ? 1 : 0.001}
+                          inputMode="decimal"
+                          value={item.quantity}
+                          onChange={(event) =>
+                            updateItem(index, {
+                              quantity: event.target.value === '' ? 0 : Number(event.target.value),
+                            })
+                          }
                           className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
                         />
                       </Field>
@@ -507,24 +852,43 @@ export default function OrderForm() {
 
                     <div className="flex items-end gap-2">
                       <Field
-                        label="Prix (FCFA)"
+                        label={
+                          item.mode === 'laundry' && item.laundryModelTypeSnapshot === 'PER_KG'
+                            ? 'Tarif du modèle (FCFA/kg)'
+                            : item.mode === 'laundry' && item.pricingMode === 'QUOTE'
+                              ? 'Montant final à valider (FCFA)'
+                              : item.mode === 'laundry'
+                                ? 'Montant du forfait (FCFA)'
+                                : item.pricingMode === 'QUOTE'
+                                  ? 'Montant du devis confirmé (FCFA)'
+                                  : `Prix unitaire (${libelleUnite(item.billingUnit)}, FCFA)`
+                        }
                         htmlFor={`item-price-${index}`}
                         hint={
-                          item.mode === 'catalog' && item.catalogEntryId
-                            ? 'Prix du catalogue — corrigeable au comptoir'
-                            : undefined
+                          item.mode === 'laundry'
+                            ? item.laundryModelTypeSnapshot === 'PER_KG'
+                              ? item.laundryPriceBreakdownSnapshot ?? 'Tarif pris dans le modèle commercial.'
+                              : item.pricingMode === 'QUOTE'
+                                ? 'Le forfait dépasse le poids inclus : confirmez le prix avec le client.'
+                                : item.laundryPriceBreakdownSnapshot ?? 'Montant calculé selon le modèle commercial.'
+                            : item.pricingMode === 'QUOTE'
+                              ? 'Le devis doit être confirmé avant l’enregistrement.'
+                              : item.catalogUnitPriceSnapshot !== null
+                              ? `Référence catalogue : ${formatFcfa(item.catalogUnitPriceSnapshot)} par ${libelleUnite(item.billingUnit)}.`
+                              : 'Une ligne libre nécessite un motif.'
                         }
                       >
                         <input
                           id={`item-price-${index}`}
                           type="number"
-                          min={0}
+                          min={1}
                           step={1}
                           inputMode="numeric"
-                          value={item.price === 0 ? '' : item.price}
+                          value={item.unitPrice === 0 ? '' : item.unitPrice}
+                          disabled={item.mode === 'laundry' && (item.laundryModelTypeSnapshot === 'PER_KG' || item.pricingMode !== 'QUOTE')}
                           onChange={(event) =>
                             updateItem(index, {
-                              price: event.target.value === '' ? 0 : Number(event.target.value),
+                              unitPrice: event.target.value === '' ? 0 : Number(event.target.value),
                             })
                           }
                           placeholder="5000"
@@ -536,43 +900,84 @@ export default function OrderForm() {
                         type="button"
                         onClick={() => removeItem(index)}
                         disabled={items.length === 1}
-                        aria-label={`Supprimer le vêtement ${index + 1}`}
+                        aria-label={`Supprimer la ligne ${index + 1}`}
                         className="mb-0 inline-flex size-12 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
                       >
                         <Trash2 size={18} aria-hidden />
                       </button>
                     </div>
 
-                    {(() => {
-                      const prixCatalogue = catalog.find(
-                        (entree) => entree.id === item.catalogEntryId,
-                      )?.price
-                      const deroge =
-                        item.mode === 'catalog' &&
-                        prixCatalogue !== undefined &&
-                        item.price !== prixCatalogue
+                    {['KG', 'M2', 'METER'].includes(item.billingUnit) && (
+                      <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={item.priceStatus === 'ESTIMATED'}
+                          onChange={(event) =>
+                            updateItem(index, {
+                              priceStatus: event.target.checked ? 'ESTIMATED' : 'CONFIRMED',
+                            })
+                          }
+                          className="size-4 accent-amber-600"
+                        />
+                        Poids ou mesure estimé : à confirmer avant le traitement
+                      </label>
+                    )}
 
-                      if (!deroge) return null
+                    {item.pricingMode === 'QUOTE' && (
+                      <label className="flex items-center gap-2 rounded-xl border border-brand-teal/30 bg-brand-teal/5 px-3 py-2 text-sm text-brand-navy sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={item.priceStatus === 'CONFIRMED'}
+                          disabled={item.unitPrice <= 0}
+                          onChange={(event) =>
+                            updateItem(index, {
+                              priceStatus: event.target.checked ? 'CONFIRMED' : 'ESTIMATED',
+                            })
+                          }
+                          className="size-4 accent-brand-teal"
+                        />
+                        J’ai confirmé ce montant final avec le client
+                      </label>
+                    )}
 
-                      return (
-                        <Field
-                          label="Motif du tarif dérogatoire"
-                          htmlFor={`item-reason-${index}`}
-                          hint={`Prix du catalogue : ${formatFcfa(prixCatalogue)}. Un motif est exigé et journalisé.`}
-                        >
-                          <input
-                            id={`item-reason-${index}`}
-                            value={item.priceReason ?? ''}
-                            onChange={(event) =>
-                              updateItem(index, { priceReason: event.target.value })
-                            }
-                            maxLength={300}
-                            placeholder="Geste commercial : tache ancienne signalée par le client"
-                            className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
-                          />
-                        </Field>
-                      )
-                    })()}
+                    {item.price > 0 && (
+                      <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700 sm:col-span-2">
+                        {item.laundryModelId
+                          ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'calcul selon modèle'}`
+                          : item.billingUnit === 'FLAT'
+                            ? 'Forfait × 1'
+                            : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré${item.priceStatus === 'ESTIMATED' ? ' (estimé)' : ''} · ${item.billedQuantity} ${libelleUnite(item.billingUnit)} facturé${item.billingUnit === 'PIECE' ? 'e' : 's'}`}
+                        {item.minimumChargeSnapshot && item.price === item.minimumChargeSnapshot
+                          ? ` · minimum facturable ${formatFcfa(item.minimumChargeSnapshot)}`
+                          : ''}
+                        {item.conditionsSnapshot ? ` · ${item.conditionsSnapshot}` : ''}
+                      </p>
+                    )}
+
+                    {item.mode !== 'laundry' && (item.mode === 'free' ||
+                      !item.catalogEntryId ||
+                      (item.pricingMode !== 'QUOTE' &&
+                        item.catalogUnitPriceSnapshot !== null &&
+                        item.unitPrice !== item.catalogUnitPriceSnapshot)) && (
+                      <Field
+                        label={item.catalogEntryId ? 'Motif du tarif dérogatoire' : 'Motif de la ligne libre'}
+                        htmlFor={`item-reason-${index}`}
+                        hint={
+                          item.catalogEntryId && item.catalogUnitPriceSnapshot !== null
+                            ? `Référence catalogue : ${formatFcfa(item.catalogUnitPriceSnapshot)} par ${libelleUnite(item.billingUnit)}. Motif de 10 caractères minimum.`
+                            : 'Motif obligatoire (10 caractères minimum) : prestation exceptionnelle, demande client…'
+                        }
+                      >
+                        <input
+                          id={`item-reason-${index}`}
+                          value={item.priceReason ?? ''}
+                          onChange={(event) => updateItem(index, { priceReason: event.target.value })}
+                          maxLength={300}
+                          placeholder="Demande particulière du client, retouche…"
+                          className="min-h-12 w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-base outline-none focus:border-amber-500"
+                        />
+                      </Field>
+                    )}
                   </div>
                 </li>
               ))}
@@ -602,7 +1007,7 @@ export default function OrderForm() {
                   <dd className="font-semibold text-slate-800">{dueDate || 'Non précisée'}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-slate-500">Nombre de vêtements</dt>
+                  <dt className="text-xs text-slate-500">Lignes de commande</dt>
                   <dd className="font-semibold text-slate-800">{items.length}</dd>
                 </div>
               </dl>
@@ -612,7 +1017,15 @@ export default function OrderForm() {
                   <li key={index} className="flex items-start justify-between gap-3 py-2 text-sm">
                     <span className="min-w-0">
                       <span className="block font-semibold text-slate-800">
-                        {item.label || `Vêtement ${index + 1}`}
+                        {item.label || `Ligne ${index + 1}`}
+                      </span>
+                      <span className="block text-xs text-slate-500">
+                        {item.laundryModelId
+                          ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}${item.priceStatus === 'ESTIMATED' ? ' · À confirmer' : ''}`
+                          : item.billingUnit === 'FLAT'
+                            ? `Forfait · ${formatFcfa(item.unitPrice)}`
+                            : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)} / ${libelleUnite(item.billingUnit)}`}
+                        {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ' : ''}
                       </span>
                       {(item.fabricType || item.specialInstructions) && (
                         <span className="block text-xs text-slate-500">
@@ -809,7 +1222,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       aria-pressed={actif}
-      className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+      className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
         actif
           ? 'border-brand-teal bg-brand-teal/10 text-brand-navy'
           : 'border-slate-300 bg-white text-slate-600 hover:border-brand-teal'

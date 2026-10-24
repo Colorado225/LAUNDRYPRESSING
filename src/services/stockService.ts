@@ -137,9 +137,89 @@ export interface MovementInput {
   kind: 'in' | 'out'
   quantity: number
   unitCost?: number | null
+  orderItemId?: string | null
   supplierId?: string | null
   reason?: string | null
 }
+
+export interface StockOrderItemChoice {
+  orderItemId: string
+  orderId: string
+  customerName: string
+  createdAt: string
+  label: string
+  amount: number
+}
+
+export interface StockConsumptionCost {
+  order_item_id: string
+  cost_amount: number
+  missing_cost_movements: number
+}
+
+/** Lignes récentes proposées pour imputer une consommation réelle. */
+export async function listRecentStockOrderItems(tenantId: string): Promise<StockOrderItemChoice[]> {
+  const supabase = requireClient()
+  const { data: orders, error: ordersError } = await supabase
+    .from('orders')
+    .select('id, customer_name, created_at, status')
+    .eq('tenant_id', tenantId)
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  if (ordersError) throw new Error(stockErrorMessage(ordersError.message))
+
+  const orderRows = orders ?? []
+  if (orderRows.length === 0) return []
+  const orderIds = orderRows.map((order) => order.id)
+  const { data: lines, error: linesError } = await supabase
+    .from('order_items')
+    .select('id, order_id, label, service_name, laundry_model_name_snapshot, price')
+    .eq('tenant_id', tenantId)
+    .in('order_id', orderIds)
+  if (linesError) throw new Error(stockErrorMessage(linesError.message))
+
+  const byId = new Map(orderRows.map((order) => [order.id, order]))
+  return (lines ?? []).flatMap((line) => {
+    const order = byId.get(line.order_id)
+    if (!order) return []
+    return [{
+      orderItemId: line.id,
+      orderId: line.order_id,
+      customerName: order.customer_name,
+      createdAt: order.created_at,
+      label: line.laundry_model_name_snapshot || line.service_name || line.label,
+      amount: line.price,
+    }]
+  })
+}
+
+/** Coûts unitaires figés, agrégés par ligne de commande côté serveur. */
+export async function listStockConsumptionCosts(
+  tenantId: string,
+  orderItemIds: string[],
+): Promise<StockConsumptionCost[]> {
+  if (!tenantId.trim()) throw new Error('Pressing actif introuvable.')
+  const ids = [...new Set(orderItemIds)]
+  if (ids.length === 0) return []
+  const batches: string[][] = []
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    batches.push(ids.slice(offset, offset + 500))
+  }
+  const responses = await Promise.all(batches.map(async (batch) => {
+    const { data, error } = await requireClient().rpc('report_stock_consumption_costs', {
+      p_order_item_ids: batch,
+    })
+    if (error) throw new Error(stockErrorMessage(error.message))
+    return data ?? []
+  }))
+  return responses.flat().map((row) => ({
+    order_item_id: row.order_item_id,
+    cost_amount: Number(row.cost_amount),
+    missing_cost_movements: Number(row.missing_cost_movements),
+  }))
+}
+
 
 export async function recordStockMovement(
   tenantId: string,
@@ -157,6 +237,7 @@ export async function recordStockMovement(
       kind: input.kind,
       quantity: input.quantity,
       unit_cost: input.unitCost ?? null,
+      order_item_id: input.kind === 'out' ? input.orderItemId ?? null : null,
       supplier_id: input.supplierId ?? null,
       reason: input.reason?.trim() ? input.reason.trim() : null,
     })

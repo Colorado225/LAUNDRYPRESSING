@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2, Printer } from 'lucide-react'
 import { useCashPayments, useLocalOrder } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
+import { libelleUnite } from '@/lib/catalogPricing'
 import { computeBalance } from '@/services/cashService'
 import { PAYMENT_METHOD_LABELS, ORDER_STATUSES } from '@/constants/orders'
 
@@ -129,6 +130,15 @@ export default function Receipt() {
                 {item.articleName ?? item.label}
                 {item.serviceName ? ` — ${item.serviceName}` : ''}
                 {item.fabricType ? ` (${item.fabricType})` : ''}
+                <span className="block text-[10px]">
+                  {item.laundryModelId
+                    ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
+                    : item.billingUnit === 'FLAT'
+                      ? `Forfait ${formatFcfa(item.unitPrice)}`
+                      : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé × ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                  {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ' : ''}
+                </span>
+                {item.laundryServicesSnapshot && <span className="block text-[9px]">Prestations : {item.laundryServicesSnapshot}</span>}
               </td>
               <td className="text-right whitespace-nowrap">{formatFcfa(item.price)}</td>
             </tr>

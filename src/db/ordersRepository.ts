@@ -7,7 +7,14 @@ import type {
 } from '@/types/database'
 import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
-import type { CreateOrderInput } from '@/schemas/order'
+import { calculerTarif } from '@/lib/catalogPricing'
+import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
+import {
+  createOrderSchema,
+  orderItemMeasurementSchema,
+  type CreateOrderInput,
+  type UpdateOrderItemMeasurementInput,
+} from '@/schemas/order'
 import {
   db,
   type LocalOrder,
@@ -33,30 +40,89 @@ export async function createOrderLocal(
   tenantId: string,
   input: CreateOrderInput,
 ): Promise<LocalOrderWithItems> {
+  const validated = createOrderSchema.parse(input)
   const createdAt = nowIso()
   const orderId = newId()
 
-  const items: LocalOrderItem[] = input.items.map((item) => ({
-    id: newId(),
-    orderId,
-    tenantId,
-    label: item.label,
-    fabricType: item.fabricType?.trim() ? item.fabricType.trim() : null,
-    specialInstructions: item.specialInstructions?.trim()
-      ? item.specialInstructions.trim()
-      : null,
-    price: item.price,
-    catalogEntryId: item.catalogEntryId ?? null,
-    articleName: item.articleName?.trim() ? item.articleName.trim() : null,
-    serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
-    priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
-  }))
+  const items: LocalOrderItem[] = validated.items.map((item) => {
+    const quantity = item.quantity ?? 1
+    const billingUnit = item.billingUnit ?? 'PIECE'
+    const unitPrice = item.unitPrice ?? item.price
+    const calculated = calculerTarif({
+      quantite: quantity,
+      prixUnitaire: unitPrice,
+      unite: billingUnit,
+      quantiteMinimum: item.minimumQuantitySnapshot,
+      increment: item.billingIncrementSnapshot,
+      minimumFacturable: item.minimumChargeSnapshot,
+    })
+
+    if (item.laundryModelId && item.laundryModelTypeSnapshot && item.laundryWeightKg) {
+      const modelPrice = calculateLaundryModelPrice({
+        model_type: item.laundryModelTypeSnapshot,
+        price_per_kg: item.laundryPricePerKgSnapshot ?? null,
+        package_price: item.laundryPackagePriceSnapshot ?? null,
+        included_weight_kg: item.laundryIncludedWeightKgSnapshot ?? null,
+        overage_price_per_kg: item.laundryOveragePricePerKgSnapshot ?? null,
+        minimum_weight_kg: item.laundryMinimumWeightKgSnapshot ?? null,
+        billing_increment_kg: item.laundryBillingIncrementKgSnapshot ?? null,
+        minimum_charge: item.laundryMinimumChargeSnapshot ?? null,
+      }, item.laundryWeightKg)
+      if (modelPrice.status === 'PRICED' && modelPrice.amount !== calculated.total) {
+        throw new Error('Le montant de la ligne ne correspond pas au modèle commercial sélectionné.')
+      }
+      if (modelPrice.status === 'QUOTE' && calculated.total < (item.laundryPackagePriceSnapshot ?? 0)) {
+        throw new Error('Le montant validé ne peut pas être inférieur au prix du forfait.')
+      }
+    }
+
+    return {
+      id: newId(),
+      orderId,
+      tenantId,
+      label: item.label,
+      fabricType: item.fabricType?.trim() ? item.fabricType.trim() : null,
+      specialInstructions: item.specialInstructions?.trim()
+        ? item.specialInstructions.trim()
+        : null,
+      price: calculated.total,
+      quantity,
+      billedQuantity: calculated.quantiteFacturee,
+      billingUnit,
+      unitPrice,
+      pricingMode: item.pricingMode ?? 'FIXED',
+      priceStatus: item.priceStatus ?? 'CONFIRMED',
+      catalogEntryId: item.catalogEntryId ?? null,
+      articleName: item.articleName?.trim() ? item.articleName.trim() : null,
+      serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
+      familyNameSnapshot: item.familyNameSnapshot ?? null,
+      catalogUnitPriceSnapshot: item.catalogUnitPriceSnapshot ?? null,
+      minimumQuantitySnapshot: item.minimumQuantitySnapshot ?? null,
+      billingIncrementSnapshot: item.billingIncrementSnapshot ?? null,
+      minimumChargeSnapshot: item.minimumChargeSnapshot ?? null,
+      conditionsSnapshot: item.conditionsSnapshot ?? null,
+      priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
+      laundryModelId: item.laundryModelId ?? null,
+      laundryModelNameSnapshot: item.laundryModelNameSnapshot ?? null,
+      laundryModelTypeSnapshot: item.laundryModelTypeSnapshot ?? null,
+      laundryWeightKg: item.laundryWeightKg ?? null,
+      laundryPriceBreakdownSnapshot: item.laundryPriceBreakdownSnapshot ?? null,
+      laundryServicesSnapshot: item.laundryServicesSnapshot ?? null,
+      laundryPricePerKgSnapshot: item.laundryPricePerKgSnapshot ?? null,
+      laundryPackagePriceSnapshot: item.laundryPackagePriceSnapshot ?? null,
+      laundryIncludedWeightKgSnapshot: item.laundryIncludedWeightKgSnapshot ?? null,
+      laundryOveragePricePerKgSnapshot: item.laundryOveragePricePerKgSnapshot ?? null,
+      laundryMinimumWeightKgSnapshot: item.laundryMinimumWeightKgSnapshot ?? null,
+      laundryBillingIncrementKgSnapshot: item.laundryBillingIncrementKgSnapshot ?? null,
+      laundryMinimumChargeSnapshot: item.laundryMinimumChargeSnapshot ?? null,
+    }
+  })
 
   const order: LocalOrder = {
     id: orderId,
     tenantId,
-    customerName: input.customerName.trim(),
-    customerPhone: input.customerPhone.trim(),
+    customerName: validated.customerName,
+    customerPhone: validated.customerPhone,
     status: 'received',
     qrCode: buildQrString(tenantId, orderId),
     photoUrl: null,
@@ -65,8 +131,8 @@ export async function createOrderLocal(
     paymentMethod: null,
     createdAt,
     updatedAt: createdAt,
-    dueDate: input.dueDate ?? null,
-    assignedTo: input.assignedTo ?? null,
+    dueDate: validated.dueDate ?? null,
+    assignedTo: validated.assignedTo ?? null,
     assignedAt: null,
     statusReason: null,
     // Une commande neuve n'existe pas encore côté serveur.
@@ -83,6 +149,107 @@ export async function createOrderLocal(
   })
 
   return { order, items }
+}
+
+/**
+ * Confirme ou corrige une mesure de ligne en transaction locale unique.
+ *
+ * Le prix unitaire et les paramètres du catalogue restent figés. Seuls la
+ * quantité mesurée, sa confirmation, le total de ligne et le total commande
+ * changent. L'upsert de la ligne au retour du réseau déclenche l'historique
+ * tarifaire serveur, sans toucher aux états de paiement.
+ */
+export async function updateOrderItemMeasurementLocal(
+  tenantId: string,
+  orderId: string,
+  itemId: string,
+  input: UpdateOrderItemMeasurementInput,
+): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
+  const validated = orderItemMeasurementSchema.parse(input)
+
+  return db.transaction('rw', db.orders, db.orderItems, async () => {
+    const order = await db.orders.get(orderId)
+    const item = await db.orderItems.get(itemId)
+    if (!order || !item || item.orderId !== orderId) {
+      throw new Error('Commande ou ligne introuvable dans la base locale.')
+    }
+    if (order.tenantId !== tenantId || item.tenantId !== tenantId) {
+      throw new Error('Cette ligne n’appartient pas au pressing sélectionné.')
+    }
+    if (order.status === 'delivered' || order.status === 'cancelled') {
+      throw new Error('Une commande terminée ou annulée ne peut plus être corrigée.')
+    }
+    if (order.paymentStatus === 'paid') {
+      throw new Error('La commande est soldée : corrigez-la après régularisation du paiement.')
+    }
+    if (item.billingUnit === 'FLAT') {
+      throw new Error('Un forfait ne comporte pas de mesure à confirmer.')
+    }
+
+    const calcul = calculerTarif({
+      quantite: validated.quantity,
+      prixUnitaire: item.unitPrice,
+      unite: item.billingUnit,
+      quantiteMinimum: item.minimumQuantitySnapshot,
+      increment: item.billingIncrementSnapshot,
+      minimumFacturable: item.minimumChargeSnapshot,
+    })
+    let laundryBreakdown = item.laundryPriceBreakdownSnapshot
+    if (item.laundryModelId && item.laundryModelTypeSnapshot === 'PER_KG') {
+      const result = calculateLaundryModelPrice({
+        model_type: 'PER_KG',
+        price_per_kg: item.laundryPricePerKgSnapshot ?? null,
+        package_price: null,
+        included_weight_kg: null,
+        overage_price_per_kg: null,
+        minimum_weight_kg: item.laundryMinimumWeightKgSnapshot ?? null,
+        billing_increment_kg: item.laundryBillingIncrementKgSnapshot ?? null,
+        minimum_charge: item.laundryMinimumChargeSnapshot ?? null,
+      }, validated.quantity)
+      if (result.status !== 'PRICED' || result.amount !== calcul.total) {
+        throw new Error('Le poids ne correspond plus au tarif du modèle commercial.')
+      }
+      laundryBreakdown = result.breakdown
+    }
+
+    const itemMisAJour: LocalOrderItem = {
+      ...item,
+      quantity: calcul.quantiteMesuree,
+      billedQuantity: calcul.quantiteFacturee,
+      price: calcul.total,
+      priceStatus: validated.priceStatus,
+      ...(item.laundryModelId ? { laundryWeightKg: validated.quantity, laundryPriceBreakdownSnapshot: laundryBreakdown } : {}),
+    }
+
+    if (
+      itemMisAJour.quantity === item.quantity &&
+      itemMisAJour.billedQuantity === item.billedQuantity &&
+      itemMisAJour.price === item.price &&
+      itemMisAJour.priceStatus === item.priceStatus
+    ) {
+      return { order, item }
+    }
+
+    const toutesLesLignes = await db.orderItems.where('orderId').equals(orderId).toArray()
+    const nouveauTotal = toutesLesLignes.reduce(
+      (total, ligne) => total + (ligne.id === itemId ? itemMisAJour.price : ligne.price),
+      0,
+    )
+    if (!Number.isSafeInteger(nouveauTotal)) {
+      throw new Error('Le total de la commande dépasse le montant pris en charge.')
+    }
+
+    const commandeMiseAJour: LocalOrder = {
+      ...order,
+      totalAmount: nouveauTotal,
+      updatedAt: nowIso(),
+      synced: 0,
+      syncError: null,
+    }
+    await db.orderItems.put(itemMisAJour)
+    await db.orders.put(commandeMiseAJour)
+    return { order: commandeMiseAJour, item: itemMisAJour }
+  })
 }
 
 /**
@@ -336,6 +503,9 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
 }
 
 export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
+  // L'API reçoit une ligne forfaitaire cohérente pour son premier contrôle,
+  // puis le déclencheur commercial valide le poids et restaure les instantanés.
+  const modeleCommercial = Boolean(item.laundryModelId)
   return {
     id: item.id,
     order_id: item.orderId,
@@ -344,10 +514,35 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     fabric_type: item.fabricType,
     special_instructions: item.specialInstructions,
     price: item.price,
+    quantity: modeleCommercial ? 1 : item.quantity,
+    billed_quantity: modeleCommercial ? 1 : item.billedQuantity,
+    billing_unit: modeleCommercial ? 'FLAT' : item.billingUnit,
+    unit_price: modeleCommercial ? item.price : item.unitPrice,
+    pricing_mode: modeleCommercial ? 'FIXED' : item.pricingMode,
+    price_status: item.priceStatus,
     catalog_entry_id: item.catalogEntryId,
     article_name: item.articleName,
     service_name: item.serviceName,
+    family_name_snapshot: item.familyNameSnapshot,
+    catalog_unit_price_snapshot: item.catalogUnitPriceSnapshot,
+    minimum_quantity_snapshot: item.minimumQuantitySnapshot,
+    billing_increment_snapshot: item.billingIncrementSnapshot,
+    minimum_charge_snapshot: item.minimumChargeSnapshot,
+    conditions_snapshot: item.conditionsSnapshot,
     price_reason: item.priceReason,
+    laundry_model_id: item.laundryModelId ?? null,
+    laundry_model_name_snapshot: item.laundryModelNameSnapshot ?? null,
+    laundry_model_type_snapshot: item.laundryModelTypeSnapshot ?? null,
+    laundry_weight_kg: item.laundryWeightKg ?? null,
+    laundry_price_breakdown_snapshot: item.laundryPriceBreakdownSnapshot ?? null,
+    laundry_services_snapshot: item.laundryServicesSnapshot ?? null,
+    laundry_price_per_kg_snapshot: item.laundryPricePerKgSnapshot ?? null,
+    laundry_package_price_snapshot: item.laundryPackagePriceSnapshot ?? null,
+    laundry_included_weight_kg_snapshot: item.laundryIncludedWeightKgSnapshot ?? null,
+    laundry_overage_price_per_kg_snapshot: item.laundryOveragePricePerKgSnapshot ?? null,
+    laundry_minimum_weight_kg_snapshot: item.laundryMinimumWeightKgSnapshot ?? null,
+    laundry_billing_increment_kg_snapshot: item.laundryBillingIncrementKgSnapshot ?? null,
+    laundry_minimum_charge_snapshot: item.laundryMinimumChargeSnapshot ?? null,
   }
 }
 

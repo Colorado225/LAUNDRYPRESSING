@@ -73,6 +73,18 @@ function ligne(
     fabricType: null,
     specialInstructions: null,
     price: 1_500,
+    quantity: 1,
+    billedQuantity: 1,
+    billingUnit: 'PIECE',
+    unitPrice: 1_500,
+    pricingMode: 'FIXED',
+    priceStatus: 'CONFIRMED',
+    familyNameSnapshot: null,
+    catalogUnitPriceSnapshot: null,
+    minimumQuantitySnapshot: null,
+    billingIncrementSnapshot: null,
+    minimumChargeSnapshot: null,
+    conditionsSnapshot: null,
     catalogEntryId: null,
     articleName: 'Chemise',
     serviceName: 'Lavage',
@@ -251,16 +263,73 @@ describe('computeRapport sur 30 jours', () => {
   })
 })
 
+describe('coûts de consommables et marge partielle', () => {
+  it('calcule les coûts liés, signale les mouvements non chiffrés et compare les périodes', () => {
+    const orders = [
+      commande({ id: 'c-actuelle', totalAmount: 5_000, createdAt: '2026-10-23T08:00:00.000Z' }),
+      commande({ id: 'c-precedente', totalAmount: 4_000, createdAt: '2026-10-14T08:00:00.000Z' }),
+    ]
+    const items = [
+      ligne({ id: 'l-actuelle', orderId: 'c-actuelle', price: 5_000 }),
+      ligne({ id: 'l-precedente', orderId: 'c-precedente', price: 4_000 }),
+    ]
+    const rapport = computeRapport(orders, items, [], {
+      jours: 7,
+      aujourdhui: AUJOURDHUI,
+      stockCosts: [
+        { order_item_id: 'l-actuelle', cost_amount: 1_200, missing_cost_movements: 1 },
+        { order_item_id: 'l-precedente', cost_amount: 400, missing_cost_movements: 0 },
+      ],
+    })
+    expect(rapport.coutConsommables).toBe(1_200)
+    expect(rapport.margeApresConsommables).toBe(3_800)
+    expect(rapport.lignesAvecConsommation).toBe(1)
+    expect(rapport.mouvementsSansCout).toBe(1)
+    expect(rapport.variation.coutConsommables).toBe(200)
+    expect(rapport.variation.margeApresConsommables).toBe(6)
+  })
+
+  it('distingue un rapport indisponible d’un coût connu nul', () => {
+    const orders = [commande({ id: 'c1', createdAt: '2026-10-23T08:00:00.000Z' })]
+    const indisponible = computeRapport(orders, [], [], { jours: 7, aujourdhui: AUJOURDHUI })
+    const sansConsommation = computeRapport(orders, [], [], {
+      jours: 7, aujourdhui: AUJOURDHUI, stockCosts: [],
+    })
+    expect(indisponible.coutConsommables).toBeNull()
+    expect(sansConsommation.coutConsommables).toBe(0)
+  })
+})
+
 describe('rapportCsv', () => {
-  it('produit un en-tête et une ligne par jour, séparateur point-virgule', () => {
+  it('exporte la synthèse, les détails quotidiens et les prestations', () => {
     const orders = [
       commande({ id: 'c1', totalAmount: 5_000, createdAt: '2026-10-23T08:00:00.000Z' }),
     ]
-    const rapport = computeRapport(orders, [], [], { jours: 7, aujourdhui: AUJOURDHUI })
-    const lignes = rapportCsv(rapport).split('\n')
-    expect(lignes[0]).toBe('date;facture;encaisse;commandes')
-    expect(lignes).toHaveLength(1 + 7 + 2)
-    expect(lignes.at(-1)).toBe('total;5000;0;1')
+    const rapport = computeRapport(orders, [ligne({ id: 'l1', orderId: 'c1', serviceName: 'Lavage' })], [], {
+      jours: 7,
+      aujourdhui: AUJOURDHUI,
+      stockCosts: [{ order_item_id: 'l1', cost_amount: 800, missing_cost_movements: 0 }],
+    })
+    const csv = rapportCsv(rapport)
+    const lignes = csv.split('\n')
+    expect(lignes[0]).toBe('Synthèse;Indicateur;Valeur')
+    expect(csv).toContain('Coûts de consommables imputés (FCFA);800')
+    expect(csv).toContain('Marge après consommables imputés (FCFA);4200')
+    expect(csv).toContain('Date;Facturé (FCFA);Espèces (FCFA);Commandes')
+    expect(csv).toContain('Total;5000;0;1')
+    expect(csv).toContain('Lavage;1;1500')
+    expect(lignes.length).toBeGreaterThan(10)
+  })
+
+  it('neutralise une formule de tableur dans un libellé fourni par l’utilisateur', () => {
+    const order = commande({ id: 'c1', totalAmount: 100, createdAt: '2026-10-23T08:00:00.000Z' })
+    const report = computeRapport(
+      [order],
+      [ligne({ id: 'l1', orderId: 'c1', label: '=HYPERLINK("https://bad")', serviceName: null })],
+      [],
+      { jours: 7, aujourdhui: AUJOURDHUI, stockCosts: [] },
+    )
+    expect(rapportCsv(report)).toContain("'=HYPERLINK(")
   })
 })
 

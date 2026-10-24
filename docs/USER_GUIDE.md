@@ -80,17 +80,25 @@ Le bouton **Précédent** permet de revenir corriger une étape déjà validée.
 2. **Étape 1 — Client** : **nom**, **téléphone** et, si on l'a promis, la
    **date de livraison**. Puis **Suivant**.
 3. **Étape 2 — Vêtements** : ajouter chaque pièce (bouton **Ajouter**) :
-   - choisir l'**article** et la **prestation** au catalogue : le prix se remplit
-     tout seul ;
-   - préciser le **tissu** si utile (Bazin, Wax, laine…),
-   - les **instructions** particulières (ex. « Empèsage fort »),
+   - choisir l'**article** et la **prestation** au catalogue : le prix unitaire et
+     l'unité (pièce, paire, kg, mètre…) sont repris automatiquement ;
+   - saisir la **quantité mesurée**. Pour les pièces, paires et ensembles, la
+     quantité doit être entière. Pour les prestations au poids ou à la mesure,
+     le récapitulatif montre la quantité facturée après application du minimum
+     et du pas configurés ;
+   - cocher **« Poids ou mesure estimé »** si la quantité saisie reste à vérifier
+     après la création de la commande ;
+   - préciser le **tissu** si utile (Bazin, Wax, laine…) et les **instructions**
+     particulières (ex. « Empèsage fort ») ;
    - un **prix différent** du catalogue est possible, mais il exige un **motif**
      d'au moins 10 caractères (tarif dérogatoire).
 4. **Étape 3 — Paiement** : vérifier le **récapitulatif** (client, vêtements,
    total) et choisir :
    - **Régler plus tard** : la commande est enregistrée, le solde reste dû ;
    - **Encaisser des espèces maintenant** : la fiche s'ouvre avec le panneau
-     d'encaissement déplié, montant pré-rempli.
+     d'encaissement déplié, montant pré-rempli. Si une mesure est estimée, la
+     commande est bien enregistrée mais aucun paiement n'est pris avant sa
+     confirmation.
 
    Le **Mobile Money** se déclenche ensuite depuis la fiche de la commande :
    CinetPay exige une référence de commande déjà enregistrée.
@@ -102,6 +110,22 @@ historique.
 
 La commande est immédiatement visible dans la liste, **même sans réseau**. Un
 badge orange indique qu'elle attend l'envoi vers le serveur.
+
+#### Confirmer ou corriger une mesure après création
+
+1. Ouvrir la commande et repérer la ligne marquée **« ESTIMÉ — à confirmer »**.
+2. Appuyer sur **Confirmer la mesure** ou **Corriger la mesure**, saisir la
+   quantité réelle puis vérifier le montant recalculé.
+3. Cocher **« J’ai vérifié cette mesure et je la confirme »** pour la valider,
+   puis enregistrer. Le prix unitaire et les conditions du catalogue copiés sur
+   la commande ne changent pas ; la correction ne modifie ni le statut ni le
+   mode de paiement.
+
+La correction est enregistrée d’abord sur la tablette et fonctionne **hors
+ligne**. Elle sera synchronisée au retour du réseau. L’historique des mesures
+et tarifs se consulte ensuite dans le panneau correspondant de la fiche, quand
+le serveur est accessible. Une ligne encore estimée bloque l’encaissement et
+l’émission de facture : confirmez toutes les mesures avant de facturer.
 
 > **Retrouver une commande dans la liste.** La liste affiche **20 commandes par
 > page**, de la plus récente à la plus ancienne. La barre du bas indique
@@ -134,6 +158,10 @@ tout le reste du circuit.
 **Le paiement nécessite internet.** Le bouton est désactivé hors ligne, avec un
 message explicite : la commande reste enregistrée, le règlement se fera plus tard.
 
+**Mesures à confirmer.** Si une ligne est marquée estimée, l’encaissement
+(espèces et Mobile Money) reste bloqué jusqu’à la confirmation de toutes les
+mesures dans le détail de la commande.
+
 **Sans clés CinetPay**, un toast de simulation valide le parcours de l'écran ; il
 précise que rien n'a été encaissé. La commande reste à régler. Pour passer en
 production, renseigner les identifiants marchands dans `.env`, avec l'URL publique
@@ -164,6 +192,10 @@ Pour une entreprise cliente, un remboursement ou l'archivage du pressing :
 3. **Imprimer** → dans la destination, choisir **« Enregistrer au format
    PDF »** pour obtenir un fichier. Le texte reste sélectionnable.
 4. Quand tout est réglé, la facture porte la mention **« Facture acquittée »**.
+
+Si une mesure reste estimée, la page indique **« Facture en attente de
+confirmation »** et ne propose pas l’impression. Retourner à la commande,
+confirmer ou corriger les lignes concernées, puis ouvrir à nouveau la facture.
 
 > Le **numéro** (`FA-2026-3B4C5D`) est dérivé de la commande : il ne change
 > jamais, même réimprimé six mois plus tard ou depuis une autre tablette.
@@ -210,8 +242,11 @@ tout seul et aucun crédit SMS n'est consommé.
 
 Onglet **Stock** → choisir l'article → **Entrée** ou **Sortie**. Une sortie
 supérieure au stock restant est refusée : le stock ne devient jamais négatif.
-Le journal des mouvements est définitif ; une erreur se corrige par un mouvement
-inverse, pas en réécrivant l'histoire.
+Pour une sortie consommée sur une commande, choisir si possible la ligne concernée
+(commande, client et prestation) dans **Imputer à une ligne de commande**. Le coût
+unitaire alors connu est figé sur le mouvement ; les sorties générales peuvent
+rester non imputées. Le journal des mouvements est définitif : une erreur se
+corrige par un mouvement inverse, pas en réécrivant l'histoire.
 
 > Le stock et les dépenses sont des écrans de **bureau** : ils demandent une
 > connexion.
@@ -339,9 +374,55 @@ Bouton **Quitter** en haut à droite → confirmation.
 
 ### 5.5 Tenir le catalogue
 
-Onglet **Prestations** (propriétaire uniquement) : créer les couples
-**article × prestation** avec leur tarif. Modifier un tarif ne change **jamais**
-une facture déjà émise : le prix est recopié sur la ligne au moment de la vente.
+Menu **Catalogue** (propriétaire uniquement). Dans **Structure du catalogue**,
+gérer séparément :
+
+- les **catégories** (nom, description et ordre d'affichage) ;
+- les **articles** (catégorie, description, consignes d'entretien et unité par
+défaut) ;
+- les **prestations** (traitement, option, logistique ou autre ; par article ou
+pour la commande entière).
+
+L'onglet de chaque famille permet d'ajouter, modifier, réordonner, archiver et
+réactiver les références. Une référence ne peut être supprimée que si elle
+n'est pas utilisée ; les références liées à un tarif ou à un article doivent
+être archivées plutôt que détruites. Pour archiver un article ou une prestation,
+archivez d'abord ses tarifs actifs : les commandes déjà enregistrées conservent
+leurs libellés et prix.
+
+La **grille des tarifs** reste distincte : elle associe un article à une
+prestation et porte le mode de prix, l'unité, les minimums et les conditions.
+Une entrée tarifaire peut être désactivée sans supprimer son historique ;
+**Voir les archives** permet de la consulter puis de la réactiver. Après la
+reprise du catalogue, les tarifs hérités portent le badge **À vérifier** et ne
+sont pas proposés aux nouvelles commandes. Le propriétaire ouvre **Modifier**,
+confirme le prix réel puis enregistre pour lever ce blocage. La grille de départ
+installée par l'application est elle aussi indicative et doit être vérifiée.
+Modifier un tarif ne change **jamais** une facture déjà émise : le prix est
+recopié sur la ligne au moment de la vente.
+
+La structure du catalogue se gère **en ligne**. La grille de tarifs déjà mise
+en cache reste consultable pour prendre des commandes hors connexion ; les
+modifications de références et de tarifs attendent le retour du réseau.
+
+#### Modèles au kilo et forfaits de poids
+
+Menu **Modèles commerciaux** (propriétaire uniquement) : créer une offre **au
+kilo** ou un **forfait de poids**, puis renseigner le tarif, le poids inclus ou
+minimum, l'incrément de facturation, le minimum facturable, les conditions,
+exclusions, délai, collecte/livraison et les prestations incluses ou facturées
+en supplément. Le simulateur montre le calcul avant enregistrement.
+
+À l'étape **Lignes** d'une nouvelle commande, choisir **Au kilo / forfait**,
+sélectionner un modèle et saisir le poids mesuré. Le kilo applique le minimum
+et l'incrément configurés ; le forfait applique le prix inclus et son supplément
+au-delà. Si aucun supplément n'a été défini, le poids dépassant le forfait exige
+un montant final validé avec le client. Le poids, le modèle, les prestations et
+les règles de prix utilisées sont figés sur la ligne de commande ; une
+modification ou un archivage ultérieur du modèle ne recalcule pas l'historique.
+Les modèles actifs déjà mis en cache peuvent être consultés hors ligne ;
+la synchronisation vérifie encore que le modèle est actif et que le montant
+correspond au tarif serveur.
 
 ### 5.6 Créer les articles de stock et les fournisseurs
 
@@ -415,11 +496,18 @@ jours**, aujourd'hui compris.
   quatorze est écrite sous l'axe pour rester lisible.
 - **Répartition par statut**, **activité par jour de la semaine** (pour caler
   les lessives) et **top 5 des prestations**.
-- **Exporter en CSV** télécharge la série quotidienne, prête pour un tableur.
+- **Consommables imputés** et **marge après consommables** utilisent les sorties
+  associées à une ligne de commande et leur coût unitaire figé. Cette marge est
+  partielle : elle n'inclut ni les sorties non imputées, ni salaires, loyer ou
+  charges ; ce n'est pas un bénéfice net.
+- **Exporter en CSV** télécharge la synthèse, les variations, le détail quotidien,
+  la répartition des statuts et les cinq prestations principales, prêts pour un
+  tableur configuré en français.
 
 > Les montants « encaissé » ne comptent que les **espèces** : les paiements
-> Mobile Money viennent du serveur et ne sont pas stockés sur la tablette. Le
-> rapport l'indique en bas de page plutôt que d'afficher un total trompeur.
+> Mobile Money viennent du serveur et ne sont pas stockés sur la tablette. Les
+> coûts de consommables nécessitent une connexion ; hors ligne, le rapport affiche
+> leur indisponibilité au lieu d'assimiler l'absence de données à un coût nul.
 
 ### 5.11 Écrire au support
 

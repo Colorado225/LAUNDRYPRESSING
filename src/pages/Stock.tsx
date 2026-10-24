@@ -14,6 +14,7 @@ import toast from 'react-hot-toast'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import { formatDateTimeFr, formatFcfa } from '@/lib/formatters'
+import { shortOrderReference } from '@/services/qrService'
 import { isSupabaseConfigured } from '@/lib/env'
 import {
   STOCK_CATEGORY_LABELS,
@@ -23,6 +24,7 @@ import {
   isLowStock,
   listStockItems,
   listStockMovements,
+  listRecentStockOrderItems,
   listSuppliers,
   recordStockMovement,
   stockErrorMessage,
@@ -51,6 +53,8 @@ export default function Stock() {
   const [articles, setArticles] = useState<StockItemRow[]>([])
   const [mouvements, setMouvements] = useState<StockMovementRow[]>([])
   const [fournisseurs, setFournisseurs] = useState<SupplierRow[]>([])
+  const [lignesCommande, setLignesCommande] = useState<Awaited<ReturnType<typeof listRecentStockOrderItems>>>([])
+  const [ligneCommandeId, setLigneCommandeId] = useState('')
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState<string | null>(null)
 
@@ -65,6 +69,7 @@ export default function Stock() {
   const [mouvementPour, setMouvementPour] = useState<StockItemRow | null>(null)
   const [sens, setSens] = useState<'in' | 'out'>('out')
   const [quantite, setQuantite] = useState('')
+  const [coutUnitaireMouvement, setCoutUnitaireMouvement] = useState('')
   const [motif, setMotif] = useState('')
   const [fournisseurId, setFournisseurId] = useState('')
   const [envoi, setEnvoi] = useState(false)
@@ -81,14 +86,16 @@ export default function Stock() {
     setErreur(null)
 
     try {
-      const [listeArticles, listeMouvements, listeFournisseurs] = await Promise.all([
+      const [listeArticles, listeMouvements, listeFournisseurs, listeLignesCommande] = await Promise.all([
         listStockItems(tenantId),
         listStockMovements(tenantId),
         listSuppliers(tenantId),
+        listRecentStockOrderItems(tenantId),
       ])
       setArticles(listeArticles)
       setMouvements(listeMouvements)
       setFournisseurs(listeFournisseurs)
+      setLignesCommande(listeLignesCommande)
     } catch (error) {
       setErreur(error instanceof Error ? error.message : 'Chargement impossible.')
     } finally {
@@ -156,8 +163,15 @@ export default function Stock() {
     if (!tenantId || !mouvementPour) return
 
     const valeur = Number(quantite.replace(/\s/g, ''))
+    const coutUnitaire = coutUnitaireMouvement.trim()
+      ? Number(coutUnitaireMouvement.replace(/\s/g, ''))
+      : null
     if (!Number.isFinite(valeur) || valeur <= 0) {
       toast.error('Indiquez une quantité supérieure à zéro.')
+      return
+    }
+    if (sens === 'in' && coutUnitaire !== null && (!Number.isInteger(coutUnitaire) || coutUnitaire < 0)) {
+      toast.error('Coût unitaire invalide.')
       return
     }
 
@@ -167,6 +181,8 @@ export default function Stock() {
         itemId: mouvementPour.id,
         kind: sens,
         quantity: valeur,
+        unitCost: sens === 'in' ? coutUnitaire : null,
+        orderItemId: sens === 'out' && ligneCommandeId ? ligneCommandeId : null,
         supplierId: sens === 'in' && fournisseurId ? fournisseurId : null,
         reason: motif || (sens === 'in' ? 'Réapprovisionnement' : 'Sortie atelier'),
       })
@@ -175,6 +191,7 @@ export default function Stock() {
       })
       setMouvementPour(null)
       setQuantite('')
+      setCoutUnitaireMouvement('')
       setMotif('')
       setFournisseurId('')
       await charger()
@@ -447,6 +464,8 @@ export default function Stock() {
                           onClick={() => {
                             setMouvementPour(article)
                             setSens('in')
+                            setLigneCommandeId('')
+                            setCoutUnitaireMouvement('')
                           }}
                           aria-label={`Entrée de stock pour ${article.name}`}
                           className="inline-flex size-12 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
@@ -458,6 +477,8 @@ export default function Stock() {
                           onClick={() => {
                             setMouvementPour(article)
                             setSens('out')
+                            setLigneCommandeId('')
+                            setCoutUnitaireMouvement('')
                           }}
                           aria-label={`Sortie de stock pour ${article.name}`}
                           className="inline-flex size-12 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
@@ -505,6 +526,51 @@ export default function Stock() {
               />
             </label>
 
+            {sens === 'in' && peutGerer && (
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Coût unitaire payé (FCFA, facultatif)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={coutUnitaireMouvement}
+                  onChange={(event) => setCoutUnitaireMouvement(event.target.value)}
+                  placeholder={mouvementPour.unit_cost === null ? 'À renseigner pour suivre les coûts' : String(mouvementPour.unit_cost)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+                <span className="mt-1 block text-xs text-slate-500">
+                  Ce coût servira de référence aux prochaines sorties associées à une commande.
+                </span>
+              </label>
+            )}
+
+            {sens === 'out' && (
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Imputer à une ligne de commande (facultatif)
+                </span>
+                <select
+                  value={ligneCommandeId}
+                  onChange={(event) => setLigneCommandeId(event.target.value)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                >
+                  <option value="">Non imputée — consommation générale</option>
+                  {lignesCommande.map((ligne) => (
+                    <option key={ligne.orderItemId} value={ligne.orderItemId}>
+                      #{shortOrderReference(ligne.orderId)} · {ligne.createdAt.slice(0, 10)} · {ligne.customerName} · {ligne.label} · {formatFcfa(ligne.amount)}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-slate-500">
+                  Les lignes proposées viennent des 100 dernières commandes synchronisées. Le coût
+                  unitaire connu sera figé à la date de la sortie ; les mouvements non imputés
+                  restent exclus de la marge estimée.
+                </span>
+              </label>
+            )}
+
             {sens === 'in' && fournisseurs.length > 0 && (
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-xs font-semibold text-slate-600">
@@ -538,7 +604,13 @@ export default function Stock() {
             </button>
             <button
               type="button"
-              onClick={() => setMouvementPour(null)}
+              onClick={() => {
+                setMouvementPour(null)
+                setQuantite('')
+                setCoutUnitaireMouvement('')
+                setMotif('')
+                setLigneCommandeId('')
+              }}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700"
             >
               Annuler
@@ -591,7 +663,7 @@ export default function Stock() {
               <button
                 type="button"
                 onClick={() => setFournisseurOuvert((ouvert) => !ouvert)}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal"
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal"
               >
                 <Plus size={15} aria-hidden />
                 Ajouter

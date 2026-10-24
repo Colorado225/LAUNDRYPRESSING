@@ -79,14 +79,22 @@ npm run deploy:fonctions -- --secrets-seulement
 **Les secrets sont poussés par défaut.** Après avoir renseigné dans `.env`
 les identifiants CinetPay requis (`CINETPAY_API_KEY`, `CINETPAY_SITE_ID`,
 `CINETPAY_SECRET_KEY`) et l'adresse publique de l'application (`APP_URL`),
-lancez cette seule commande : elle lit `.env`, transmet les secrets à Supabase
-et déploie ou met à jour les deux fonctions. Aucun changement au script ni
-copier-coller dans le Dashboard n'est nécessaire.
+aucun changement de code ni copier-coller dans le Dashboard ne sera nécessaire.
 
-Le jeton `SUPABASE_ACCESS_TOKEN` doit aussi être présent dans `.env` pour
-autoriser l'opération. **Coller une valeur dans `.env` ne peut pas, à lui seul,
-modifier le serveur Supabase** : il faut exécuter la commande de déploiement une
-fois, afin que les fonctions hébergées reçoivent les secrets et le nouveau code.
+Pour la première mise en service de cette version, la nouvelle migration
+`012_cinetpay_atomic.sql` doit aussi être appliquée avant que le webhook utilise
+la finalisation atomique. La voie automatisée est `npm run setup`, qui lit `.env`,
+applique les migrations en attente, déploie les deux fonctions et pousse les
+secrets. **Attention : cette commande peut aussi créer/rattacher le compte
+propriétaire** si `SEED_OWNER_EMAIL` et `SEED_OWNER_PASSWORD` sont renseignés ;
+elle écrit sur Supabase et doit donc être lancée seulement après vérification
+et autorisation explicite du projet cible.
+
+`npm run deploy:fonctions` seul ne pousse que les secrets et les fonctions ; il
+n'applique pas la migration SQL. Il convient pour les déploiements ultérieurs,
+une fois la migration 012 déjà appliquée. Le jeton `SUPABASE_ACCESS_TOKEN` est
+requis dans `.env` pour ces opérations. **Coller des valeurs dans `.env` ne
+modifie pas le serveur Supabase** : une commande de déploiement reste nécessaire.
 
 `--dry-run` est un synonyme de `--verifier`. Le dossier `.build/` est ignoré par
 Git : c'est un artefact d'inspection, pas la source.

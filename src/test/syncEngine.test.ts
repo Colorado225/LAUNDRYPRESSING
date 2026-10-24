@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/localDb'
-import { createOrderLocal, updateOrderStatusLocal } from '@/db/ordersRepository'
+import {
+  createOrderLocal,
+  toSupabaseOrder,
+  toSupabaseOrderItem,
+  updateOrderItemMeasurementLocal,
+  updateOrderStatusLocal,
+} from '@/db/ordersRepository'
 import { useSyncStore } from '@/stores/syncStore'
 import { useTenantStore } from '@/lib/tenantContext'
 
@@ -40,6 +46,9 @@ const remote = vi.hoisted(() => ({
   conflictOnUpdate: false,
   /** Lignes renvoyées par la lecture descendante (`pullOrders`). */
   pullRows: [] as unknown[],
+  /** État serveur lu pendant l'arbitrage d'un conflit. */
+  serverOrder: null as unknown,
+  serverItems: [] as unknown[],
   /** Encaissements transmis par `record_cash_payment`. */
   rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
   /** Erreur à renvoyer par l'appel RPC d'encaissement. */
@@ -116,18 +125,18 @@ vi.mock('@/lib/supabaseClient', () => {
           return Promise.resolve({ error: message ? { message } : null })
         },
         select: () => {
-          // Deux usages distincts :
-          //  - relecture après doublon (`.select('version').eq(…).maybeSingle()`) ;
-          //  - lecture descendante (`select(...).eq(…).gt(…).order(…).limit(…)`).
+          // Lecture descendante, relecture d'idempotence et arbitrage des conflits.
+          const readRows = table === 'order_items' ? remote.serverItems : remote.pullRows
+          const readOrder = remote.serverOrder ?? { version: 7 }
           const builder = {
             eq: () => builder,
             gt: () => builder,
             order: () => builder,
             limit: () => Promise.resolve({ data: remote.pullRows, error: null }),
-            maybeSingle: () => Promise.resolve({ data: { version: 7 }, error: null }),
-            single: () => Promise.resolve({ data: { version: 7 }, error: null }),
+            maybeSingle: () => Promise.resolve({ data: readOrder, error: null }),
+            single: () => Promise.resolve({ data: readOrder, error: null }),
             then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
-              Promise.resolve({ data: remote.pullRows, error: null }).then(resolve, reject),
+              Promise.resolve({ data: readRows, error: null }).then(resolve, reject),
           }
           return builder
         },
@@ -147,6 +156,43 @@ vi.mock('@/lib/supabaseClient', () => {
 const { queueCashPayment } = await import('@/db/cashRepository')
 const { queueNotification } = await import('@/db/notificationRepository')
 const { syncPendingOrders } = await import('@/sync/syncEngine')
+const { keepLocalVersion, takeServerVersion } = await import('@/services/orderConflictService')
+
+async function preparerConflitDeMesure() {
+  const { order, items } = await seedOrder()
+  await syncPendingOrders()
+  const item = items[0]!
+
+  // Un premier appareil a déjà corrigé à 2 pièces (5 000 FCFA). Le second
+  // garde encore la version 1 et saisit ensuite 3 pièces (7 500 FCFA).
+  remote.serverOrder = {
+    ...toSupabaseOrder(order),
+    status: 'washing',
+    total_amount: 5_000,
+    payment_status: 'partial',
+    payment_method: 'cash',
+    version: 2,
+  }
+  remote.serverItems = [{
+    ...toSupabaseOrderItem(item),
+    quantity: 2,
+    billed_quantity: 2,
+    price: 5_000,
+  }]
+  remote.calls.length = 0
+  setOnline(false)
+  await updateOrderItemMeasurementLocal(TENANT, order.id, item.id, {
+    quantity: 3,
+    priceStatus: 'CONFIRMED',
+  })
+  const offlineResult = await syncPendingOrders()
+
+  setOnline(true)
+  remote.conflictOnUpdate = true
+  const syncResult = await syncPendingOrders()
+  remote.conflictOnUpdate = false
+  return { order, item, offlineResult, syncResult }
+}
 
 function setOnline(online: boolean) {
   Object.defineProperty(navigator, 'onLine', { value: online, configurable: true })
@@ -156,7 +202,7 @@ async function seedOrder(tenantId = TENANT, label = 'Chemise') {
   return createOrderLocal(tenantId, {
     customerName: 'Awa Koné',
     customerPhone: '+2250700000001',
-    items: [{ label, price: 2500 }],
+    items: [{ label, price: 2500, priceReason: 'Prestation de test' }],
   })
 }
 
@@ -170,6 +216,8 @@ beforeEach(async () => {
   remote.nextVersion = 2
   remote.conflictOnUpdate = false
   remote.pullRows = []
+  remote.serverOrder = null
+  remote.serverItems = []
   remote.rpcCalls = []
   remote.cashError = null
   remote.cashRemaining = 0
@@ -249,6 +297,35 @@ describe('syncPendingOrders — envoi nominal', () => {
     expect(sentItems[0]?.order_id).toBe(order.id)
 
     expect(useSyncStore.getState().pendingCount).toBe(0)
+  })
+
+  it('synchronise une mesure corrigée hors ligne avec la version et les snapshots conservés', async () => {
+    const { order, items } = await seedOrder()
+    await syncPendingOrders()
+    await updateOrderItemMeasurementLocal(TENANT, order.id, items[0]!.id, {
+      quantity: 3,
+      priceStatus: 'CONFIRMED',
+    })
+    remote.calls.length = 0
+
+    const result = await syncPendingOrders()
+
+    expect(result).toMatchObject({ attempted: 1, succeeded: 1, failed: 0, conflicts: 0 })
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
+      'orders:update',
+      'order_items:upsert',
+    ])
+    const sentItems = remote.calls[1]?.rows as Array<Record<string, unknown>>
+    expect(sentItems[0]).toMatchObject({
+      quantity: 3,
+      billed_quantity: 3,
+      price: 7500,
+      price_status: 'CONFIRMED',
+      unit_price: 2500,
+      billing_unit: 'PIECE',
+    })
+    expect(sentItems[0]).not.toHaveProperty('payment_status')
+    expect((await db.orders.get(order.id))?.synced).toBe(1)
   })
 
   it('met à jour avec le jeton de version au lieu de réinsérer', async () => {
@@ -341,6 +418,74 @@ describe('syncPendingOrders — conflits', () => {
     expect(stored?.synced).toBe(0)
     expect(stored?.syncConflict).toContain('Conflit')
     expect(stored?.serverVersion).toBe(1)
+  })
+
+  it('détecte deux corrections hors ligne de la même mesure sans envoyer la ligne en conflit', async () => {
+    const { order, item, offlineResult, syncResult } = await preparerConflitDeMesure()
+
+    expect(offlineResult.skipped).toBe(true)
+    expect(syncResult).toMatchObject({ conflicts: 1, succeeded: 0 })
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual(['orders:update'])
+    expect(await db.orderItems.get(item.id)).toMatchObject({
+      quantity: 3,
+      billedQuantity: 3,
+      price: 7_500,
+    })
+    expect(await db.orders.get(order.id)).toMatchObject({
+      totalAmount: 7_500,
+      serverVersion: 1,
+      synced: 0,
+      syncConflict: expect.stringContaining('Conflit'),
+    })
+  })
+
+  it('garder la mesure locale recharge le jeton puis synchronise le choix explicite', async () => {
+    const { order, item, syncResult } = await preparerConflitDeMesure()
+    expect(syncResult.conflicts).toBe(1)
+    const commandeEnConflit = (await db.orders.get(order.id))!
+
+    await keepLocalVersion(commandeEnConflit)
+    expect(await db.orderItems.get(item.id)).toMatchObject({ quantity: 3, price: 7_500 })
+    expect(await db.orders.get(order.id)).toMatchObject({
+      serverVersion: 2,
+      synced: 0,
+      syncConflict: null,
+    })
+
+    remote.calls.length = 0
+    const result = await syncPendingOrders()
+    expect(result).toMatchObject({ succeeded: 1, conflicts: 0 })
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
+      'orders:update',
+      'order_items:upsert',
+    ])
+    expect((remote.calls[1]?.rows as Array<Record<string, unknown>>)[0]).toMatchObject({
+      quantity: 3,
+      price: 7_500,
+    })
+  })
+
+  it('prendre la version du serveur restaure sa mesure sans garder la correction locale', async () => {
+    const { order, item, syncResult } = await preparerConflitDeMesure()
+    expect(syncResult.conflicts).toBe(1)
+    const commandeEnConflit = (await db.orders.get(order.id))!
+
+    await takeServerVersion(commandeEnConflit)
+
+    expect(await db.orderItems.get(item.id)).toMatchObject({
+      quantity: 2,
+      billedQuantity: 2,
+      price: 5_000,
+    })
+    expect(await db.orders.get(order.id)).toMatchObject({
+      totalAmount: 5_000,
+      status: 'washing',
+      paymentStatus: 'partial',
+      paymentMethod: 'cash',
+      serverVersion: 2,
+      synced: 1,
+      syncConflict: null,
+    })
   })
 
   it('ne renvoie plus une commande en conflit tant qu’il n’est pas arbitré', async () => {

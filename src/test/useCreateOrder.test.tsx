@@ -48,8 +48,18 @@ const validInput = {
   customerName: '  Awa Koné  ',
   customerPhone: '+2250700000001',
   items: [
-    { label: 'Chemise', fabricType: '  Bazin ', price: 2500 },
-    { label: 'Pantalon', specialInstructions: '', price: 3500 },
+    {
+      label: 'Chemise',
+      fabricType: '  Bazin ',
+      price: 2500,
+      priceReason: 'Prestation de test',
+    },
+    {
+      label: 'Pantalon',
+      specialInstructions: '',
+      price: 3500,
+      priceReason: 'Prestation de test',
+    },
   ],
 }
 
@@ -90,6 +100,89 @@ describe('useCreateOrder', () => {
     expect(order.totalAmount).toBe(6000)
     expect(items.reduce((total, item) => total + item.price, 0)).toBe(order.totalAmount)
 
+    hook.unmount()
+  })
+
+  it('recalcule hors ligne le poids facturable depuis les instantanés du catalogue', async () => {
+    const hook = renderHook(() => useCreateOrder())
+    const result = await hook.result()({
+      customerName: 'Awa Koné',
+      customerPhone: '+2250700000001',
+      items: [
+        {
+          label: 'Couette — lavage au poids',
+          articleName: 'Couette',
+          serviceName: 'Lavage au poids',
+          catalogEntryId: '33333333-3333-4333-8333-333333333301',
+          price: 1,
+          quantity: 6.4,
+          billingUnit: 'KG',
+          unitPrice: 1_500,
+          pricingMode: 'FROM',
+          priceStatus: 'ESTIMATED',
+          catalogUnitPriceSnapshot: 1_500,
+          minimumQuantitySnapshot: 2,
+          billingIncrementSnapshot: 0.5,
+          minimumChargeSnapshot: 3_500,
+          familyNameSnapshot: 'Linge de maison',
+          conditionsSnapshot: 'Poids à confirmer avant traitement',
+        },
+      ],
+    })
+
+    expect(result.items[0]).toMatchObject({
+      quantity: 6.4,
+      billedQuantity: 6.5,
+      billingUnit: 'KG',
+      unitPrice: 1_500,
+      price: 9_750,
+      pricingMode: 'FROM',
+      priceStatus: 'ESTIMATED',
+      familyNameSnapshot: 'Linge de maison',
+    })
+    expect(result.order.totalAmount).toBe(9_750)
+    hook.unmount()
+  })
+
+  it('refuse un devis dont le montant final n’a pas été confirmé avec le client', async () => {
+    const hook = renderHook(() => useCreateOrder())
+
+    await expect(
+      hook.result()({
+        customerName: 'Awa Koné',
+        customerPhone: '+2250700000001',
+        items: [
+          {
+            label: 'Couette — nettoyage sur devis',
+            catalogEntryId: '33333333-3333-4333-8333-333333333302',
+            articleName: 'Couette',
+            serviceName: 'Nettoyage sur devis',
+            price: 8_000,
+            quantity: 1,
+            billingUnit: 'FLAT',
+            unitPrice: 8_000,
+            pricingMode: 'QUOTE',
+            priceStatus: 'ESTIMATED',
+            catalogUnitPriceSnapshot: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow('Un devis doit avoir un montant confirmé.')
+    expect(await db.orders.count()).toBe(0)
+    hook.unmount()
+  })
+
+  it('refuse une ligne libre sans motif même si le hook est appelé hors formulaire', async () => {
+    const hook = renderHook(() => useCreateOrder())
+
+    await expect(
+      hook.result()({
+        customerName: 'Awa Koné',
+        customerPhone: '+2250700000001',
+        items: [{ label: 'Retouche', price: 700 }],
+      }),
+    ).rejects.toThrow()
+    expect(await db.orders.count()).toBe(0)
     hook.unmount()
   })
 

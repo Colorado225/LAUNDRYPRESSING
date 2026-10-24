@@ -4,9 +4,9 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : palier 4 terminé, conformité MVP vérifiée** (abonnement, multi-boutiques, supervision de
-l'éditeur, support). Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont
-livrés : le produit est complet au périmètre de l'audit. La correspondance avec
+**État actuel : paliers 0 à 4 terminés ; lot 2 validé et commité, lot 3 implémenté en attente de validation** :
+modèles au kilo/forfait, coûts de consommables imputés, rapports comparatifs et export CSV détaillé.
+Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont livrés ; ces lots complètent le périmètre ERP demandé. La correspondance avec
 les douze écrans de la maquette est tenue dans
 [`docs/CONFORMITE-MVP.md`](docs/CONFORMITE-MVP.md).
 
@@ -30,6 +30,8 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 10 | **Abonnement** (formules, échéance, période de grâce, lecture seule si échu) | ✅ palier 4 |
 | 11 | **Multi-boutiques** (sélecteur de boutique, rôle par boutique, en-tête validé) | ✅ palier 4 |
 | 12 | **Supervision et support** (console éditeur, demandes des pressings) | ✅ palier 4 |
+| 13 | **Modèles commerciaux** (tarifs au kilo ou au forfait, prestations incluses, poids et reçus historisés) | ✅ lot 2 |
+| 14 | **Rentabilité et rapports** (coût des consommables imputés, comparaison de périodes, export CSV détaillé) | 🧪 lot 3 — à valider |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
 statistiques avancées, gestion du personnel, facturation PDF, suivi client public,
@@ -213,7 +215,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (550 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
+| `npm test` | Suite Vitest complète (613 tests : synchronisation, rôles, caisse, clients, stock, rentabilité, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run simulateur` | Faux CinetPay local (`0.0.0.0:54321`) pour tester le paiement en mode `test` |
@@ -285,10 +287,10 @@ pas en `npm run dev`).
 │   │   ├── Facture.tsx           # facture A4 imprimable (texte, sans lib PDF)
 │   │   ├── Atelier.tsx           # scan QR → changement de statut
 │   │   ├── Clients.tsx           # fiche client + historique (palier 3)
-│   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
+│   │   ├── Stock.tsx             # articles, mouvements, coût unitaire et imputation commande
 │   │   ├── Depenses.tsx          # dépenses paginées côté serveur (palier 3)
 │   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
-│   │   ├── Rapports.tsx          # courbes 7/30/90 j + export CSV (écran 11)
+│   │   ├── Rapports.tsx          # comparaisons, marge partielle, export CSV complet (écran 11)
 │   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
 │   │   ├── Support.tsx           # demandes d'assistance (palier 4)
 │   │   ├── Supervision.tsx       # console de l'éditeur (palier 4)
@@ -299,7 +301,7 @@ pas en `npm run dev`).
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
 │   │   ├── customerService.ts     # clients, historique, fiche serveur
 │   │   ├── tenantService.ts       # lecture / renommage du pressing (propriétaire)
-│   │   ├── stockService.ts        # articles, mouvements, seuils, fournisseurs
+│   │   ├── stockService.ts        # mouvements, fournisseurs, coûts imputés et agrégats
 │   │   ├── expenseService.ts      # dépenses catégorisées (propriétaire)
 │   │   ├── dashboardService.ts    # calculs locaux du tableau de bord
 │   │   └── qrService.ts          # génération / analyse des codes QR
@@ -332,6 +334,9 @@ pas en `npm run dev`).
 │   ├── migrations/008_inscription.sql # inscription libre (pressing + propriétaire)
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
 │   ├── migrations/006_palier3.sql # clients, stock, dépenses, vue des totaux
+│   ├── migrations/016_laundry_models.sql # modèles commerciaux au kilo/forfait
+│   ├── migrations/017_laundry_model_order_lines.sql # instantanés dans les commandes
+│   ├── migrations/018_stock_consumption_costs.sql # coûts des consommables imputés
 │   ├── seed.sql                  # jeu de démonstration (2 pressings)
 │   ├── tests/isolation.sql       # preuve d'isolation sur une vraie base
 │   └── tests/palier3.sql         # 17 contrôles clients / stock / dépenses
@@ -587,10 +592,13 @@ son navigateur avant la redirection. Chaque notification est traitée ainsi :
    16 champs (voir `_shared/cinetpay.ts`).
 3. Relecture du statut réel par appel serveur à `POST /v2/payment/check` :
    **une notification n'est jamais crue sur parole**.
-4. Comparaison du montant encaissé avec le montant attendu. En cas d'incohérence,
-   la transaction passe en `error` et la commande **n'est pas** marquée payée.
-5. Mise à jour idempotente : une transaction déjà `paid` est définitive ; une
-   notification tardive de refus ne peut pas annuler un paiement encaissé.
+4. Comparaison stricte du montant vérifié avec le montant attendu : un montant
+   absent ou différent est refusé et la commande **n'est pas** marquée payée.
+5. La RPC `finalize_cinetpay_payment` verrouille la transaction et met à jour
+   `payment_transactions` + `orders` dans une seule transaction SQL. Un échec
+   annule les deux écritures ; une notification `ACCEPTED` rejouée répare aussi
+   une éventuelle commande désynchronisée. Une notification tardive de refus
+   n'annule jamais un paiement déjà encaissé.
 
 Réponses HTTP : `200` sur succès ou transaction inconnue (pour éviter les relances
 infinies), `401` sur signature invalide, `503` si CinetPay est injoignable — dans ce
@@ -606,9 +614,13 @@ avec un bouton de actualisation manuelle.
 
 ### Configuration
 
-Renseigner les trois valeurs dans `.env`, puis lancer `npm run setup` : les
-secrets sont poussés côté Supabase et les deux fonctions déployées
-automatiquement (§3.3).
+Renseigner les trois valeurs dans `.env`, puis, après validation du projet
+cible, lancer `npm run setup` : les migrations en attente (dont
+`012_cinetpay_atomic.sql`), les secrets et les deux fonctions sont installés
+automatiquement (§3.3). Cette commande peut aussi provisionner le pressing et
+le compte propriétaire si leurs variables sont renseignées ; elle écrit sur
+Supabase. Pour les mises à jour suivantes, `npm run deploy:fonctions` suffit
+une fois les migrations appliquées.
 
 ```env
 CINETPAY_API_KEY=...

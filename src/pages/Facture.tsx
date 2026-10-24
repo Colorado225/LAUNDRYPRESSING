@@ -5,6 +5,7 @@ import { useCashPayments, useLocalOrder } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
 import { construireFacture } from '@/lib/facturation'
+import { libelleUnite } from '@/lib/catalogPricing'
 import { imprimerDocument } from '@/lib/impression'
 
 /**
@@ -58,6 +59,28 @@ export default function Facture() {
   }
 
   const { order, items } = data
+  const mesureAConfirmer = items.some((item) => item.priceStatus === 'ESTIMATED')
+
+  if (mesureAConfirmer) {
+    return (
+      <div className="space-y-4">
+        <Link
+          to={`/commandes/${order.id}`}
+          className="inline-flex min-h-12 items-center gap-2 text-sm font-semibold text-slate-600"
+        >
+          <ArrowLeft size={16} aria-hidden /> Retour à la commande
+        </Link>
+        <section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950">
+          <h1 className="text-lg font-bold">Facture en attente de confirmation</h1>
+          <p className="mt-2 text-sm">
+            Au moins une mesure est encore estimée. Confirmez ou corrigez toutes les lignes dans le
+            détail de la commande avant d’émettre la facture.
+          </p>
+        </section>
+      </div>
+    )
+  }
+
   const facture = construireFacture(order, items, paiements)
 
   const imprimer = () => imprimerDocument({ format: 'A4' })
@@ -113,16 +136,40 @@ export default function Facture() {
         <thead>
           <tr className="border-b border-slate-300 text-left text-[9px] uppercase tracking-wide text-slate-500">
             <th scope="col" className="py-2 font-semibold">Désignation</th>
-            <th scope="col" className="w-16 py-2 text-center font-semibold">Qté</th>
+            <th scope="col" className="w-24 py-2 text-center font-semibold">Qté facturée</th>
             <th scope="col" className="w-28 py-2 text-right font-semibold">Prix unitaire</th>
             <th scope="col" className="w-28 py-2 text-right font-semibold">Montant</th>
           </tr>
         </thead>
         <tbody>
-          {facture.lignes.map((ligne) => (
-            <tr key={`${ligne.libelle}-${ligne.prixUnitaire}`} className="border-b border-slate-100">
-              <td className="py-2 pr-2">{ligne.libelle}</td>
-              <td className="py-2 text-center">{ligne.quantite}</td>
+          {facture.lignes.map((ligne, index) => (
+            <tr key={`${ligne.libelle}-${ligne.poidsKg ?? ''}-${ligne.prixUnitaire}-${index}`} className="border-b border-slate-100">
+              <td className="py-2 pr-2">
+                {ligne.libelle}
+                {ligne.prixStatut === 'ESTIMATED' && (
+                  <span className="block text-[8px] font-semibold uppercase text-amber-700">
+                    Quantité estimée — à confirmer
+                  </span>
+                )}
+                {ligne.quantiteMesuree !== ligne.quantite && (
+                  <span className="block text-[8px] text-slate-500">
+                    Mesuré : {ligne.quantiteMesuree} {libelleUnite(ligne.unite)}
+                  </span>
+                )}
+                {ligne.poidsKg !== undefined && (
+                  <span className="block text-[8px] text-slate-500">
+                    Poids : {ligne.poidsKg} kg{ligne.detailCommercial ? ` · ${ligne.detailCommercial}` : ''}
+                  </span>
+                )}
+                {ligne.prestationsCommerciales && (
+                  <span className="block text-[8px] text-slate-500">Prestations : {ligne.prestationsCommerciales}</span>
+                )}
+              </td>
+              <td className="py-2 text-center">
+                {ligne.unite === 'FLAT'
+                  ? 'Forfait'
+                  : `${ligne.quantite} ${libelleUnite(ligne.unite)}`}
+              </td>
               <td className="py-2 text-right whitespace-nowrap">{formatFcfa(ligne.prixUnitaire)}</td>
               <td className="py-2 text-right font-medium whitespace-nowrap">
                 {formatFcfa(ligne.total)}

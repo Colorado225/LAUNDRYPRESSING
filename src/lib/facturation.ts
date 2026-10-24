@@ -21,10 +21,17 @@ import { computeBalance } from '@/services/cashService'
 /** Lignes regroupées d'une facture. */
 export interface LigneFacture {
   libelle: string
+  /** Quantité réellement pesée/mesurée et quantité retenue pour facturer. */
+  quantiteMesuree: number
   quantite: number
-  /** Prix unitaire (les lignes du même libellé et du même prix sont groupées). */
+  unite: LocalOrderItem['billingUnit']
+  prixStatut: LocalOrderItem['priceStatus']
+  /** Prix unitaire et total restent figés dans les instantanés de commande. */
   prixUnitaire: number
   total: number
+  poidsKg?: number
+  detailCommercial?: string
+  prestationsCommerciales?: string
 }
 
 export interface AcompteFacture {
@@ -92,18 +99,36 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
     const libelle = [item.articleName ?? item.label, item.serviceName]
       .filter((morceau): morceau is string => Boolean(morceau && morceau.trim()))
       .join(' — ')
-    const cle = `${libelle}|${item.price}`
+    const quantiteMesuree = item.quantity ?? 1
+    const quantite = item.billedQuantity ?? quantiteMesuree
+    const unite = item.billingUnit ?? 'PIECE'
+    const prixStatut = item.priceStatus ?? 'CONFIRMED'
+    const prixUnitaire = item.unitPrice ?? item.price
+    // Ne regroupe que des saisies aux quantités, tarifs, statuts et totaux
+    // identiques : le minimum facturable peut rendre le total non multiplicatif.
+    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${item.laundryModelId ? item.id : ''}`
 
     const existante = parCle.get(cle)
     if (existante) {
-      existante.quantite += 1
+      existante.quantiteMesuree += quantiteMesuree
+      existante.quantite += quantite
       existante.total += item.price
     } else {
       parCle.set(cle, {
         libelle,
-        quantite: 1,
-        prixUnitaire: item.price,
+        quantiteMesuree,
+        quantite,
+        unite,
+        prixStatut,
+        prixUnitaire,
         total: item.price,
+        ...(item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined
+          ? {
+              poidsKg: item.laundryWeightKg,
+              ...(item.laundryPriceBreakdownSnapshot ? { detailCommercial: item.laundryPriceBreakdownSnapshot } : {}),
+              ...(item.laundryServicesSnapshot ? { prestationsCommerciales: item.laundryServicesSnapshot } : {}),
+            }
+          : {}),
       })
     }
   }
@@ -124,6 +149,10 @@ export function construireFacture(
   items: LocalOrderItem[],
   paiements: LocalCashPayment[],
 ): DocumentFacture {
+  if (items.some((item) => item.priceStatus === 'ESTIMATED')) {
+    throw new Error('La facture est bloquée tant que toutes les mesures ne sont pas confirmées.')
+  }
+
   const lignes = lignesFacture(items)
   const solde = computeBalance(order.totalAmount, order.paymentStatus, paiements)
 

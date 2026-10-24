@@ -6,6 +6,15 @@
  *   npx supabase gen types typescript --project-id <id> > src/types/database.ts
  */
 
+/** Valeurs JSON acceptées par les colonnes et fonctions PostgreSQL. */
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
 /** Rôles autorisés dans un pressing (voir contrainte SQL sur `tenant_users.role`). */
 export type TenantRole = 'owner' | 'receptionist' | 'artisan'
 
@@ -87,15 +96,42 @@ export type OrderItemRow = {
   label: string
   fabric_type: string | null
   special_instructions: string | null
-  /** Prix facturé, figé au moment de la saisie (prix historisé). */
+  /** Montant total facturé pour la ligne, calculé en FCFA entiers. */
   price: number
-  /** Entrée de catalogue utilisée, si la ligne vient du catalogue. */
+  /** Quantité mesurée puis quantité facturée après minimum et incrément. */
+  quantity: number
+  billed_quantity: number
+  billing_unit: CatalogBillingUnit
+  /** Prix par unité de facturation, figé au moment de la saisie. */
+  unit_price: number
+  pricing_mode: CatalogPricingMode
+  price_status: OrderItemPriceStatus
+  /** Références et paramètres tarifaires figés avec la ligne. */
   catalog_entry_id: string | null
-  /** Libellés recopiés : une modification du catalogue ne réécrit pas l'historique. */
   article_name: string | null
   service_name: string | null
-  /** Motif exigé pour un prix différent du tarif du catalogue. */
+  family_name_snapshot: string | null
+  catalog_unit_price_snapshot: number | null
+  minimum_quantity_snapshot: number | null
+  billing_increment_snapshot: number | null
+  minimum_charge_snapshot: number | null
+  conditions_snapshot: string | null
+  /** Motif d'un écart de tarif ou d'une ligne libre. */
   price_reason: string | null
+  /** Modèle commercial et conditions tarifaires figés à la réception. */
+  laundry_model_id: string | null
+  laundry_model_name_snapshot: string | null
+  laundry_model_type_snapshot: LaundryModelType | null
+  laundry_weight_kg: number | null
+  laundry_price_breakdown_snapshot: string | null
+  laundry_services_snapshot: string | null
+  laundry_price_per_kg_snapshot: number | null
+  laundry_package_price_snapshot: number | null
+  laundry_included_weight_kg_snapshot: number | null
+  laundry_overage_price_per_kg_snapshot: number | null
+  laundry_minimum_weight_kg_snapshot: number | null
+  laundry_billing_increment_kg_snapshot: number | null
+  laundry_minimum_charge_snapshot: number | null
 }
 
 /** Réclamation ou vêtement abîmé (table `order_issues`, migration 005). */
@@ -199,13 +235,135 @@ export type PaymentTransactionRow = {
   cash_session_id: string | null
 }
 
-/** Prestation tarifée du catalogue (table `catalog_entries`, migration 004). */
+/** Unités de facturation prises en charge par le catalogue. */
+export type CatalogBillingUnit =
+  | 'PIECE'
+  | 'PAIR'
+  | 'SET'
+  | 'KG'
+  | 'M2'
+  | 'METER'
+  | 'PACKAGE'
+  | 'FLAT'
+
+/** Modes d'évaluation d'un tarif. */
+export type CatalogPricingMode = 'FIXED' | 'FROM' | 'QUOTE' | 'UNCONFIGURED'
+export type CatalogServiceType = 'treatment' | 'option' | 'logistics' | 'other'
+export type CatalogApplicationScope = 'article' | 'order'
+export type OrderItemPriceStatus = 'CONFIRMED' | 'ESTIMATED'
+
+/** Modèles commerciaux de blanchisserie, distincts des tarifs à la pièce. */
+export type LaundryModelType = 'PER_KG' | 'WEIGHT_PACKAGE'
+export type LaundryModelAudience = 'ALL' | 'INDIVIDUAL' | 'PROFESSIONAL'
+export type LaundryModelServiceMode = 'INCLUDED' | 'EXTRA'
+
+export type LaundryModelRow = {
+  id: string
+  tenant_id: string
+  name: string
+  description: string | null
+  model_type: LaundryModelType
+  audience: LaundryModelAudience
+  price_per_kg: number | null
+  package_price: number | null
+  included_weight_kg: number | null
+  overage_price_per_kg: number | null
+  minimum_weight_kg: number | null
+  billing_increment_kg: number | null
+  minimum_charge: number | null
+  conditions: string | null
+  exclusions: string | null
+  pickup_delivery_terms: string | null
+  turnaround_days: number | null
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LaundryModelServiceRow = {
+  id: string
+  tenant_id: string
+  model_id: string
+  service_id: string
+  inclusion_mode: LaundryModelServiceMode
+  sort_order: number
+  created_at: string
+}
+
+export type OrderPriceHistoryRow = {
+  id: string
+  tenant_id: string
+  order_id: string
+  order_item_id: string
+  previous_price: number
+  new_price: number
+  reason: string | null
+  changed_by: string | null
+  changed_at: string
+  previous_snapshot: Json
+  new_snapshot: Json
+}
+
+export type CatalogFamilyRow = {
+  id: string
+  tenant_id: string
+  name: string
+  description: string | null
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CatalogArticleRow = {
+  id: string
+  tenant_id: string
+  family_id: string
+  name: string
+  description: string | null
+  care_instructions: string | null
+  default_unit: CatalogBillingUnit
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CatalogServiceRow = {
+  id: string
+  tenant_id: string
+  name: string
+  service_type: CatalogServiceType
+  application_scope: CatalogApplicationScope
+  description: string | null
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Tarif tenant-scoped (table `catalog_entries`, migrations 004 et 013). */
 export type CatalogEntryRow = {
   id: string
   tenant_id: string
+  /** Libellés de compatibilité, synchronisés avec les références ci-dessous. */
   article: string
   service: string
+  article_id: string | null
+  service_id: string
   price: number
+  pricing_mode: CatalogPricingMode
+  billing_unit: CatalogBillingUnit
+  minimum_quantity: number | null
+  billing_increment: number | null
+  minimum_charge: number | null
+  conditions: string | null
+  requires_review: boolean
   is_active: boolean
   sort_order: number
   created_at: string
@@ -279,6 +437,7 @@ export type StockMovementRow = {
   kind: 'in' | 'out'
   quantity: number
   unit_cost: number | null
+  order_item_id: string | null
   supplier_id: string | null
   reason: string | null
   created_by: string | null
@@ -481,8 +640,47 @@ export interface Database {
           | 'article_name'
           | 'service_name'
           | 'price_reason'
+          | 'quantity'
+          | 'billed_quantity'
+          | 'billing_unit'
+          | 'unit_price'
+          | 'pricing_mode'
+          | 'price_status'
+          | 'family_name_snapshot'
+          | 'catalog_unit_price_snapshot'
+          | 'minimum_quantity_snapshot'
+          | 'billing_increment_snapshot'
+          | 'minimum_charge_snapshot'
+          | 'conditions_snapshot'
+          | 'laundry_model_id'
+          | 'laundry_model_name_snapshot'
+          | 'laundry_model_type_snapshot'
+          | 'laundry_weight_kg'
+          | 'laundry_price_breakdown_snapshot'
+          | 'laundry_services_snapshot'
+          | 'laundry_price_per_kg_snapshot'
+          | 'laundry_package_price_snapshot'
+          | 'laundry_included_weight_kg_snapshot'
+          | 'laundry_overage_price_per_kg_snapshot'
+          | 'laundry_minimum_weight_kg_snapshot'
+          | 'laundry_billing_increment_kg_snapshot'
+          | 'laundry_minimum_charge_snapshot'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      order_price_history: {
+        Row: OrderPriceHistoryRow
+        Insert: InsertOf<
+          OrderPriceHistoryRow,
+          | 'id'
+          | 'reason'
+          | 'changed_by'
+          | 'changed_at'
+          | 'previous_snapshot'
+          | 'new_snapshot'
+        >
+        Update: Partial<Omit<OrderPriceHistoryRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
       order_status_history: {
@@ -494,13 +692,101 @@ export interface Database {
         Update: Partial<Omit<OrderStatusHistoryRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
+      catalog_families: {
+        Row: CatalogFamilyRow
+        Insert: InsertOf<
+          CatalogFamilyRow,
+          'id' | 'description' | 'is_active' | 'sort_order' | 'created_by' | 'created_at' | 'updated_at'
+        >
+        Update: Partial<Omit<CatalogFamilyRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      catalog_articles: {
+        Row: CatalogArticleRow
+        Insert: InsertOf<
+          CatalogArticleRow,
+          | 'id'
+          | 'description'
+          | 'care_instructions'
+          | 'default_unit'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<CatalogArticleRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      catalog_services: {
+        Row: CatalogServiceRow
+        Insert: InsertOf<
+          CatalogServiceRow,
+          | 'id'
+          | 'service_type'
+          | 'application_scope'
+          | 'description'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<CatalogServiceRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
       catalog_entries: {
         Row: CatalogEntryRow
         Insert: InsertOf<
           CatalogEntryRow,
-          'id' | 'is_active' | 'sort_order' | 'created_at' | 'updated_at'
+          | 'id'
+          | 'article_id'
+          | 'service_id'
+          | 'pricing_mode'
+          | 'billing_unit'
+          | 'minimum_quantity'
+          | 'billing_increment'
+          | 'minimum_charge'
+          | 'conditions'
+          | 'requires_review'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_at'
+          | 'updated_at'
         >
         Update: Partial<Omit<CatalogEntryRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      laundry_models: {
+        Row: LaundryModelRow
+        Insert: InsertOf<
+          LaundryModelRow,
+          | 'id'
+          | 'description'
+          | 'price_per_kg'
+          | 'package_price'
+          | 'included_weight_kg'
+          | 'overage_price_per_kg'
+          | 'minimum_weight_kg'
+          | 'billing_increment_kg'
+          | 'minimum_charge'
+          | 'conditions'
+          | 'exclusions'
+          | 'pickup_delivery_terms'
+          | 'turnaround_days'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<LaundryModelRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      laundry_model_services: {
+        Row: LaundryModelServiceRow
+        Insert: InsertOf<LaundryModelServiceRow, 'id' | 'created_at'>
+        Update: Partial<Omit<LaundryModelServiceRow, 'id' | 'tenant_id' | 'model_id'>>
         Relationships: []
       }
       cash_sessions: {
@@ -577,7 +863,7 @@ export interface Database {
         Row: StockMovementRow
         Insert: InsertOf<
           StockMovementRow,
-          'id' | 'unit_cost' | 'supplier_id' | 'reason' | 'created_by' | 'created_at'
+          'id' | 'unit_cost' | 'order_item_id' | 'supplier_id' | 'reason' | 'created_by' | 'created_at'
         >
         Update: Partial<Omit<StockMovementRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -667,6 +953,14 @@ export interface Database {
       }
     }
     Functions: {
+      report_stock_consumption_costs: {
+        Args: { p_order_item_ids: string[] }
+        Returns: { order_item_id: string; cost_amount: number; missing_cost_movements: number }[]
+      }
+      save_laundry_model: {
+        Args: { p_model: Json; p_services: Json }
+        Returns: string
+      }
       my_subscription: {
         Args: Record<PropertyKey, never>
         Returns: SubscriptionSnapshot | null
@@ -749,6 +1043,17 @@ export interface Database {
           remaining: number
           duplicate: boolean
         }
+      }
+      finalize_cinetpay_payment: {
+        Args: {
+          p_transaction_id: string
+          p_amount: number
+          p_payment_method?: string | null
+          p_operator_label?: string | null
+          p_signature_verified?: boolean
+          p_provider_payload?: Json
+        }
+        Returns: Json
       }
       close_cash_session: {
         Args: {
