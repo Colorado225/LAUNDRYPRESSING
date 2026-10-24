@@ -270,6 +270,10 @@ Quand le client se présente, ouvrir la commande et la faire passer en **Livrée
 Onglet **Atelier**. La caméra n'est activée qu'à ce moment-là : le reste de
 l'application reste léger.
 
+La file des commandes peut être recherchée par nom, téléphone ou référence et
+filtrée par étape. Les retards et les dates promises les plus proches remontent
+en tête de liste ; la date de remise promise apparaît sur chaque commande.
+
 ### 4.2 Scanner une étiquette
 
 1. Appuyer sur **Scanner une étiquette** et autoriser l'accès à la caméra

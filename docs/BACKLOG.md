@@ -11,7 +11,7 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 > éléments de ce backlog. Le lot 2 couvre les modèles commerciaux, dont les
 > forfaits famille ; le lot 3 couvre les coûts de stock imputés, les rapports
 > comparatifs et l'export CSV. Les deux lots passent les contrôles automatisés
-> (637 tests, typecheck, lint et build). La recette d'une vraie sortie de stock
+> (638 tests, typecheck, lint et build). La recette d'une vraie sortie de stock
 > dans un pressing reste à effectuer ; les limites restantes restent explicites.
 
 ---
@@ -61,7 +61,7 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 | Sujet | Détail |
 | --- | --- |
 | Couverture de code | Pas encore mesurée (pas de `@vitest/coverage-v8`) ; à activer avec un seuil minimum. |
-| Validation UX sur tablette physique | Les améliorations de saisie, d'atelier, de synchronisation et d'accessibilité sont couvertes par des tests automatisés ; il reste à les essayer sur une tablette Android d'entrée de gamme avec un réceptionniste et un artisan, sans télémétrie. |
+| Validation UX sur tablette physique | Premier essai terrain signalé comme effectué le 24/10/2026 ; la prochaine itération porte sur l'atelier (file filtrable, échéances prioritaires). Aucun suivi télémétrique n'est ajouté. |
 | Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
 | Pagination **serveur** des commandes | Les commandes lisent Dexie et sont paginées côté rendu (20 par page). Les dépenses, elles, sont déjà paginées par curseur côté serveur ; la même mécanique servira quand les commandes passeront au serveur. |

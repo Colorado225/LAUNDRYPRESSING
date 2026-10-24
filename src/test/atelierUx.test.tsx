@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const depot = vi.hoisted(() => ({
   found: null as Record<string, unknown> | null,
+  workshopOrders: [] as Array<Record<string, unknown>>,
   updateStatus: vi.fn(),
 }))
 
-vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => [] }))
+vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => depot.workshopOrders }))
 vi.mock('@/components/QrScanner', () => ({ default: () => null }))
 vi.mock('@/db/hooks', () => ({ useUpdateOrderStatus: () => depot.updateStatus }))
 vi.mock('@/db/ordersRepository', () => ({
@@ -53,7 +54,40 @@ async function scan(code: string) {
   })
 }
 
+function atelierOrder(
+  id: string,
+  customerName: string,
+  customerPhone: string,
+  status: string,
+): Record<string, unknown> {
+  const now = new Date().toISOString()
+  return {
+    id,
+    tenantId: TENANT,
+    customerName,
+    customerPhone,
+    status,
+    qrCode: `CMD-${id}`,
+    photoUrl: null,
+    totalAmount: 5000,
+    paymentStatus: 'pending',
+    paymentMethod: null,
+    createdAt: now,
+    updatedAt: now,
+    synced: 1,
+    syncedAt: now,
+    serverVersion: 1,
+    syncError: null,
+    syncConflict: null,
+    dueDate: null,
+    assignedTo: null,
+    assignedAt: null,
+    statusReason: null,
+  }
+}
+
 beforeEach(() => {
+  depot.workshopOrders = []
   depot.found = {
     order: {
       id: 'order-1',
@@ -93,6 +127,41 @@ describe('améliorations UX de l’atelier', () => {
     expect(host.querySelector('button.bg-brand-teal')?.className).toContain('min-h-14')
     expect([...host.querySelectorAll('button')].filter((button) => button.textContent?.trim() === 'Annulée'))
       .toHaveLength(1)
+  })
+
+  it('recherche par client et filtre la file par étape', async () => {
+    depot.workshopOrders = [
+      atelierOrder('order-awa', 'Awa Koné', '0700000001', 'washing'),
+      atelierOrder('order-koffi', 'Koffi Yao', '0500000002', 'sorting'),
+    ]
+    depot.workshopOrders[1]!['dueDate'] = '2000-01-01'
+    await mount()
+
+    expect(host.querySelector('ul.grid li a')?.textContent).toContain('Koffi Yao')
+    expect(host.textContent).toContain('En retard')
+    expect(host.textContent).toContain('Awa Koné')
+    expect(host.textContent).toContain('Koffi Yao')
+    const search = host.querySelector<HTMLInputElement>('[aria-label="Rechercher une commande en atelier"]')
+    if (!search) throw new Error('Recherche atelier introuvable')
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(search, 'Awa')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(host.textContent).toContain('Awa Koné')
+    expect(host.textContent).not.toContain('Koffi Yao')
+
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(search, '')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const sortingFilter = [...host.querySelectorAll('button')]
+      .find((button) => button.getAttribute('aria-label')?.startsWith('Filtrer : En tri'))
+    if (!sortingFilter) throw new Error('Filtre de tri introuvable')
+    act(() => sortingFilter.click())
+    expect(host.textContent).toContain('Koffi Yao')
+    expect(host.textContent).not.toContain('Awa Koné')
   })
 
   it('demande confirmation avant annulation depuis le résultat du scan', async () => {

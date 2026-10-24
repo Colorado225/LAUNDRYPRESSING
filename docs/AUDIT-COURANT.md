@@ -20,7 +20,7 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Élément | Valeur |
 | --- | --- |
 | Fichiers TypeScript / TSX dans `src/` | 148 (94 applicatifs, 53 tests et 1 fichier de support) |
-| Lignes de code applicatif | 24 843 (hors dossier `src/test/`) |
+| Lignes de code applicatif | 24 938 (hors dossier `src/test/`) |
 | Migrations | 19 (`001_init` → `019_catalogue_commercial_models`) |
 | Tables PostgreSQL | 38 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
 | Politiques RLS | 91 |
@@ -29,7 +29,7 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
 | Fichiers de tests | 59 Vitest (53 sous `src/`, 6 pour les scripts) + 23 fichiers SQL sous `supabase/tests/` |
-| Tests automatisés | 637 (suite relancée le 24/10/2026 après ajouts stock, rapport d’équipe et améliorations UX) |
+| Tests automatisés | 638 (suite relancée le 24/10/2026 après ajouts stock, rapport d’équipe et améliorations UX de l’atelier) |
 | Contrôles SQL exécutés | 175 lors des recettes antérieures (jusqu'aux migrations précédentes) ; tests SQL ajoutés pour 019 non rejoués localement faute de `psql` |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
