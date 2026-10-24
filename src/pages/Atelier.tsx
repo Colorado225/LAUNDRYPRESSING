@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  History,
   Keyboard,
   Loader2,
   QrCode,
@@ -17,7 +18,11 @@ import { useUpdateOrderStatus } from '@/db/hooks'
 import { findOrderByQrCode, getOrderWithItems, getWorkshopOrders } from '@/db/ordersRepository'
 import type { LocalOrderWithItems } from '@/db/ordersRepository'
 import { useTenantStore } from '@/lib/tenantContext'
-import { ORDER_FLOW, ORDER_STATUSES, PAYMENT_STATUS_LABELS } from '@/constants/orders'
+import {
+  ORDER_STATUSES,
+  PAYMENT_STATUS_LABELS,
+  allowedStatusTargets,
+} from '@/constants/orders'
 import { formatDateTimeFr, formatFcfa } from '@/lib/formatters'
 import { shortOrderReference } from '@/services/qrService'
 import type { OrderStatus } from '@/types/database'
@@ -28,6 +33,16 @@ import type { OrderStatus } from '@/types/database'
  * Tout fonctionne hors ligne : la recherche se fait dans Dexie et le changement
  * de statut est écrit localement puis synchronisé (phase 2).
  */
+
+/** Ligne de l'historique des derniers scans de la session. */
+interface ScanEntry {
+  code: string
+  /** Heure du scan, déjà formatée pour l'affichage. */
+  at: string
+  /** Nom du client, ou `null` quand le code n'a rien donné. */
+  client: string | null
+  status: string
+}
 
 type ScanOutcome =
   | { kind: 'idle' }
@@ -43,6 +58,10 @@ export default function Atelier() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [outcome, setOutcome] = useState<ScanOutcome>({ kind: 'idle' })
   const [manualCode, setManualCode] = useState('')
+  // Historique de session : il n'est pas persisté (l'atelier enchaîne les
+  // scans, la tablette redémarre, l'écran « Commandes en atelier » reste la
+  // vue durable). Il sert à rattraper un scan raté sans re-scanner.
+  const [historique, setHistorique] = useState<ScanEntry[]>([])
 
   const workshopOrders = useLiveQuery(async () => {
     if (!tenantId) return []
@@ -67,6 +86,10 @@ export default function Atelier() {
 
         if (found === null) {
           setOutcome({ kind: 'not-found', code: trimmed })
+          setHistorique((entrees) => [
+            { code: trimmed, at: formatDateTimeFr(new Date().toISOString()), client: null, status: 'Introuvable' },
+            ...entrees,
+          ].slice(0, 5))
           return
         }
         if ('foreignTenantId' in found) {
@@ -75,6 +98,15 @@ export default function Atelier() {
         }
 
         setOutcome({ kind: 'found', data: found })
+        setHistorique((entrees) => [
+          {
+            code: trimmed,
+            at: formatDateTimeFr(new Date().toISOString()),
+            client: found.order.customerName,
+            status: ORDER_STATUSES[found.order.status].label,
+          },
+          ...entrees,
+        ].slice(0, 5))
         setManualCode('')
       } catch (error) {
         setOutcome({ kind: 'not-found', code: trimmed })
@@ -92,7 +124,16 @@ export default function Atelier() {
       toast.success(`Statut : ${ORDER_STATUSES[status].label}`, { icon: '✅' })
       // Rafraîchit la fiche affichée à partir de la base locale
       const refreshed = await getOrderWithItems(orderId)
-      if (refreshed) setOutcome({ kind: 'found', data: refreshed })
+      if (refreshed) {
+        setOutcome({ kind: 'found', data: refreshed })
+        setHistorique((entrees) =>
+          entrees.map((entree) =>
+            entree.client === refreshed.order.customerName
+              ? { ...entree, status: ORDER_STATUSES[status].label }
+              : entree,
+          ),
+        )
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Mise à jour impossible')
     }
@@ -157,6 +198,36 @@ export default function Atelier() {
         onStatusChange={changeStatus}
         onDismiss={() => setOutcome({ kind: 'idle' })}
       />
+
+      {/* Derniers scans de la session */}
+      {historique.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <History size={16} aria-hidden /> Derniers scans
+          </h2>
+          <ul className="mt-2 divide-y divide-slate-100">
+            {historique.map((entree, index) => (
+              <li
+                key={`${entree.code}-${index}`}
+                className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-slate-800">
+                    {entree.client ?? 'Aucune commande'}
+                  </span>
+                  <span className="block font-mono text-xs text-slate-400">{entree.code}</span>
+                </span>
+                <span className="text-right">
+                  <span className="block text-xs font-semibold text-slate-600">
+                    {entree.status}
+                  </span>
+                  <span className="block text-xs text-slate-400">{entree.at}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Commandes en atelier */}
       <section className="space-y-2">
@@ -240,6 +311,9 @@ function ScanResult({
   onStatusChange: (orderId: string, status: OrderStatus) => Promise<void>
   onDismiss: () => void
 }) {
+  // Appelé avant tout retour anticipé : les règles des hooks l'exigent.
+  const role = useTenantStore((state) => state.role)
+
   if (outcome.kind === 'idle') return null
 
   if (outcome.kind === 'searching') {
@@ -285,6 +359,7 @@ function ScanResult({
 
   const { order, items } = outcome.data
   const meta = ORDER_STATUSES[order.status]
+  const cibles = allowedStatusTargets(order.status, role)
 
   return (
     <section className="rounded-2xl border-2 border-brand-teal/40 bg-white p-4 sm:p-5">
@@ -341,7 +416,7 @@ function ScanResult({
           Changer le statut
         </p>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {ORDER_FLOW.map((status) => {
+          {cibles.map((status) => {
             const statusMeta = ORDER_STATUSES[status]
             const isCurrent = status === order.status
             return (
@@ -361,14 +436,16 @@ function ScanResult({
             )
           })}
 
-          <button
-            type="button"
-            onClick={() => void onStatusChange(order.id, 'cancelled')}
-            aria-pressed={order.status === 'cancelled'}
-            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-          >
-            {ORDER_STATUSES.cancelled.label}
-          </button>
+          {cibles.includes('cancelled') && (
+            <button
+              type="button"
+              onClick={() => void onStatusChange(order.id, 'cancelled')}
+              aria-pressed={order.status === 'cancelled'}
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+            >
+              {ORDER_STATUSES.cancelled.label}
+            </button>
+          )}
         </div>
 
         <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">

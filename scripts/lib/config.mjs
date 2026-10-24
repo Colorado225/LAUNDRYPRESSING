@@ -111,18 +111,38 @@ export function buildConfig(values) {
 
     appUrl: read('APP_URL').replace(/\/+$/, ''),
 
+    /**
+     * Environnement des Edge Functions. `production` par défaut : en cas
+     * d'oubli, le webhook refuse les notifications non signées au lieu de les
+     * accepter silencieusement.
+     */
+    appEnv: (read('APP_ENV') || 'production').toLowerCase(),
+
     cinetpay: {
       apiKey: optional('CINETPAY_API_KEY'),
       siteId: optional('CINETPAY_SITE_ID'),
       secretKey: optional('CINETPAY_SECRET_KEY'),
       baseUrl: optional('CINETPAY_BASE_URL'),
       notifyUrl,
+      /**
+       * `test` ou `production`. L'API Checkout v2 n'a pas d'hôte de bac à sable :
+       * le mode sert à refuser une clé d'essai en production et à marquer les
+       * transactions d'essai. Défaut `production` — même logique que `APP_ENV`.
+       */
+      mode: (read('CINETPAY_MODE') || 'production').toLowerCase(),
     },
 
     owner: {
       email: optional('SEED_OWNER_EMAIL'),
       password: optional('SEED_OWNER_PASSWORD'),
     },
+
+    /**
+     * Compte de supervision (palier 4). Facultatif : `true` inscrit le compte
+     * propriétaire créé ci-dessus dans `platform_admins`, ce qui ouvre la
+     * console `/supervision`. À réserver à l'éditeur de la plateforme.
+     */
+    platformAdmin: read('PLATFORM_ADMIN').toLowerCase() === 'true',
     tenant: {
       name: optional('SEED_TENANT_NAME') || 'Mon pressing',
       phone: optional('SEED_TENANT_PHONE'),
@@ -225,6 +245,14 @@ export function validateConfig(config) {
     })
   }
 
+  // --- Environnement --------------------------------------------------------
+  if (!['production', 'development'].includes(config.appEnv)) {
+    errors.push({
+      key: 'APP_ENV',
+      message: 'Valeur attendue : « production » ou « development ».',
+    })
+  }
+
   // --- Paiement (facultatif) -----------------------------------------------
   if (!config.cinetpay.apiKey || !config.cinetpay.siteId) {
     warnings.push({
@@ -233,12 +261,54 @@ export function validateConfig(config) {
         'Identifiants CinetPay absents : les commandes fonctionneront, mais le bouton « Payer par Mobile Money » restera inopérant.',
     })
   }
-  if (config.cinetpay.apiKey && !config.cinetpay.secretKey) {
-    warnings.push({
-      key: 'CINETPAY_SECRET_KEY',
-      message:
-        'Clé secrète CinetPay absente : le webhook fonctionnera en mode « vérification seule », sans authentification HMAC.',
+  // --- Mode de paiement -----------------------------------------------------
+  if (!['test', 'production'].includes(config.cinetpay.mode)) {
+    errors.push({
+      key: 'CINETPAY_MODE',
+      message: 'Valeur attendue : « test » ou « production ».',
     })
+  }
+
+  // Une clé d'essai en production encaisserait de faux paiements : on bloque
+  // ici plutôt que de laisser l'Edge Function échouer au premier client.
+  if (config.cinetpay.mode === 'production' && config.cinetpay.apiKey) {
+    const ressembleAEssai = /(test|demo|exemple|example|fake|dummy|simul)/i
+    if (
+      ressembleAEssai.test(config.cinetpay.apiKey.slice(0, 12)) ||
+      ressembleAEssai.test(String(config.cinetpay.siteId ?? ''))
+    ) {
+      errors.push({
+        key: 'CINETPAY_MODE',
+        message:
+          'Identifiants CinetPay d’essai détectés en mode production : passez CINETPAY_MODE=test, ou installez les identifiants réels.',
+      })
+    }
+  }
+
+  if (config.cinetpay.mode === 'test') {
+    warnings.push({
+      key: 'CINETPAY_MODE',
+      message:
+        'Mode essai : les paiements sont fictifs. Les transactions sont marquées « test » dans le registre.',
+    })
+  }
+
+  if (config.cinetpay.apiKey && !config.cinetpay.secretKey) {
+    if (config.appEnv === 'production') {
+      // Refus bloquant : le webhook rejetterait de toute façon les
+      // notifications (503), donc aucun paiement n'aboutirait.
+      errors.push({
+        key: 'CINETPAY_SECRET_KEY',
+        message:
+          'Clé secrète CinetPay requise en production : sans elle, le webhook refuse toutes les notifications (passez APP_ENV=development pour un test local).',
+      })
+    } else {
+      warnings.push({
+        key: 'CINETPAY_SECRET_KEY',
+        message:
+          'Clé secrète absente : en développement, le webhook valide uniquement par l’API CinetPay (aucune vérification HMAC).',
+      })
+    }
   }
 
   // --- Compte de départ (facultatif) ---------------------------------------

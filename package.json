@@ -9,12 +9,19 @@
     "setup": "node scripts/setup.mjs",
     "setup:check": "node scripts/setup.mjs --check",
     "setup:dry": "node scripts/setup.mjs --dry-run",
+    "sql:verify": "bash scripts/sql-verify.sh",
+    "db:etat": "node scripts/db.mjs etat",
+    "db:push": "node scripts/db.mjs push",
+    "db:verifier": "node scripts/db.mjs verifier",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "recette": "node scripts/recette.mjs",
+    "simulateur": "node scripts/cinetpay-simule.mjs",
+    "deploy:fonctions": "node scripts/deploy-fonctions.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",
@@ -46,6 +53,7 @@
     "fake-indexeddb": "^6.2.6",
     "globals": "^17.4.0",
     "jsdom": "^30.1.3",
+    "pg": "^8.23.1",
     "typescript": "6.0.3",
     "typescript-eslint": "^8.72.0",
     "vite": "^8.0.4",

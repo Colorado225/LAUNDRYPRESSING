@@ -147,6 +147,12 @@ describe('Requêtes Supabase — toutes portent un filtre de périmètre', () =>
       reason:
         "lecture de la dernière transaction d'une commande (.eq('order_id')) ; la RLS restreint déjà au pressing courant.",
     },
+    {
+      file: 'src/services/subscriptionService.ts',
+      table: 'plans',
+      reason:
+        'catalogue commercial de l’éditeur : données globales, aucune donnée de pressing ; lecture ouverte à tout compte authentifié.',
+    },
   ]
 
   const SCOPING = /\.eq\(\s*'(tenant_id|user_id|id)'|tenant_?id/i

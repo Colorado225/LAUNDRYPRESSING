@@ -35,6 +35,19 @@ export const orderItemInputSchema = z.object({
     .int('Le prix doit être un nombre entier de FCFA')
     .min(0, 'Le prix ne peut pas être négatif')
     .max(10_000_000, 'Prix trop élevé'),
+  /** Entrée de catalogue utilisée (prix historisé), absente pour une ligne libre. */
+  catalogEntryId: z.string().uuid("Référence de catalogue invalide").optional(),
+  articleName: z.string().trim().max(60).optional(),
+  serviceName: z.string().trim().max(60).optional(),
+  /**
+   * Motif du tarif dérogatoire. Le serveur le refuse (22023) dès qu'un prix
+   * s'écarte du tarif du catalogue sans motif d'au moins 10 caractères.
+   */
+  priceReason: z
+    .string()
+    .trim()
+    .max(300, 'Motif trop long (300 caractères maximum)')
+    .optional(),
 })
 
 export const createOrderSchema = z.object({
@@ -45,6 +58,13 @@ export const createOrderSchema = z.object({
     .max(120, 'Nom trop long (120 caractères maximum)'),
   customerPhone: phoneCiSchema,
   items: z.array(orderItemInputSchema).min(1, 'Ajoutez au moins un vêtement'),
+  /** Échéance promise au client, au format AAAA-MM-JJ. */
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date de livraison invalide')
+    .optional(),
+  /** Employé à qui la commande est confiée dès la réception. */
+  assignedTo: z.string().uuid('Employé invalide').optional(),
 })
 
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>

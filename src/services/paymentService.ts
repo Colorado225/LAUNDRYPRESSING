@@ -44,7 +44,7 @@ export function canInitiatePayment(): { ok: boolean; reason: string | null } {
     return {
       ok: false,
       reason:
-        'Supabase n’est pas configuré sur cet appareil : le paiement Mobile Money est indisponible.',
+        'Supabase n’est pas configuré : le bouton permet seulement une simulation locale, sans encaissement réel.',
     }
   }
   if (!navigator.onLine) {
@@ -75,7 +75,8 @@ export async function initiatePayment(
 ): Promise<PaymentInitResult> {
   const guard = canInitiatePayment()
   if (!guard.ok) {
-    throw new PaymentError('offline_or_unconfigured', guard.reason ?? 'Paiement indisponible.')
+    const code = isSupabaseConfigured ? 'offline' : 'supabase_unconfigured'
+    throw new PaymentError(code, guard.reason ?? 'Paiement indisponible.')
   }
 
   const tenantId = getTenantId()
@@ -246,7 +247,9 @@ export async function fetchPaymentState(orderId: string): Promise<PaymentState> 
 }
 
 /** Extrait le message d'erreur d'une réponse d'Edge Function non-2xx. */
-async function extractEdgeFunctionError(error: unknown): Promise<{ code: string; message: string }> {
+export async function extractEdgeFunctionError(
+  error: unknown,
+): Promise<{ code: string; message: string }> {
   const candidate = error as { context?: Response; message?: string }
 
   if (candidate.context instanceof Response) {
@@ -256,12 +259,26 @@ async function extractEdgeFunctionError(error: unknown): Promise<{ code: string;
       }
       if (body.error?.message) {
         return {
-          code: body.error.code ?? 'edge_error',
+          // Seuls ces deux états autorisent le parcours simulé : la fonction
+          // n'est pas déployée, ou CinetPay n'a pas encore ses clés. Un 401,
+          // 403, 422 ou 500 conserve son erreur réelle et ne devient jamais
+          // silencieusement une « simulation réussie ».
+          code:
+            candidate.context.status === 404
+              ? 'function_not_deployed'
+              : body.error.code ?? 'edge_error',
           message: body.error.message,
         }
       }
     } catch {
       // Corps non JSON : on retombe sur le message générique.
+    }
+
+    if (candidate.context.status === 404) {
+      return {
+        code: 'function_not_deployed',
+        message: 'La fonction de paiement n’est pas encore déployée.',
+      }
     }
   }
 

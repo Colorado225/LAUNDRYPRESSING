@@ -82,6 +82,14 @@ beforeAll(async () => {
         state.memberships.push(body)
         return json(response, 201, body)
       }
+      if (request.method === 'PATCH') {
+        const body = await readBody(request)
+        // Le corps est conservé pour que les tests puissent vérifier ce qui
+        // est réellement envoyé (et pas seulement la méthode employée).
+        state.calls[state.calls.length - 1].body = body
+        Object.assign(state.memberships[0], body)
+        return json(response, 201, state.memberships[0])
+      }
     }
 
     // --- API Admin : utilisateurs -------------------------------------------
@@ -179,6 +187,8 @@ describe('stepAccount — première installation', () => {
       user_id: USER_ID,
       tenant_id: TENANT_ID,
       role: 'owner',
+      // Utilisé par le sélecteur d'attribution des commandes.
+      display_name: 'Propriétaire',
     })
   })
 
@@ -214,6 +224,19 @@ describe('stepAccount — relance (idempotence)', () => {
     )
 
     expect(updates.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('renseigne le nom affiché s’il manque sur un rattachement existant', async () => {
+    state.memberships[0].display_name = undefined
+    state.calls.length = 0
+
+    await stepAccount(config())
+
+    const patch = state.calls.find(
+      (call) => call.method === 'PATCH' && call.pathname === '/rest/v1/tenant_users',
+    )
+
+    expect(patch?.body).toEqual({ display_name: 'Propriétaire' })
   })
 })
 

@@ -4,7 +4,11 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : Phase 3 terminée** (socle, offline-first et module QR Code).
+**État actuel : palier 4 terminé, conformité MVP vérifiée** (abonnement, multi-boutiques, supervision de
+l'éditeur, support). Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont
+livrés : le produit est complet au périmètre de l'audit. La correspondance avec
+les douze écrans de la maquette est tenue dans
+[`docs/CONFORMITE-MVP.md`](docs/CONFORMITE-MVP.md).
 
 ---
 
@@ -17,10 +21,19 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 1 | **Gestion des commandes** (création, listing, statuts, empesage, broderie fragile) | ✅ phase 2 (base locale) |
 | 2 | **QR Code** (génération par commande + scan atelier) | ✅ phase 3 |
 | 3 | **Offline-first** (création sans internet, synchronisation automatique) | ✅ phase 2 |
-| 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | à venir — phase 4 |
+| 4 | **Paiement Mobile Money** (CinetPay : Wave, Orange Money, MTN MoMo, Moov) | ✅ phase 4 |
+| 5 | **Catalogue et caisse** (prix historisé, acomptes, reçu 80 mm, clôture) | ✅ palier 2 |
+| 6 | **Workflow complet** (8 étapes, attribution, livraison promise, réclamations) | ✅ palier 2 |
+| 7 | **Clients et historique** (fiche par téléphone, total dépensé, coordonnées) | ✅ palier 3 |
+| 8 | **Stocks, fournisseurs et dépenses** (seuils d'alerte, mouvements, dépenses du propriétaire) | ✅ palier 3 |
+| 9 | **Tableau de bord propriétaire** (activité, chiffre d'affaires, encours, alertes) | ✅ palier 3 |
+| 10 | **Abonnement** (formules, échéance, période de grâce, lecture seule si échu) | ✅ palier 4 |
+| 11 | **Multi-boutiques** (sélecteur de boutique, rôle par boutique, en-tête validé) | ✅ palier 4 |
+| 12 | **Supervision et support** (console éditeur, demandes des pressings) | ✅ palier 4 |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
-statistiques avancées, gestion des stocks, gestion du personnel, facturation PDF, suivi client public.
+statistiques avancées, gestion du personnel, facturation PDF, suivi client public,
+export comptable.
 Toute suppression liée à ce périmètre est **conservée dans l'historique Git** et tracée dans `docs/AUDIT.md`.
 
 ---
@@ -91,9 +104,11 @@ SEED_OWNER_PASSWORD=<mot de passe ≥ 6 car.>
 SEED_TENANT_NAME=Pressing Cocody
 ```
 
-Facultatives : `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`
-(sans elles l'application fonctionne, mais le bouton « Payer par Mobile Money »
-reste inopérant).
+Sans `CINETPAY_API_KEY`, `CINETPAY_SITE_ID` et `CINETPAY_SECRET_KEY`, le
+bouton « Payer par Mobile Money » affiche un toast de **simulation** : le
+parcours est validé, mais la commande reste à régler et aucun argent n'est encaissé.
+Renseignez ces identifiants pour la production, puis lancez
+`npm run deploy:fonctions` (le jeton Supabase est requis).
 
 > ⚠️ **Toute variable préfixée `VITE_` est embarquée dans le bundle et donc publique.**
 > Les autres — y compris `SUPABASE_SERVICE_ROLE_KEY` et `CINETPAY_SECRET_KEY` —
@@ -113,10 +128,10 @@ npm run setup:dry      # affiche les commandes sans rien exécuter
 | Étape | Action | Idempotence |
 |-------|--------|-------------|
 | 1 | `supabase link` sur le projet | sans effet si déjà lié |
-| 2 | `supabase db push` : `001_init.sql` puis `002_payments.sql` | migration déjà appliquée ignorée |
+| 2 | `supabase db push` : migrations `001` à `009` dans l'ordre | migration déjà appliquée ignorée |
 | 3 | Déploiement de `cinetpay-init` (JWT requis) et `cinetpay-webhook` (public) | redéploie la même version |
 | 4 | Secrets `CINETPAY_*` et `APP_URL` côté Edge Functions | écrasés par les valeurs du `.env` |
-| 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` | pressing retrouvé par son nom, compte réutilisé |
+| 5 | Création du pressing + compte propriétaire (`app_metadata.tenant_id`) + ligne `tenant_users` (+ `platform_admins` si `PLATFORM_ADMIN=true`) | pressing retrouvé par son nom, compte réutilisé |
 | 6 | Contrôle : `orders` doit répondre `42501` en anonyme, webhook en ligne | lecture seule |
 
 Options : `--skip-db`, `--skip-functions`, `--skip-account`, `--check`,
@@ -198,10 +213,17 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (111 tests, dont les scripts d'installation) |
+| `npm test` | Suite Vitest complète (550 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
+| `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
+| `npm run simulateur` | Faux CinetPay local (`0.0.0.0:54321`) pour tester le paiement en mode `test` |
+| `npm run deploy:fonctions` | Assemble et déploie les Edge Functions par l'API Supabase (`--verifier`, secrets poussés par défaut ; `--sans-secrets` pour les omettre) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
+| `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
+| `npm run db:etat` | Inventaire **lecture seule** d'une base gérée (`DATABASE_URL`) : tables, RLS, migrations |
+| `npm run db:push` | Applique le socle, les migrations et le jeu de démonstration sur cette base |
+| `npm run db:verifier` | Rejoue les 175 contrôles SQL sur cette base (transaction annulée) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -236,6 +258,7 @@ pas en `npm run dev`).
 │   ├── constants/orders.ts       # statuts, libellés français, couleurs de badge
 │   ├── db/
 │   │   ├── localDb.ts            # schéma Dexie (orders, orderItems, pendingPayments)
+│   │   ├── maintenance.ts        # résumé, export JSON et purge du cache local
 │   │   ├── ordersRepository.ts   # CRUD local + mapping Supabase
 │   │   └── hooks.ts              # useLocalOrders, useCreateOrder, useUpdateOrderStatus
 │   ├── hooks/
@@ -245,18 +268,40 @@ pas en `npm run dev`).
 │   │   ├── supabaseClient.ts     # client Supabase (singleton paresseux)
 │   │   ├── tenantContext.ts      # pressing courant (Zustand + persistance)
 │   │   ├── formatters.ts         # FCFA, dates et téléphones ivoiriens
+│   │   ├── pagination.ts         # pages locales + curseur serveur (dépenses)
+│   │   ├── reporting.ts          # calculs purs des rapports (écran 11)
+│   │   ├── parametres.ts         # validation du pressing, tailles, purgeabilité
+│   │   ├── facturation.ts        # numéro, lignes, montant en lettres
+│   │   ├── impression.ts         # @page A4 / 80 mm injecté à l'impression
+│   │   ├── permissions.ts        # matrice des capacités par rôle
 │   │   └── ids.ts                # UUID côté client + code QR
 │   ├── pages/
-│   │   ├── Login.tsx             # connexion Supabase Auth (+ mode démonstration)
+│   │   ├── Login.tsx             # connexion, inscription, réinitialisation (mode démo)
 │   │   ├── Offline.tsx           # écran de repli hors ligne
 │   │   ├── Orders.tsx            # liste (recherche + filtres)
 │   │   ├── OrderForm.tsx         # création hors ligne
 │   │   ├── OrderDetail.tsx       # fiche + étiquette QR + avancement
 │   │   ├── PaymentReturn.tsx     # retour CinetPay (lecture seule)
-│   │   └── Atelier.tsx           # scan QR → changement de statut
+│   │   ├── Facture.tsx           # facture A4 imprimable (texte, sans lib PDF)
+│   │   ├── Atelier.tsx           # scan QR → changement de statut
+│   │   ├── Clients.tsx           # fiche client + historique (palier 3)
+│   │   ├── Stock.tsx             # articles, mouvements, fournisseurs (palier 3)
+│   │   ├── Depenses.tsx          # dépenses paginées côté serveur (palier 3)
+│   │   ├── TableauDeBord.tsx     # indicateurs du jour (palier 3)
+│   │   ├── Rapports.tsx          # courbes 7/30/90 j + export CSV (écran 11)
+│   │   ├── Abonnement.tsx        # formule, échéance, droits (palier 4)
+│   │   ├── Support.tsx           # demandes d'assistance (palier 4)
+│   │   ├── Supervision.tsx       # console de l'éditeur (palier 4)
+│   │   ├── Parametres.tsx        # pressing, compte, équipe, données locales
+│   │   └── Reinitialisation.tsx  # nouveau mot de passe (lien reçu)
 │   ├── services/
 │   │   ├── authService.ts        # connexion, restauration de session, erreurs FR
 │   │   ├── paymentService.ts     # initiation, redirection, lecture du statut
+│   │   ├── customerService.ts     # clients, historique, fiche serveur
+│   │   ├── tenantService.ts       # lecture / renommage du pressing (propriétaire)
+│   │   ├── stockService.ts        # articles, mouvements, seuils, fournisseurs
+│   │   ├── expenseService.ts      # dépenses catégorisées (propriétaire)
+│   │   ├── dashboardService.ts    # calculs locaux du tableau de bord
 │   │   └── qrService.ts          # génération / analyse des codes QR
 │   ├── schemas/order.ts          # validation Zod (client, téléphone, vêtements)
 │   ├── stores/syncStore.ts       # état de synchronisation (Zustand)
@@ -272,6 +317,9 @@ pas en `npm run dev`).
 ├── scripts/
 │   ├── setup.mjs                 # installation complète depuis .env (npm run setup)
 │   ├── setup.test.mjs            # contrat du provisionnement (serveur HTTP simulé)
+│   ├── recette.mjs               # 7 contrôles lecture seule du projet déployé
+│   ├── db.mjs                    # schéma et contrôles SQL sur une base gérée
+│   ├── db.test.mjs               # fonctions pures de db.mjs (plan, masquage…)
 │   ├── config.test.mjs           # lecture et validation du .env
 │   └── lib/config.mjs            # analyse du .env, validation (logique pure)
 ├── supabase/
@@ -281,13 +329,18 @@ pas en `npm run dev`).
 │   │   ├── cinetpay-init/        # initialisation du paiement (JWT requis)
 │   │   └── cinetpay-webhook/     # notification serveur (sans JWT)
 │   ├── migrations/001_init.sql   # schéma multi-tenant + RLS
+│   ├── migrations/008_inscription.sql # inscription libre (pressing + propriétaire)
 │   ├── migrations/002_payments.sql # payment_transactions + RLS lecture seule
+│   ├── migrations/006_palier3.sql # clients, stock, dépenses, vue des totaux
 │   ├── seed.sql                  # jeu de démonstration (2 pressings)
-│   └── tests/isolation.sql       # preuve d'isolation sur une vraie base
+│   ├── tests/isolation.sql       # preuve d'isolation sur une vraie base
+│   └── tests/palier3.sql         # 17 contrôles clients / stock / dépenses
 ├── docs/
 │   ├── AUDIT.md                  # rapport de la phase 0
 │   ├── BACKLOG.md                # fonctionnalités explicitement hors périmètre
 │   ├── RAPPORT-FINAL.md          # bilan du MVP (fonctionne / V2 / coûts)
+│   ├── RECETTE-SUPABASE.md       # marche à suivre de recette sur un vrai projet
+│   ├── NEON.md                   # brancher une base gérée (db:push / db:verifier)
 │   └── USER_GUIDE.md             # parcours réceptionniste / artisan / propriétaire
 ├── CHANGELOG.md                  # historique des versions du MVP
 ├── vitest.config.ts              # configuration de la suite de tests
@@ -578,6 +631,40 @@ supabase functions deploy cinetpay-init
 supabase functions deploy cinetpay-webhook --no-verify-jwt
 ```
 
+### Sans la CLI : script de déploiement et mode essai
+
+```bash
+npm run deploy:fonctions -- --verifier    # assemble, inspecte, ne déploie rien
+npm run deploy:fonctions                  # pousse les secrets puis déploie
+npm run deploy:fonctions -- --sans-secrets  # fonctions seules
+```
+
+**Mise en service :** renseignez `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`,
+`CINETPAY_SECRET_KEY` et votre `APP_URL` public dans `.env`, gardez
+`CINETPAY_MODE=production`, puis lancez `npm run deploy:fonctions` (le jeton
+`SUPABASE_ACCESS_TOKEN` doit aussi être configuré). La commande lit `.env`,
+pousse les secrets et déploie les fonctions : aucun changement du script ni
+réglage manuel dans le Dashboard.
+
+**Tant qu'aucune clé n'est installée**, le bouton « Payer par Mobile Money »
+n'affiche pas d'erreur : le paiement est **simulé** (référence `SIM-…`), le
+message le dit, et la commande reste à régler.
+
+Les fonctions sont assemblées en **un fichier unique** (imports `_shared`
+résolus), l'API d'administration Supabase n'acceptant qu'un seul corps de
+source. Pour éprouver le parcours de paiement **sans compte marchand** :
+
+```bash
+npm run simulateur     # faux CinetPay sur http://localhost:54321
+# .env : CINETPAY_MODE=test, CINETPAY_BASE_URL=http://localhost:54321,
+#        CINETPAY_API_KEY=simulateur-test-key, CINETPAY_SITE_ID=123456
+```
+
+En mode `production`, une clé d'essai est **refusée** au démarrage ; en mode
+`test`, chaque transaction est marquée `provider_payload.mode = "test"`.
+Détail des routes, du HMAC et des limites (dont `localhost` vu depuis une
+fonction hébergée) : [`docs/DEPLOIEMENT-FONCTIONS.md`](docs/DEPLOIEMENT-FONCTIONS.md).
+
 `CINETPAY_NOTIFY_URL` est déduite de l'URL du projet
 (`https://<ref>.supabase.co/functions/v1/cinetpay-webhook`) et n'a donc pas à
 être saisie. `SUPABASE_URL`, `SUPABASE_ANON_KEY` et
@@ -794,6 +881,264 @@ python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
 
 ---
 
+## 7septies. Rôles, conflits et paiements (palier 1)
+
+Trois mécanismes ajoutés après l'audit externe (voir `MAJ.md`).
+
+### Rôles
+
+| Action | Propriétaire | Réceptionniste | Artisan |
+| --- | :---: | :---: | :---: |
+| Créer une commande | ✅ | ✅ | ❌ |
+| Faire avancer une commande | ✅ | ✅ | ✅ |
+| Modifier montant / coordonnées | ✅ | ✅ | ❌ |
+| Encaisser (Mobile Money) | ✅ | ✅ | ❌ |
+| Voir les montants | ✅ | ✅ | ❌ |
+| Supprimer une commande | ✅ | ❌ | ❌ |
+| Gérer le pressing et les accès | ✅ | ❌ | ❌ |
+
+L'interface masque ce qui est interdit, mais la décision est **serveur** :
+politiques RLS pour l'insertion et la suppression, trigger `guard_order_update`
+pour les colonnes (migration `003`), et contrôle du rôle dans `cinetpay-init`.
+
+Les mêmes règles sont **exécutées** sur un vrai PostgreSQL, sans Supabase :
+
+```bash
+npm run sql:verify
+```
+
+Le script crée une base jetable, y applique `001`→`005` et le jeu de
+démonstration, puis rejoue 76 contrôles (isolation, rôles, verrou optimiste,
+guichet unique, catalogue, caisse, attribution, réclamations, remboursements).
+Il est aussi lancé par l'intégration continue (job « SQL réel »).
+
+### Conflits de synchronisation
+
+Chaque commande porte un numéro de version serveur. Une tablette n'écrit que si
+ce numéro correspond encore : sinon la commande est marquée **en conflit**, elle
+n'est plus renvoyée, et la fiche propose deux issues explicites — *garder mes
+modifications* (écrase l'autre tablette) ou *prendre la version du serveur*
+(remplace le contenu local). Aucun écrasement silencieux.
+
+### Paiement
+
+- Un seul guichet ouvert par commande : une tentative de moins de 15 minutes est
+  réutilisée, un index unique partiel empêche la création d'un second guichet
+  même en cas de double clic simultané.
+- La notification CinetPay doit être signée (HMAC) **en production** : sans
+  `CINETPAY_SECRET_KEY`, le webhook répond 503. Le mode sans signature exige
+  `APP_ENV=development`.
+- Deux notifications simultanées ne peuvent pas marquer la commande payée deux
+  fois (compare-and-set sur le statut).
+
+---
+
+## 7octies. Cœur ERP (palier 2)
+
+### Catalogue et prix historisé
+
+Le propriétaire tient un catalogue **article × prestation** (chemise, costume,
+robe… croisés avec lavage, nettoyage à sec, repassage, détachage). À la saisie
+d'une commande, le comptoir choisit une entrée du catalogue : le **prix est
+recopié sur la ligne** de commande. Modifier ou retirer une prestation ensuite
+ne change donc **jamais** une facture déjà émise.
+
+Un prix différent du catalogue est un **tarif dérogatoire** : il faut un motif
+d'au moins 10 caractères, il est refusé à l'atelier et chaque changement de prix
+est journalisé dans `order_price_history` (qui, quand, de combien à combien,
+pourquoi).
+
+### Prévenir le client
+
+Depuis une commande, un message pré-rempli part vers **WhatsApp** ou le
+composeur (**appel**) : ni fournisseur, ni crédit par message, ni compte à créer.
+Chaque sollicitation est journalisée dans `notifications` (migration 010) et le
+tableau de bord liste les clients **à prévenir**. Le message ne mentionne jamais
+de montant : un prix contesté se règle de vive voix.
+
+### Caisse, acomptes et reçus
+
+- encaissement en espèces au comptoir, en **acompte** ou en solde ;
+- le solde restant est calculé à partir des encaissements réels, jamais d'un
+  champ saisi à la main ;
+- **reçu 80 mm imprimable** (`/commandes/:id/recu`) : référence, téléphone,
+  articles, prix, montant reçu, **reste à payer toujours affiché** ; il
+  fonctionne hors ligne puisque les données sont lues dans IndexedDB ;
+- **clôture de caisse quotidienne** (`/caisse`) : le montant attendu est
+  recalculé par le serveur à partir des encaissements de la journée, le
+  caissier déclare ses espèces, l'écart est conservé ;
+- **remboursements** : propriétaire uniquement, motif obligatoire, plafonnés aux
+  encaissements nets ; ils sortent du tiroir et sont déduits de la caisse du
+  jour.
+
+Un encaissement porte un identifiant généré sur la tablette : si la réponse
+réseau se perd, le renvoi ne crée pas un second paiement (idempotence).
+
+### Workflow, retards et réclamations
+
+Parcours en huit étapes : réception → tri → lavage → séchage → repassage →
+contrôle qualité → prêt → remis. Le statut ne peut qu'**avancer** ; revenir en
+arrière ou rouvrir une commande livrée est réservé au propriétaire, annuler au
+propriétaire et au réceptionniste. Chaque transition est horodatée avec son
+auteur, le statut précédent et, s'il est fourni, le **motif**.
+
+La **date de livraison promise** déclenche un badge « En retard » sur la fiche
+et dans la liste. Les **réclamations** (tache, déchirure, pièce manquante…)
+se constatent à la réception, pendant le traitement ou à la remise ; l'atelier
+peut les déclarer, seul le comptoir les clôture.
+
+### Attribution
+
+Une commande peut être confiée à un employé du pressing. L'atelier peut prendre
+une commande pour lui-même, le comptoir attribue librement. Le serveur refuse
+tout employé d'un autre pressing (`guard_order_assignment`).
+
+---
+
+## 7nonies. Clients, stock, dépenses et tableau de bord (palier 3)
+
+### Clients et historique
+
+Le client n'a pas de compte : il est identifié par son **téléphone**. La fiche
+est créée automatiquement par la commande (`attach_customer_to_order`) et
+regroupée sur le numéro normalisé — « +225 07 00 00 00 21 » et « 0700000021 »
+désignent la même personne. `normalize_phone` (SQL) et `normalisePhone` (TS)
+appliquent la même règle : chiffres seuls, indicatif `225` retiré.
+
+- **hors ligne** : la liste, l'historique, le total dépensé et les retards sont
+  calculés à partir des commandes présentes dans IndexedDB ;
+- **en ligne** : la fiche enrichie (adresse, préférences, notes) est lue et
+  mise à jour sur le serveur (`customers`).
+
+La fiche n'est **jamais insérée par le client** : seule la fonction
+`attach_customer_to_order` (security definer) la crée, au moment de la commande.
+Le comptoir et le propriétaire peuvent modifier les coordonnées, pas le numéro.
+
+### Stock et fournisseurs
+
+Les articles consommables (produit, emballage, consommable, autre) portent une
+quantité, une unité (pièce, litre, kg, flacon, rouleau) et un **seuil d'alerte**.
+
+> **Décision structurante.** La quantité n'est **jamais écrite directement** par
+> le client : elle découle d'un **grand livre** de mouvements (`stock_movements`,
+> entrée ou sortie). Une sortie supérieure au stock est refusée par la fonction
+> `apply_stock_movement` (code `22023`), et le journal est **immuable** — ni
+> `update` ni `delete`. Un stock faux se corrige par un mouvement, pas par une
+> réécriture silencieuse.
+
+La quantité initiale se saisit à la création de l'article : elle produit un
+mouvement « Stock initial ». Le réceptionniste peut mouvementer (sortie de
+lessive, entrée de livraison) ; seul le propriétaire crée les articles et les
+fournisseurs.
+
+### Dépenses
+
+Dépenses catégorisées (fournitures, loyer, salaires, eau et électricité,
+transport, autre), **réservées au propriétaire** : la RLS refuse la lecture aux
+autres rôles, et l'écran affiche « Accès réservé ». Une dépense est un fait
+comptable daté ; elle n'est pas saisie hors ligne, pour éviter deux vérités dans
+la trésorerie.
+
+### Tableau de bord
+
+Ouvert au propriétaire (`dashboard.view`). Il répond aux questions du matin :
+
+- **activité du jour** : commandes créées, en atelier, prêtes, en retard ;
+- **chiffre d'affaires** : espèces du jour et de la semaine, Mobile Money du
+  jour, panier moyen ;
+- **encours** : reste à encaisser sur les commandes actives (même calcul que la
+  caisse, via `computeBalance`) ;
+- **alertes de stock** : articles au seuil ou en dessous ;
+- **dépenses du mois**.
+
+Les indicateurs d'activité sont calculés **localement**, donc consultables hors
+connexion. Les encaissements Mobile Money et les dépenses viennent du serveur :
+ils affichent « hors ligne » quand la lecture échoue, plutôt qu'un zéro trompeur.
+
+---
+
+## 7decies. SaaS : abonnement, multi-boutiques et supervision (palier 4)
+
+> **Décision structurante.** Un abonnement échu ne détruit rien et ne se
+> contourne pas : le pressing passe en **lecture seule**. Les données restent
+> consultables — elles appartiennent au client —, les écritures sont refusées
+> par des politiques RLS **restrictives** et par un déclencheur qui couvre les
+> fonctions `security definer` (encaissement, remboursement, stock). Un pressing
+> **sans** ligne d'abonnement reste inscriptible : la migration ne coupe jamais
+> un client existant.
+
+### Formules et échéances
+
+`plans` décrit trois formules (Essentiel, Pro, Réseau) avec leur prix, leur
+durée, le nombre de comptes et de boutiques. `subscriptions` porte, par
+pressing, la formule retenue et la fin de période. L'état affiché n'est pas
+celui stocké : `subscription_state()` le recalcule à partir des dates —
+`active` jusqu'à l'échéance, `grace` (7 jours par défaut) ensuite, `expired`
+au-delà. Une suspension décidée par l'éditeur l'emporte sur les dates.
+
+Aucun paiement n'est prélevé dans l'application : le règlement se fait auprès de
+l'éditeur (Mobile Money ou espèces), qui enregistre la période réglée via
+`platform_set_subscription`. C'est une décision assumée — encaisser un
+abonnement en ligne aurait exigé un second compte marchand et une comptabilité
+de reversement, hors périmètre.
+
+### Multi-boutiques
+
+Un même compte peut être rattaché à plusieurs pressings, avec un **rôle
+différent par boutique** (propriétaire ici, réceptionniste là). La boutique
+active voyage dans l'en-tête `x-tenant-id`, que `current_tenant_id()` n'accepte
+que si `is_tenant_member()` confirme le rattachement ; un en-tête forgé retombe
+sur le claim du jeton. `current_tenant_role()` est lui aussi recalculé par
+boutique — un rôle mis en cache dans le JWT ne suffisait plus.
+
+Côté interface, `ShopSwitcher` n'apparaît qu'à partir de deux boutiques et
+recharge l'application au changement : IndexedDB, caisse et abonnement sont
+propres à chaque pressing.
+
+### Supervision et support
+
+`platform_admins` est une liste blanche **sans aucune politique RLS** : la table
+n'est lisible que par les fonctions `security definer` et par la clé
+`service_role`. Toutes les actions de l'éditeur (`platform_tenants_overview`,
+`platform_set_subscription`, `platform_create_shop`, `platform_members`,
+`platform_set_member`, `platform_support_requests`, `platform_answer_support`)
+vérifient `is_platform_admin()` et lèvent `42501` sinon — masquer le lien de
+navigation ne suffit pas.
+
+La console `/supervision` permet de suivre les pressings (formule, état,
+échéance, volumes), de renouveler, de suspendre, d'ouvrir une boutique et de
+rattacher un compte (avec les limites `max_users` / `max_shops` de la formule),
+enfin de répondre aux demandes de support. Côté pressing, `/support` ouvre une
+demande et lit la réponse ; les demandes sont cloisonnées par `tenant_id`.
+
+**Accès au back-office :** connectez-vous dans l'application avec votre compte
+Supabase, puis ouvrez **Supervision** dans le menu ou `/supervision`. Le lien
+n'apparaît qu'après vérification serveur de votre compte. Un pressing client,
+même propriétaire, ne peut ni ouvrir la console ni appeler ses fonctions SQL.
+
+Le compte doit d'abord exister dans Supabase Auth et figurer dans
+`platform_admins`. Vous pouvez créer un compte éditeur **sans pressing** dans
+Supabase Auth ; une fois autorisé côté administration, connectez-vous à
+l'application et `/` ouvre directement `/supervision`. Le RPC réservé aux
+éditeurs est le seul moyen d'obtenir cet accès sans adhésion à un pressing.
+
+`PLATFORM_ADMIN=true` dans `.env` reste disponible si l'éditeur est le compte
+propriétaire créé par `npm run setup`. Pour un compte éditeur indépendant, son
+inscription dans `platform_admins` se fait uniquement côté administration.
+La migration 011 impose une seule ligne : aucun second super-administrateur ne
+peut être ajouté par erreur. Ne donnez jamais `service_role` à l'application
+ni à un pressing.
+
+### Limites connues
+
+- la console exige l'**identifiant Supabase** du compte à rattacher : la
+  création d'un compte depuis l'interface demanderait la clé `service_role`
+  dans le navigateur, ce qui est proscrit ;
+- une demande de support ne peut pas être déposée hors ligne (pas de file
+  d'attente dédiée) ;
+- `max_shops` compte les boutiques où le compte est **propriétaire** : c'est une
+  règle commerciale simple, pas une facturation automatique.
+
 ## 8. Feuille de route
 
 - [x] **Phase 0** — Audit (`docs/AUDIT.md`)
@@ -803,6 +1148,11 @@ python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
 - [x] **Phase 4** — Paiement Mobile Money (CinetPay, 2 Edge Functions, retour de paiement)
 - [x] **Phase 5** — PWA & UX (connexion Supabase, écran hors ligne, bouton retour Android, guide utilisateur)
 - [x] **Phase 6** — QA (Vitest, isolation multi-tenant, CHANGELOG, tag `v0.1.0-mvp`) — *Lighthouse à relever sur un déploiement réel*
+- [x] **Palier 0** — Rendre l'état fiable (audit, feuille de route, CI)
+- [x] **Palier 1** — Stabilisation technique (paiement, sync `version`, HMAC, rôles)
+- [x] **Palier 2** — Cœur ERP (catalogue, caisse, reçus, workflow, réclamations)
+- [x] **Palier 3** — V1.2 (clients, stock, fournisseurs, dépenses, tableau de bord)
+- [x] **Palier 4** — SaaS (abonnements, plusieurs pressings par compte, supervision, support)
 
 ---
 
@@ -810,7 +1160,23 @@ python3 -m venv /tmp/sqlvenv && /tmp/sqlvenv/bin/pip install pglast
 
 - Ne jamais commiter `.env` (déjà couvert par `.gitignore`).
 - La clé `service_role` contourne la RLS : usage exclusif dans les Edge Functions.
-- Les montants sont vérifiés côté serveur (`check (total_amount >= 0)`) et devront l'être
-  à nouveau dans l'Edge Function CinetPay : un client malveillant peut appeler l'API directement.
-- Le webhook CinetPay devra être authentifié par signature HMAC avant toute mise à jour de
-  `payment_status`.
+- Les montants sont relus en base dans `cinetpay-init` : un client malveillant peut appeler
+  l'API directement, il ne peut pas imposer le montant.
+- Le webhook CinetPay est authentifié par signature HMAC en production ; l'absence de clé
+  secrète provoque un refus (503) au lieu d'une validation silencieuse.
+- `payment_status` n'est modifiable que par le serveur : le trigger `guard_order_update`
+  rejette toute écriture provenant d'un utilisateur authentifié (42501).
+- `stock_movements` est un **journal immuable** : la RLS refuse `update` et `delete`,
+  même au propriétaire. Seule la fonction `apply_stock_movement` écrit la quantité.
+- `expenses` est lisible et modifiable **uniquement par le propriétaire** du pressing ;
+  un réceptionniste ne voit strictement rien, pas même les totaux agrégés.
+- La vue `expense_totals` est en `security_invoker` : elle hérite de la RLS des
+  dépenses au lieu de la contourner.
+- Un abonnement **échu ou suspendu** ferme les écritures par des politiques RLS
+  restrictives **et** par un déclencheur sur `payment_transactions`,
+  `payment_refunds` et `stock_movements` : les fonctions `security definer` ne
+  servent pas de porte dérobée. Les lectures restent ouvertes.
+- `platform_admins` n'a **aucune politique RLS** : la liste des éditeurs n'est
+  lisible que par les fonctions `security definer` et la clé `service_role`.
+- L'en-tête `x-tenant-id` n'est honoré que si `is_tenant_member()` confirme le
+  rattachement du compte au pressing demandé.

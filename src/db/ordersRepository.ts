@@ -1,4 +1,11 @@
-import type { OrderItemRow, OrderRow, OrderStatus } from '@/types/database'
+import type {
+  OrderItemRow,
+  OrderRow,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from '@/types/database'
+import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
 import type { CreateOrderInput } from '@/schemas/order'
 import {
@@ -39,6 +46,10 @@ export async function createOrderLocal(
       ? item.specialInstructions.trim()
       : null,
     price: item.price,
+    catalogEntryId: item.catalogEntryId ?? null,
+    articleName: item.articleName?.trim() ? item.articleName.trim() : null,
+    serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
+    priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
   }))
 
   const order: LocalOrder = {
@@ -54,10 +65,16 @@ export async function createOrderLocal(
     paymentMethod: null,
     createdAt,
     updatedAt: createdAt,
+    dueDate: input.dueDate ?? null,
+    assignedTo: input.assignedTo ?? null,
+    assignedAt: null,
+    statusReason: null,
     // Une commande neuve n'existe pas encore côté serveur.
     synced: 0,
     syncedAt: null,
+    serverVersion: 0,
     syncError: null,
+    syncConflict: null,
   }
 
   await db.transaction('rw', db.orders, db.orderItems, async () => {
@@ -79,6 +96,7 @@ export async function createOrderLocal(
 export async function updateOrderStatusLocal(
   orderId: string,
   status: OrderStatus,
+  reason: string | null = null,
 ): Promise<LocalOrder> {
   const existing = await db.orders.get(orderId)
   if (!existing) throw new Error('Commande introuvable en base locale')
@@ -86,6 +104,62 @@ export async function updateOrderStatusLocal(
   const updated: LocalOrder = {
     ...existing,
     status,
+    // Le motif accompagne CE changement ; il sera effacé côté serveur une fois
+    // journalisé dans l'historique.
+    statusReason: reason?.trim() ? reason.trim() : null,
+    updatedAt: nowIso(),
+    synced: 0,
+    syncError: null,
+    // Un changement local ne résout pas un conflit : il le laisse ouvert.
+    syncConflict: existing.syncConflict ?? null,
+  }
+
+  await db.orders.put(updated)
+  return updated
+}
+
+/**
+ * Change l'échéance d'une commande, en local uniquement.
+ *
+ * L'échéance est un champ métier : sa modification incrémente la version
+ * serveur et repasse donc la commande en file de synchronisation.
+ */
+export async function updateOrderDueDateLocal(
+  orderId: string,
+  dueDate: string | null,
+): Promise<LocalOrder> {
+  const existing = await db.orders.get(orderId)
+  if (!existing) throw new Error('Commande introuvable en base locale')
+
+  const updated: LocalOrder = {
+    ...existing,
+    dueDate,
+    updatedAt: nowIso(),
+    synced: 0,
+    syncError: null,
+  }
+
+  await db.orders.put(updated)
+  return updated
+}
+
+/**
+ * Attribue la commande à un employé (ou la remet dans le pot commun).
+ *
+ * Écriture locale d'abord : l'attribution se fait à l'atelier, souvent sans
+ * réseau. Le serveur vérifie ensuite que l'employé appartient bien au pressing.
+ */
+export async function updateOrderAssignmentLocal(
+  orderId: string,
+  assignedTo: string | null,
+): Promise<LocalOrder> {
+  const existing = await db.orders.get(orderId)
+  if (!existing) throw new Error('Commande introuvable en base locale')
+
+  const updated: LocalOrder = {
+    ...existing,
+    assignedTo,
+    assignedAt: assignedTo ? nowIso() : null,
     updatedAt: nowIso(),
     synced: 0,
     syncError: null,
@@ -113,15 +187,117 @@ export async function countPendingOrders(tenantId: string): Promise<number> {
   return db.orders.where('[tenantId+synced]').equals([tenantId, 0]).count()
 }
 
-/** Marque une commande comme synchronisée avec succès. */
-export async function markOrderSynced(orderId: string): Promise<void> {
+/** Marque une commande comme synchronisée et mémorise la version serveur. */
+export async function markOrderSynced(orderId: string, serverVersion: number): Promise<void> {
   const syncedAt = nowIso()
-  await db.orders.update(orderId, { synced: 1 satisfies SyncFlag, syncedAt, syncError: null })
+  await db.orders.update(orderId, {
+    synced: 1 satisfies SyncFlag,
+    syncedAt,
+    serverVersion,
+    syncError: null,
+    syncConflict: null,
+  })
+}
+
+/** Mémorise la version serveur sans marquer la commande comme synchronisée. */
+export async function updateOrderServerVersion(orderId: string, version: number): Promise<void> {
+  await db.orders.update(orderId, { serverVersion: version })
 }
 
 /** Conserve la commande en file et mémorise la raison de l'échec. */
 export async function markOrderSyncError(orderId: string, message: string): Promise<void> {
   await db.orders.update(orderId, { synced: 0, syncError: message })
+}
+
+/**
+ * Le serveur a refusé la mise à jour : la commande a été modifiée ailleurs.
+ * On conserve la version locale intacte et on arrête les tentatives jusqu'à ce
+ * que l'utilisateur choisisse (voir `orderConflictService`).
+ */
+export async function markOrderSyncConflict(orderId: string, message: string): Promise<void> {
+  await db.orders.update(orderId, { synced: 0, syncError: message, syncConflict: message })
+}
+
+/** Rouvre une commande après arbitrage d'un conflit (jeton serveur à jour). */
+export async function reopenOrderForSync(
+  orderId: string,
+  serverVersion: number | null,
+): Promise<void> {
+  const patch: Partial<LocalOrder> = {
+    synced: 0,
+    syncConflict: null,
+    syncError: null,
+  }
+  if (serverVersion !== null) patch.serverVersion = serverVersion
+  await db.orders.update(orderId, patch)
+}
+
+/**
+ * État minimal d'une commande tel que renvoyé par la lecture serveur.
+ * Volontairement restreint : la synchronisation descendante ne doit jamais
+ * écraser les vêtements ni les champs saisis localement.
+ */
+export interface RemoteOrderState {
+  id: string
+  version: number
+  status: OrderStatus
+  payment_status: PaymentStatus
+  payment_method: PaymentMethod | null
+  total_amount: number
+  due_date: string | null
+  assigned_to: string | null
+  updated_at: string
+}
+
+/**
+ * Applique une modification venue d'un autre appareil.
+ *
+ * Trois refus explicites :
+ *  - commande absente en local (elle vient d'un autre poste : sans ses
+ *    vêtements, la créer ici donnerait une fiche incomplète) ;
+ *  - travail local en attente (`synced = 0`) ou conflit non arbitré : la
+ *    version du serveur n'est pas forcément la plus récente pour cette tablette ;
+ *  - version identique ou plus ancienne : rien à faire.
+ */
+export async function applyRemoteOrderState(remote: RemoteOrderState): Promise<boolean> {
+  const local = await db.orders.get(remote.id)
+  if (!local) return false
+  if (local.synced === 0 || local.syncConflict) return false
+  if (remote.version <= local.serverVersion) return false
+
+  await db.orders.update(local.id, {
+    status: remote.status,
+    paymentStatus: remote.payment_status,
+    paymentMethod: remote.payment_method,
+    totalAmount: remote.total_amount,
+    dueDate: remote.due_date,
+    assignedTo: remote.assigned_to,
+    // L'état distant ne porte pas de motif : celui-ci a déjà été journalisé.
+    statusReason: null,
+    serverVersion: remote.version,
+    updatedAt: remote.updated_at,
+    synced: 1 satisfies SyncFlag,
+  })
+
+  return true
+}
+
+/**
+ * Reflète un encaissement au comptoir confirmé par le serveur.
+ *
+ * On ne touche ni à `synced` ni à `serverVersion` : le statut de paiement est
+ * écrit par le serveur et n'incrémente pas la version métier (voir la
+ * migration 003), il n'y a donc rien à renvoyer.
+ */
+export async function applyRemoteCashState(
+  orderId: string,
+  remaining: number,
+  method: PaymentMethod,
+): Promise<void> {
+  await db.orders.update(orderId, {
+    paymentStatus: remaining <= 0 ? 'paid' : 'partial',
+    paymentMethod: method,
+  })
 }
 
 /** Récupère les vêtements d'une commande (usage interne au moteur de synchro). */
@@ -147,8 +323,15 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
     payment_method: order.paymentMethod,
     created_at: order.createdAt,
     updated_at: order.updatedAt,
+    due_date: order.dueDate,
+    assigned_to: order.assignedTo,
+    assigned_at: order.assignedAt,
+    status_reason: order.statusReason,
     // Trace explicite : la ligne provient du mode hors ligne.
     synced_from_local: true,
+    // À l'insertion, la version serveur est 1 ; en mise à jour, le trigger
+    // `bump_order_version` écrase cette valeur, elle n'est donc qu'indicative.
+    version: order.serverVersion > 0 ? order.serverVersion : 1,
   }
 }
 
@@ -161,6 +344,10 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     fabric_type: item.fabricType,
     special_instructions: item.specialInstructions,
     price: item.price,
+    catalog_entry_id: item.catalogEntryId,
+    article_name: item.articleName,
+    service_name: item.serviceName,
+    price_reason: item.priceReason,
   }
 }
 
@@ -227,12 +414,7 @@ async function findOrderByParsedQr(decodedText: string): Promise<LocalOrder | un
 export async function getWorkshopOrders(tenantId: string): Promise<LocalOrder[]> {
   const orders = await db.orders
     .where('[tenantId+status]')
-    .anyOf([
-      [tenantId, 'received'],
-      [tenantId, 'washing'],
-      [tenantId, 'ironing'],
-      [tenantId, 'ready'],
-    ])
+    .anyOf(ACTIVE_ORDER_STATUSES.map((status) => [tenantId, status]))
     .toArray()
 
   return orders.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))

@@ -18,6 +18,26 @@ export interface CinetPayConfig {
   siteId: string
   secretKey: string | null
   baseUrl: string
+  /**
+   * Environnement d'exécution. Vaut `production` par défaut : une installation
+   * incomplète doit échouer côté sécurité, pas s'ouvrir silencieusement.
+   * La valeur `development` est la seule qui autorise un webhook sans HMAC.
+   */
+  appEnv: 'production' | 'development'
+  /**
+   * Mode de paiement demandé.
+   *
+   * L'API Checkout v2 n'a **pas** d'hôte de bac à sable distinct : CinetPay
+   * fournit un `apikey`/`site_id` de test qui s'utilise sur la même URL. Le mode
+   * sert donc à deux choses, et à rien d'autre :
+   *   • refuser une clé de test en production (erreur explicite plutôt qu'un
+   *     paiement fictif cru réel) ;
+   *   • marquer les transactions `payment_transactions.provider_payload.mode`,
+   *     pour qu'un encaissement d'essai reste identifiable des mois plus tard.
+   * Le simulateur local (`scripts/cinetpay-simule.mjs`) s'utilise avec
+   * `CINETPAY_MODE=test` et `CINETPAY_BASE_URL=http://localhost:54321`.
+   */
+  mode: 'test' | 'production'
 }
 
 export function readConfig(): CinetPayConfig {
@@ -25,6 +45,13 @@ export function readConfig(): CinetPayConfig {
   const siteId = Deno.env.get('CINETPAY_SITE_ID') ?? ''
   const secretKey = Deno.env.get('CINETPAY_SECRET_KEY') ?? null
   const baseUrl = Deno.env.get('CINETPAY_BASE_URL') ?? 'https://api-checkout.cinetpay.com'
+  const appEnv = (Deno.env.get('APP_ENV') ?? 'production').toLowerCase() === 'development'
+    ? 'development'
+    : 'production'
+
+  const mode = (Deno.env.get('CINETPAY_MODE') ?? 'production').toLowerCase() === 'test'
+    ? 'test'
+    : 'production'
 
   if (!apiKey || !siteId) {
     throw new Error(
@@ -32,7 +59,40 @@ export function readConfig(): CinetPayConfig {
     )
   }
 
-  return { apiKey, siteId, secretKey: secretKey && secretKey.length > 0 ? secretKey : null, baseUrl }
+  // Garde-fou : une clé d'essai en production encaisserait de faux paiements.
+  // On refuse au lieu de laisser passer, avec un message qui dit quoi corriger.
+  if (mode === 'production' && isTestCredential(apiKey, siteId)) {
+    throw new Error(
+      "Clés CinetPay d'essai en mode production : passez CINETPAY_MODE=test, ou installez les identifiants de production.",
+    )
+  }
+
+  return {
+    apiKey,
+    siteId,
+    secretKey: secretKey && secretKey.length > 0 ? secretKey : null,
+    baseUrl,
+    appEnv,
+    mode,
+  }
+}
+
+/**
+ * Reconnaît un identifiant de démonstration.
+ *
+ * Volontairement large : mieux vaut refuser une vraie clé par erreur (le
+ * message dit comment passer outre) que d'encaisser un paiement fictif en
+ * production. Les valeurs couvertes sont celles que l'on rencontre dans les
+ * exemples, les simulateurs et les `.env` de recette.
+ */
+export function isTestCredential(apiKey: string, siteId: string): boolean {
+  const suspect = /^(test|demo|exemple|example|fake|dummy|simul)/i
+  const contientSimulateur = /(test|demo|exemple|example|fake|dummy|simul)/i
+  return (
+    suspect.test(apiKey.trim()) ||
+    suspect.test(siteId.trim()) ||
+    contientSimulateur.test(apiKey.trim().slice(0, 12))
+  )
 }
 
 export interface InitPaymentParams {

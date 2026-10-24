@@ -59,6 +59,133 @@
 }
 
 /* ============================================================
+   Écran d'authentification — apparitions, halos, flottement
+   ============================================================
+   Trois animations seulement, toutes décoratives :
+
+   - `auth-rise`      : la carte entre en montant légèrement ;
+   - `auth-glow`      : les halos flous respirent derrière la carte ;
+   - `auth-float`     : la pastille d'information flotte doucement.
+
+   Elles sont coupées sous `prefers-reduced-motion` (voir plus bas) : un
+   utilisateur sujet au mal des transports ne doit pas subir un fond animé,
+   et le confort prime toujours sur l'effet.
+   ============================================================ */
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes auth-glow {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(2%, -4%, 0) scale(1.12);
+    opacity: 0.8;
+  }
+}
+
+/* Zoom très lent de la photo du panneau droit : donne un peu de vie à un écran
+   que l'on regarde dix secondes. 34 s, imperceptible, jamais un « effet » . */
+@keyframes auth-zoom {
+  from {
+    transform: scale(1.04);
+  }
+  to {
+    transform: scale(1.12);
+  }
+}
+
+/* Changement d'onglet : le panneau glisse de quelques pixels, ce qui indique
+   que le contenu a changé sans faire clignoter l'écran. */
+@keyframes auth-panel {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes auth-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.auth-rise {
+  animation: auth-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-glow {
+  animation: auth-glow 14s ease-in-out infinite;
+}
+
+.auth-float {
+  animation: auth-float 6s ease-in-out infinite;
+}
+
+.auth-zoom {
+  animation: auth-zoom 34s ease-in-out infinite alternate;
+}
+
+.auth-panel {
+  animation: auth-panel 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Décalage des apparitions : la carte d'abord, puis ses blocs. */
+.auth-delay-1 {
+  animation-delay: 90ms;
+}
+.auth-delay-2 {
+  animation-delay: 180ms;
+}
+.auth-delay-3 {
+  animation-delay: 280ms;
+}
+
+/* Dégradé de fond de l'écran d'authentification : deux lueurs et un voile
+   sombre, sans image — donc aucun octet à télécharger au premier lancement. */
+.auth-backdrop {
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, rgba(15, 118, 110, 0.5), transparent 60%),
+    radial-gradient(48rem 34rem at 92% 108%, rgba(245, 158, 11, 0.26), transparent 62%),
+    linear-gradient(160deg, #0b1220 0%, #0f172a 45%, #111f36 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-rise,
+  .auth-glow,
+  .auth-float,
+  .auth-zoom,
+  .auth-panel {
+    animation: none !important;
+  }
+
+  /* Sans animation, le zoom reste à son échelle de repos : jamais de photo
+     rognée différemment selon que l'utilisateur a coupé les animations. */
+  .auth-zoom {
+    transform: scale(1.04) !important;
+  }
+}
+
+/* ============================================================
    Impression — étiquettes QR (80 mm) et rapports atelier
    ============================================================ */
 

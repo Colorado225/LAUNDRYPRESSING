@@ -7,45 +7,46 @@ paiement Mobile Money).
 
 Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
+> **Mise à jour du 23 octobre 2026.** Les paliers 2 à 4 ont livré plusieurs
+> éléments qui figuraient dans ce backlog : catalogue et tarification, acomptes
+> et reçus, fiches clients, stock, dépenses, tableau de bord, abonnement SaaS,
+> multi-boutiques, gestion des accès et support. Ils ont été **retirés** des
+> tableaux ci-dessous ; l'historique Git et le `CHANGELOG` en gardent la trace.
+
 ---
 
 ## 1. Paiement
 
 | Fonctionnalité | Raison du report |
 | --- | --- |
-| Remboursement / annulation CinetPay | L'API de remboursement exige un compte marchand vérifié et une gestion comptable des reversements. |
-| Paiement partiel / acompte | Le modèle suppose un règlement unique de la commande ; un acompte imposerait un suivi de solde et une facturation intermédiaire. |
-| Paiement à la livraison (espèces) | Le MVP ne gère que le Mobile Money ; l'encaissement en espèces reste manuel, hors application. |
+| Remboursement / annulation CinetPay | L'API de remboursement exige un compte marchand vérifié et une gestion comptable des reversements. Les remboursements **espèces** sont, eux, gérés (palier 2). |
 | Paiement par carte bancaire | Hors périmètre Mobile Money du MVP. |
 | Réconciliation comptable automatique | Nécessite un export vers un outil comptable, hors périmètre. |
+| Prélèvement automatique de l'abonnement | Le règlement de l'abonnement se fait auprès de l'éditeur, qui enregistre la période réglée (décision du palier 4). |
 
 ## 2. Gestion du pressing
 
 | Fonctionnalité | Raison du report |
 | --- | --- |
-| Tarification / grille de prix par type de vêtement | Le MVP saisit un montant libre ; une grille paramétrable exige un module de catalogue. |
-| Gestion des clients (fiche, historique, fidélité) | Le MVP ne conserve que le nom et le téléphone saisis sur la commande. |
-| Gestion des employés (rôles, pointage, plannings) | Le contrôle d'accès se limite à l'appartenance à un pressing. |
-| Gestion de stock (produits, consommables) | Hors des quatre modules imposés. |
+| Gestion des employés (pointage, plannings) | Hors périmètre. Les **rôles**, eux, existent depuis le palier 1 et le rattachement des comptes depuis le palier 4. |
 | Livraison / tournées | Hors périmètre. |
-| Impression de reçus de caisse | Seule l'étiquette QR 80 mm est imprimée. |
+| Bons de réduction et fidélité | Nécessite un moteur de promotions ; le module clients (palier 3) en est le préalable. |
+| Suivi du coût des consommables par prestation | Exige de lier chaque sortie de stock à une commande ; le grand livre actuel ne le permet pas encore. |
+| Comparaison de périodes et export des rapports | Le tableau de bord (palier 3) couvre le jour et la semaine ; l'export reste à faire. |
+| Performance et charge de travail par employé | L'attribution existe (palier 2) ; l'agrégation par employé reste à construire. |
 
 ## 3. Plateforme
 
 | Fonctionnalité | Raison du report |
 | --- | --- |
-| Tableau de bord propriétaire (revenus, volumes, graphiques) | Le MVP affiche la liste filtrée des commandes. |
 | Notifications SMS / WhatsApp au client | Coût par message et dépendance à un fournisseur non imposé. |
-| Abonnement SaaS facturé aux pressings | Module de facturation hors périmètre (le paiement CinetPay porte sur les commandes, pas sur l'abonnement). |
-| Multi-boutiques par pressing / gestion de franchises | Le modèle tenant ↔ pressing est 1‑1 en V1. |
 | Application mobile native (Android/iOS) | La PWA installable couvre le besoin de saisie en atelier. |
 | Synchronisation temps réel entre appareils (Realtime) | Le MVP synchronise à la demande et au retour du réseau. |
 | Import / export CSV | Hors périmètre. |
-| Journal d'audit consultable dans l'interface | Les données existent (`order_status_history`) mais l'écran est reporté. |
 | Réinitialisation du mot de passe par e-mail | En MVP, le propriétaire recrée un mot de passe depuis Supabase. Un flux « mot de passe oublié » demande un écran dédié et un modèle d'e-mail personnalisé. |
-| Sélecteur multi-pressing | `resolveTenantForUser` retient le premier rattachement ; un utilisateur ne gère qu'une boutique en V1. |
-| Navigation restreinte par rôle | Le rôle est affiché mais tous les onglets restent visibles ; la RLS bloque déjà les écritures interdites. |
+| Création de comptes depuis la console de supervision | Exigerait la clé `service_role` dans le navigateur : proscrit. L'éditeur crée le compte dans Supabase Auth puis le rattache. |
 | Verrouillage de la tablette après inactivité | Utile pour un appareil partagé en atelier : nécessite une gestion de session avancée. |
+| Facturation automatique des abonnements | Le palier 4 enregistre les périodes réglées ; aucun prélèvement n'est automatisé. |
 
 ## 4. Marquage QR
 
@@ -58,9 +59,11 @@ Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
 | Sujet | Détail |
 | --- | --- |
-| Exécution des tests en intégration continue | 58 tests Vitest existent (`npm test`) mais aucun workflow CI n'est encore branché : à faire lors de la mise en production. |
-| Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | Couverture de code | Pas encore mesurée (pas de `@vitest/coverage-v8`) ; à activer avec un seuil minimum. |
+| Audit Lighthouse automatisé | Non exécutable dans l'environnement de développement (aucun navigateur). À rejouer sur le déploiement HTTPS, idéalement dans la CI. |
 | `deno check` sur les Edge Functions | Aucun binaire Deno dans l'environnement de développement : validation par relecture + `esbuild` uniquement. |
-| Authentification complète | `TenantGate` permet de choisir un pressing à la main ; la connexion Supabase réelle arrive en phase 5. |
-| Pagination de la liste des commandes | Chargement local complet via Dexie ; à revoir au‑delà de quelques centaines de commandes. |
+| Pagination **serveur** des commandes | Les commandes lisent Dexie et sont paginées côté rendu (20 par page). Les dépenses, elles, sont déjà paginées par curseur côté serveur ; la même mécanique servira quand les commandes passeront au serveur. |
+| Recette sur un projet Supabase réel | **Faite le 23/10 pour le schéma, l'isolation et les rôles** (`recette_reelle.sql`, deux pressings, trois comptes). Edge Functions déployées et paiement CinetPay de bout en bout restent non testés. Le schéma et les règles RLS le sont sur PostgreSQL 16 (175 contrôles) ; `npm run recette` couvre 7 contrôles du projet déployé. La marche à suivre humaine est dans `docs/RECETTE-SUPABASE.md`. |
+| Demandes de support hors ligne | Aucune file d'attente dédiée : une demande nécessite une connexion. |
+| Connexion à une base gérée **distante** | `scripts/db.mjs` a été validé sur un PostgreSQL 16.2 local ; l'environnement de développement filtre la sortie réseau, la connexion à un hôte distant n'a donc pas pu être exercée. Marche à suivre : `docs/NEON.md`. |
+| Rapports côté serveur | Les rapports lisent IndexedDB : une autre tablette n'apparaît qu'après synchronisation. Une agrégation SQL (vue matérialisée + `rpc`) deviendra utile au-delà de quelques milliers de commandes. |

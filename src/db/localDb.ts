@@ -34,8 +34,32 @@ export interface LocalOrder {
   updatedAt: string
   synced: SyncFlag
   syncedAt: string | null
+  /**
+   * Version connue côté serveur (0 tant que la commande n'a jamais été
+   * synchronisée). Sert de jeton au verrou optimiste : une mise à jour n'est
+   * acceptée que si le serveur est toujours à cette version.
+   */
+  serverVersion: number
   /** Dernière erreur de synchronisation, affichée dans le bandeau d'état. */
   syncError: string | null
+  /**
+   * Renseigné quand le serveur a refusé une mise à jour parce que la commande
+   * avait été modifiée ailleurs. La commande reste en file et n'est plus
+   * renvoyée tant que l'utilisateur n'a pas choisi quelle version garder.
+   */
+  syncConflict: string | null
+  /** Échéance promise au client (AAAA-MM-JJ), `null` si aucune. */
+  dueDate: string | null
+  /** Employé en charge, `null` tant que la commande n'est attribuée à personne. */
+  assignedTo: string | null
+  /** Date de la dernière attribution (ISO), `null` si aucune. */
+  assignedAt: string | null
+  /**
+   * Motif d'un changement de statut (annulation, retour en arrière).
+   * Transmis avec la commande puis effacé par le déclencheur serveur : il
+   * appartient à l'événement, pas à l'état courant.
+   */
+  statusReason: string | null
 }
 
 /** Vêtement d'une commande. */
@@ -46,7 +70,119 @@ export interface LocalOrderItem {
   label: string
   fabricType: string | null
   specialInstructions: string | null
+  /** Prix facturé, figé à la saisie (une hausse de tarif ne réécrit rien). */
   price: number
+  /** Entrée de catalogue utilisée, `null` pour une ligne libre. */
+  catalogEntryId: string | null
+  /** Libellés recopiés au moment de la vente. */
+  articleName: string | null
+  serviceName: string | null
+  /**
+   * Motif du tarif dérogatoire (prix différent du catalogue). Obligatoire dès
+   * qu'un prix s'écarte du tarif de référence — contrôlé aussi côté serveur.
+   */
+  priceReason: string | null
+}
+
+/**
+ * Cache local du catalogue (palier 2).
+ *
+ * Le catalogue vit sur le serveur (seul le propriétaire l'écrit) mais doit
+ * rester consultable hors ligne : la tablette en garde une copie en lecture
+ * seule, rafraîchie à chaque synchronisation.
+ */
+export interface LocalCatalogEntry {
+  id: string
+  tenantId: string
+  article: string
+  service: string
+  price: number
+  isActive: boolean
+  sortOrder: number
+}
+
+/**
+ * Encaissement au comptoir en attente d'envoi.
+ *
+ * L'identifiant est généré sur la tablette : c'est lui qui rend l'appel au
+ * serveur idempotent. Un paiement encaissé hors ligne est visible
+ * immédiatement dans le solde, puis transmis au retour du réseau.
+ */
+export interface LocalCashPayment {
+  id: string
+  orderId: string
+  tenantId: string
+  amount: number
+  method: 'cash'
+  note: string | null
+  receivedAt: string
+  synced: SyncFlag
+  lastError: string | null
+}
+
+/** Réclamation ou vêtement abîmé constaté sur une commande. */
+export interface LocalOrderIssue {
+  id: string
+  orderId: string
+  tenantId: string
+  /** Ligne concernée, `null` si le dommage porte sur la commande entière. */
+  orderItemId: string | null
+  kind: 'stained' | 'torn' | 'discoloured' | 'missing' | 'other'
+  severity: 'minor' | 'major'
+  stage: 'reception' | 'treatment' | 'delivery'
+  description: string
+  resolution: 'repaired' | 'compensated' | 'rejected' | null
+  resolutionNote: string | null
+  resolvedAt: string | null
+  reportedBy: string | null
+  createdAt: string
+  synced: SyncFlag
+  lastError: string | null
+}
+
+/**
+ * Remboursement constaté localement.
+ *
+ * Un remboursement n'est jamais enregistré hors ligne : il sort de l'argent et
+ * doit être validé par le serveur (propriétaire uniquement). Cette table est un
+ * miroir local du journal distant, pour l'affichage et le reçu.
+ */
+export interface LocalRefund {
+  id: string
+  orderId: string
+  tenantId: string
+  amount: number
+  channel: 'cash' | 'mobile_money'
+  reason: string
+  refundedAt: string
+  refundedBy: string | null
+}
+
+/**
+ * Client prévenu (WhatsApp ou appel), journalisé localement.
+ *
+ * L'envoi lui-même n'est pas technique : c'est un lien `wa.me` ouvert depuis la
+ * tablette du comptoir. Cette ligne garde la trace de **qui** a été prévenu,
+ * **quand** et **par quel motif**, ce qui permet de ne pas relancer deux fois
+ * le même client et de savoir, en cas de contestation, ce qui lui a été dit.
+ *
+ * Comme une réclamation, la ligne est immuable : on ne la modifie pas, on en
+ * écrit une nouvelle si la situation change.
+ */
+export interface LocalNotification {
+  id: string
+  tenantId: string
+  /** Commande concernée, `null` pour un message hors commande. */
+  orderId: string | null
+  channel: 'whatsapp' | 'appel'
+  reason: 'pret' | 'retard' | 'relance'
+  customerName: string
+  customerPhone: string
+  /** Texte exact qui a été présenté au comptoir (et envoyé, pour WhatsApp). */
+  message: string
+  createdAt: string
+  synced: SyncFlag
+  lastError: string | null
 }
 
 /**
@@ -60,8 +196,15 @@ export interface LocalPendingPayment {
   amount: number
   /** Opérateur choisi sur le guichet CinetPay : inconnu au moment de l'initiation. */
   method: PaymentMethod | null
-  /** `pending` = guichet ouvert, en attente de la confirmation serveur. */
-  status: 'pending' | 'sending' | 'error'
+  /**
+   * `pending` = guichet ouvert, en attente de la confirmation serveur.
+   *
+   * `simulated` = aucun guichet : CinetPay n'est pas encore installé, et le
+   * paiement a été **simulé** pour éprouver le parcours. Cette ligne ne change
+   * jamais le statut de la commande : rien n'a été encaissé, et le serveur
+   * interdit de toute façon au client de modifier `payment_status`.
+   */
+  status: 'pending' | 'sending' | 'error' | 'simulated'
   /** Identifiant de transaction CinetPay (`transaction_id`). */
   reference: string | null
   createdAt: string
@@ -72,6 +215,11 @@ export class PressingDatabase extends Dexie {
   orders!: Table<LocalOrder, string>
   orderItems!: Table<LocalOrderItem, string>
   pendingPayments!: Table<LocalPendingPayment, string>
+  catalogEntries!: Table<LocalCatalogEntry, string>
+  cashPayments!: Table<LocalCashPayment, string>
+  orderIssues!: Table<LocalOrderIssue, string>
+  refunds!: Table<LocalRefund, string>
+  notifications!: Table<LocalNotification, string>
 
   constructor() {
     super('pressing-pro')
@@ -90,6 +238,95 @@ export class PressingDatabase extends Dexie {
     this.version(2).stores({
       orders: 'id, tenantId, status, synced, createdAt, qrCode, [tenantId+status], [tenantId+synced]',
     })
+
+    // v3 (palier 1) : verrou optimiste et marqueur de conflit. Aucun index
+    // nouveau — ces champs ne servent pas de critère de requête — mais les
+    // enregistrements existants doivent recevoir une valeur par défaut, sinon
+    // `serverVersion` resterait `undefined` et la première mise à jour
+    // partirait avec un jeton invalide.
+    this.version(3)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table('orders')
+          .toCollection()
+          .modify((order: LocalOrder & Record<string, unknown>) => {
+            // Une commande déjà synchronisée existait forcément côté serveur
+            // en version ≥ 1 ; on suppose 1, et un éventuel décalage sera
+            // détecté comme un conflit à la première mise à jour.
+            if (order.serverVersion === undefined) {
+              order.serverVersion = order.synced === 1 ? 1 : 0
+            }
+            if (order.syncConflict === undefined) order.syncConflict = null
+          })
+      })
+
+    // v4 (palier 2) : échéance, catalogue et caisse espèces.
+    //  - `orders.dueDate` sert aux alertes de retard ;
+    //  - les lignes de commande gagnent la traçabilité du catalogue (prix
+    //    historisé) ;
+    //  - deux nouvelles tables : cache du catalogue et file des encaissements.
+    this.version(4)
+      .stores({
+        orders:
+          'id, tenantId, status, synced, createdAt, qrCode, dueDate, [tenantId+status], [tenantId+synced]',
+        orderItems: 'id, orderId, tenantId, [orderId+tenantId]',
+        catalogEntries: 'id, tenantId, [tenantId+isActive]',
+        cashPayments:
+          'id, orderId, tenantId, synced, receivedAt, [tenantId+synced], [orderId+synced]',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('orders')
+          .toCollection()
+          .modify((order: LocalOrder & Record<string, unknown>) => {
+            if (order.dueDate === undefined) order.dueDate = null
+          })
+
+        await tx
+          .table('orderItems')
+          .toCollection()
+          .modify((item: LocalOrderItem & Record<string, unknown>) => {
+            if (item.catalogEntryId === undefined) item.catalogEntryId = null
+            if (item.articleName === undefined) item.articleName = null
+            if (item.serviceName === undefined) item.serviceName = null
+          })
+      })
+
+    // v5 (palier 2, finitions) : attribution à un employé, motif de dérogation,
+    // réclamations et miroir des remboursements.
+    this.version(5)
+      .stores({
+        orders:
+          'id, tenantId, status, synced, createdAt, qrCode, dueDate, assignedTo, [tenantId+status], [tenantId+synced]',
+        orderItems: 'id, orderId, tenantId, [orderId+tenantId]',
+        orderIssues: 'id, orderId, tenantId, synced, createdAt, [tenantId+synced]',
+        refunds: 'id, orderId, tenantId, refundedAt',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table('orders')
+          .toCollection()
+          .modify((order: LocalOrder & Record<string, unknown>) => {
+            if (order.assignedTo === undefined) order.assignedTo = null
+            if (order.assignedAt === undefined) order.assignedAt = null
+            if (order.statusReason === undefined) order.statusReason = null
+          })
+
+        await tx
+          .table('orderItems')
+          .toCollection()
+          .modify((item: LocalOrderItem & Record<string, unknown>) => {
+            if (item.priceReason === undefined) item.priceReason = null
+          })
+      })
+
+    // v6 (prévenir le client) : journal des clients prévenus. Aucun champ
+    // ajouté aux commandes — le statut et l'échéance suffisent à décider qui
+    // reste à prévenir ; c'est la date de la dernière notification qui tranche.
+    this.version(6).stores({
+      notifications: 'id, tenantId, orderId, createdAt, synced, [tenantId+synced], [orderId+createdAt]',
+    })
   }
 }
 
@@ -97,7 +334,31 @@ export const db = new PressingDatabase()
 
 /** Supprime toutes les données locales (déconnexion, changement de pressing). */
 export async function clearLocalData(): Promise<void> {
-  await db.transaction('rw', db.orders, db.orderItems, db.pendingPayments, async () => {
-    await Promise.all([db.orders.clear(), db.orderItems.clear(), db.pendingPayments.clear()])
-  })
+  // Forme « tableau » : au-delà de cinq tables, la signature variadique de
+  // Dexie n'est plus typée.
+  await db.transaction(
+    'rw',
+    [
+      db.orders,
+      db.orderItems,
+      db.pendingPayments,
+      db.catalogEntries,
+      db.cashPayments,
+      db.orderIssues,
+      db.refunds,
+      db.notifications,
+    ],
+    async () => {
+      await Promise.all([
+        db.orders.clear(),
+        db.orderItems.clear(),
+        db.pendingPayments.clear(),
+        db.catalogEntries.clear(),
+        db.cashPayments.clear(),
+        db.orderIssues.clear(),
+        db.refunds.clear(),
+        db.notifications.clear(),
+      ])
+    },
+  )
 }

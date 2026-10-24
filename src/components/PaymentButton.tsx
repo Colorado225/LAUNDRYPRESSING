@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Banknote, Loader2, Smartphone, WifiOff } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Banknote, FlaskConical, Loader2, Smartphone, WifiOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { LocalOrder } from '@/db/localDb'
 import {
@@ -10,6 +10,16 @@ import {
   redirectToPayment,
 } from '@/services/paymentService'
 import { formatFcfa } from '@/lib/formatters'
+import { isSupabaseConfigured } from '@/lib/env'
+import {
+  cinetpayIndisponible,
+  simulationExistante,
+  simulerPaiement,
+} from '@/services/paymentSimulation'
+import { useCashPayments } from '@/db/hooks'
+import { computeBalance } from '@/services/cashService'
+import { can } from '@/lib/permissions'
+import { useTenantStore } from '@/lib/tenantContext'
 
 /**
  * Bouton « Payer par Mobile Money » (phase 4).
@@ -26,12 +36,43 @@ const OPERATORS = [
 ]
 
 export default function PaymentButton({ order }: { order: LocalOrder }) {
+  const role = useTenantStore((state) => state.role)
   const [submitting, setSubmitting] = useState(false)
+  /** Renseignée quand un paiement a été simulé (CinetPay pas encore installé). */
+  const [simulation, setSimulation] = useState<string | null>(null)
+  // Défense en profondeur : l'écran parent masque déjà le bouton, mais un
+  // composant monté directement ne doit pas contourner la matrice.
+  const allowed = can(role, 'payments.initiate')
+  const paiementsEspeces = useCashPayments(order.id)
   const guard = canInitiatePayment()
-  const charged = chargeableAmount(order.totalAmount)
-  const isRounded = charged !== order.totalAmount
-  const alreadyPaid = order.paymentStatus === 'paid'
-  const blocked = alreadyPaid || order.status === 'cancelled' || !guard.ok
+  // On ne demande que le RESTE À PAYER : un acompte en espèces déjà encaissé
+  // au comptoir ne doit pas être facturé une seconde fois par Mobile Money.
+  const solde = computeBalance(order.totalAmount, order.paymentStatus, paiementsEspeces)
+  const charged = chargeableAmount(solde.remaining)
+  const isRounded = charged !== solde.remaining
+  const alreadyPaid = order.paymentStatus === 'paid' || solde.remaining <= 0
+  // Sans configuration Supabase, le bouton reste utilisable en ligne pour
+  // valider l'écran par un toast de simulation, jamais pour encaisser.
+  const simulationDisponible =
+    !isSupabaseConfigured && typeof navigator !== 'undefined' && navigator.onLine
+  const blocked =
+    alreadyPaid || order.status === 'cancelled' || (!guard.ok && !simulationDisponible)
+
+  // Une simulation précédente reste visible après rechargement : le comptoir
+  // doit pouvoir expliquer pourquoi la commande n'est pas réglée.
+  // (Ce hook précède le retour anticipé : l'ordre des hooks ne doit pas
+  // dépendre du rôle de l'utilisateur.)
+  useEffect(() => {
+    let actif = true
+    void simulationExistante(order.id).then((resultat) => {
+      if (actif && resultat) setSimulation(resultat.reference)
+    })
+    return () => {
+      actif = false
+    }
+  }, [order.id])
+
+  if (!allowed) return null
 
   const handlePay = async () => {
     setSubmitting(true)
@@ -51,6 +92,23 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
       // Redirection vers le guichet hébergé : le paiement se poursuit chez CinetPay.
       redirectToPayment(result.paymentUrl)
     } catch (error) {
+      // Avant l'installation de la clé marchande, l'échec est attendu : plutôt
+      // qu'une erreur technique au comptoir, on simule le paiement et on le dit.
+      if (cinetpayIndisponible(error)) {
+        try {
+          const resultat = await simulerPaiement(order)
+          setSimulation(resultat.reference)
+          toast.success(
+            'Paiement simulé — parcours validé. Aucune clé CinetPay installée : rien n’a été encaissé, la commande reste à régler.',
+            { icon: '🧪', duration: 8000 },
+          )
+        } catch {
+          toast.error('Simulation impossible sur cet appareil.', { duration: 6000 })
+        }
+        setSubmitting(false)
+        return
+      }
+
       const message =
         error instanceof PaymentError
           ? error.message
@@ -113,7 +171,7 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
         ))}
         <span className="text-xs text-slate-500">
           · Montant à régler : <strong className="text-slate-700">{formatFcfa(charged)}</strong>
-          {isRounded && ` (arrondi depuis ${formatFcfa(order.totalAmount)})`}
+          {isRounded && ` (arrondi depuis ${formatFcfa(solde.remaining)})`}
         </span>
       </div>
 
@@ -124,10 +182,23 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
         </p>
       )}
 
+      {simulation && !alreadyPaid && (
+        <p className="mt-3 flex items-start gap-2 rounded-xl bg-violet-50 p-3 text-sm text-violet-900">
+          <FlaskConical size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span>
+            Paiement <strong>simulé</strong> ({simulation}). Aucun argent n’a été encaissé : la
+            commande reste à régler. Renseignez <code>CINETPAY_API_KEY</code> dans <code>.env</code>,
+            puis <code>npm run deploy:fonctions</code> pour encaisser réellement.
+          </span>
+        </p>
+      )}
+
       {!guard.ok && !alreadyPaid && order.status !== 'cancelled' && (
         <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
           <WifiOff size={16} className="mt-0.5 shrink-0" aria-hidden />
-          {guard.reason}
+          {simulationDisponible
+            ? 'Mode de démonstration : le toast valide uniquement le parcours. Aucun paiement réel ne sera encaissé.'
+            : guard.reason}
         </p>
       )}
     </section>

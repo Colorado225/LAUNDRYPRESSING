@@ -10,7 +10,8 @@ import { createAdminClient } from '../_shared/supabaseClients.ts'
  *
  * Principe de confiance — un webhook n'est JAMAIS cru sur parole :
  *  1. La notification est authentifiée par HMAC-SHA256 (CINETPAY_SECRET_KEY).
- *     Sans clé configurée, on passe en mode « vérification seule » (voir plus bas).
+ *     En production, l'absence de clé est un REFUS (503) : le mode
+ *     « vérification seule » n'est autorisé que si APP_ENV=development.
  *  2. Le statut est TOUJOURS reconfirmé par un appel serveur à
  *     `POST /v2/payment/check` : impossible de marquer une commande payée sans
  *     une transaction réellement acceptée chez CinetPay.
@@ -83,9 +84,24 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return apiError('invalid_signature', 'Signature de la notification invalide.', 401)
     }
     signatureVerified = true
-  } else {
+  } else if (config.appEnv === 'development' || config.mode === 'test') {
+    // Deux cas distincts, un même comportement : soit on développe sans clé
+    // secrète, soit on joue contre le simulateur ou un compte d'essai, qui ne
+    // signent pas leurs notifications. Dans les deux cas le statut reste
+    // reconfirmé auprès de l'API (point 3 ci-dessous), donc une notification
+    // forgée ne suffit pas à marquer une commande payée.
     console.warn(
-      '[cinetpay-webhook] CINETPAY_SECRET_KEY absent : notification validée uniquement par l’API de vérification.',
+      '[cinetpay-webhook] notification non signée acceptée (mode %s) : statut reconfirmé auprès de l’API.',
+      config.mode === 'test' ? 'test' : 'développement',
+    )
+  } else {
+    // Refus net plutôt que dégradation silencieuse : sans HMAC, une
+    // notification forgée ne serait arrêtée que par l'appel de vérification.
+    console.error('[cinetpay-webhook] CINETPAY_SECRET_KEY absent en production.')
+    return apiError(
+      'misconfigured',
+      'Webhook mal configuré : la clé secrète CinetPay est requise en production.',
+      503,
     )
   }
 
@@ -175,7 +191,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (transaction.status !== 'paid') {
     const paidAt = new Date().toISOString()
 
-    await admin
+    // Compare-and-set sur le statut lu plus haut : deux notifications
+    // simultanées ne peuvent pas toutes deux marquer la commande comme payée.
+    // La seconde ne touche aucune ligne et s'arrête là.
+    const { data: updatedRows, error: updateError } = await admin
       .from('payment_transactions')
       .update({
         status: 'paid',
@@ -186,6 +205,19 @@ Deno.serve(async (request: Request): Promise<Response> => {
         provider_payload: { notification: payload, check: check.raw },
       })
       .eq('id', transaction.id)
+      .eq('status', transaction.status)
+      .select('id')
+
+    if (updateError) {
+      console.error('[cinetpay-webhook] mise à jour transaction', updateError)
+      return apiError('payment_update_failed', 'Erreur interne.', 500)
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      // Une notification concurrente a déjà traité cette transaction.
+      console.warn('[cinetpay-webhook] notification concurrente ignorée', { transactionId })
+      return json({ status: 'concurrent', ignored: true }, 200)
+    }
 
     const { error: orderError } = await admin
       .from('orders')

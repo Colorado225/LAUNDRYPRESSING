@@ -1,0 +1,100 @@
+# Intégration continue — Pressing Pro
+#
+# Objectif : aucun commit ne peut être fusionné dans `main` si les types, le
+# style, les tests ou le build échouent.
+#
+# Choix techniques :
+#  - `npm ci` (et non `npm install`) : installation strictement conforme à
+#    `package-lock.json`, reproductible, et échec immédiat si le verrou est
+#    désynchronisé de `package.json` ;
+#  - Node 22 : même version majeure que le poste de développement ;
+#  - deux jobs : l'application (types, style, tests, build) et le SQL réel
+#    (migrations, RLS, rôles, verrou optimiste) sur un PostgreSQL 16 jetable.
+#    Le second n'a besoin ni de Supabase ni de Docker : le fichier
+#    `supabase/tests/local/00_bootstrap.sql` recrée l'environnement Supabase
+#    minimal (rôles, schéma `auth`, `auth.uid()`) ;
+#  - `concurrency` : une nouvelle poussée annule la vérification précédente de
+#    la même branche, inutile dès qu'elle est obsolète.
+#
+# ⚠ Ce workflow ne remplace pas la recette sur un vrai projet Supabase
+#   (provisionnement, Edge Functions, webhook CinetPay) : elle est décrite dans
+#   docs/AUDIT-COURANT.md §6 et reste manuelle.
+
+name: Intégration continue
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualite:
+    name: Types, style, tests et build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier les types
+        run: npm run typecheck
+
+      - name: Vérifier le style
+        run: npm run lint
+
+      - name: Exécuter les tests
+        run: npm test
+
+      - name: Construire l'application
+        run: npm run build
+
+  sql:
+    name: SQL réel (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Rejouer migrations, RLS, rôles et verrou optimiste
+        run: npm run sql:verify
+        env:
+          PGURL: postgresql://postgres:postgres@localhost:5432/postgres

@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -20,8 +20,17 @@ import {
   PAYMENT_STATUS_LABELS,
   getNextStatus,
   getPreviousStatus,
+  isOrderLate,
+  todayIso,
 } from '@/constants/orders'
-import { formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
+import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
+import { can, canSeeAmounts } from '@/lib/permissions'
+import ConflictBanner from '@/components/ConflictBanner'
+import CashPanel from '@/components/CashPanel'
+import AssignmentPanel from '@/components/AssignmentPanel'
+import IssuePanel from '@/components/IssuePanel'
+import NotifyPanel from '@/components/NotifyPanel'
+import { useState } from 'react'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
@@ -29,9 +38,20 @@ import { formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib/formatters'
  */
 export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>()
+  const [searchParams] = useSearchParams()
+  // Retour de la création de commande avec « encaisser maintenant » : le
+  // panneau s'ouvre déjà, le montant est pré-rempli.
+  const reglerMaintenant = searchParams.get('regler') === '1'
   const data = useLocalOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
   const tenantName = useTenantStore((state) => state.tenantName)
+  const role = useTenantStore((state) => state.role)
+  const seeAmounts = canSeeAmounts(role)
+
+  // Déclarés AVANT tout retour anticipé : l'ordre des hooks doit rester stable
+  // entre le chargement et l'affichage de la fiche.
+  const [annulationOuverte, setAnnulationOuverte] = useState(false)
+  const [motifAnnulation, setMotifAnnulation] = useState('')
 
   if (data === undefined) {
     return (
@@ -60,10 +80,15 @@ export default function OrderDetail() {
   const statusMeta = ORDER_STATUSES[order.status]
   const nextStatus = getNextStatus(order.status)
   const previousStatus = getPreviousStatus(order.status)
+  const enRetard = isOrderLate(order, todayIso())
+  // La marche arrière est réservée au propriétaire par `guard_order_update` :
+  // afficher le bouton aux autres rôles ne produirait qu'une erreur serveur.
+  const peutReculer = can(role, 'orders.editDetails') && role === 'owner'
+  const peutAnnuler = can(role, 'orders.updateStatus') && role !== 'artisan'
 
-  const changeStatus = async (status: typeof order.status) => {
+  const changeStatus = async (status: typeof order.status, reason: string | null = null) => {
     try {
-      await updateStatus(order.id, status)
+      await updateStatus(order.id, status, reason)
       toast.success(`Statut mis à jour : ${ORDER_STATUSES[status].label}`, { icon: '✅' })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Mise à jour impossible')
@@ -84,11 +109,19 @@ export default function OrderDetail() {
             </p>
           </div>
 
-          <span
-            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${statusMeta.badgeClass}`}
-          >
-            {statusMeta.label}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${statusMeta.badgeClass}`}
+            >
+              {statusMeta.label}
+            </span>
+
+            {enRetard && (
+              <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-100 px-3 py-1.5 text-sm font-semibold text-rose-800">
+                En retard
+              </span>
+            )}
+          </div>
         </div>
 
         <p className="mt-3 text-sm text-slate-600">{statusMeta.description}</p>
@@ -96,7 +129,16 @@ export default function OrderDetail() {
         <dl className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-3">
             <dt className="text-xs uppercase tracking-wide text-slate-500">Total</dt>
-            <dd className="text-lg font-bold text-brand-navy">{formatFcfa(order.totalAmount)}</dd>
+            <dd className="text-lg font-bold text-brand-navy">
+              {seeAmounts ? formatFcfa(order.totalAmount) : '—'}
+            </dd>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 p-3">
+            <dt className="text-xs uppercase tracking-wide text-slate-500">Livraison promise</dt>
+            <dd className={`text-sm font-semibold ${enRetard ? 'text-rose-700' : 'text-slate-800'}`}>
+              {order.dueDate ? formatDateFr(order.dueDate) : 'Non précisée'}
+            </dd>
           </div>
 
           <div className="rounded-xl bg-slate-50 p-3">
@@ -120,6 +162,9 @@ export default function OrderDetail() {
           <span className="font-mono break-all">{order.qrCode}</span>
         </p>
       </section>
+
+      {/* Conflit de synchronisation : arbitrage explicite obligatoire */}
+      <ConflictBanner order={order} />
 
       {/* Synchronisation */}
       <section
@@ -160,14 +205,28 @@ export default function OrderDetail() {
                   {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
                 </p>
               </div>
-              <span className="font-semibold text-brand-navy">{formatFcfa(item.price)}</span>
+              <span className="font-semibold text-brand-navy">
+                {seeAmounts ? formatFcfa(item.price) : '—'}
+              </span>
             </li>
           ))}
         </ul>
       </section>
 
-      {/* Paiement Mobile Money */}
-      <PaymentButton order={order} />
+      {/* Prise en charge : attribution à un employé */}
+      <AssignmentPanel order={order} />
+
+      {/* Réclamations et vêtements abîmés */}
+      <IssuePanel order={order} items={items} />
+
+      {/* Prévenir le client : WhatsApp ou appel, message pré-rempli */}
+      <NotifyPanel order={order} />
+
+      {/* Caisse : espèces, acompte, solde et reçu */}
+      {seeAmounts && <CashPanel order={order} autoOpen={reglerMaintenant} />}
+
+      {/* Paiement Mobile Money — initiation réservée au comptoir */}
+      {can(role, 'payments.initiate') && <PaymentButton order={order} />}
 
       {/* Étiquette QR — impression 80 mm */}
       <QrCodeDisplay order={order} items={items} tenantName={tenantName} />
@@ -195,7 +254,7 @@ export default function OrderDetail() {
         </ol>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {previousStatus && (
+          {previousStatus && peutReculer && (
             <button
               type="button"
               onClick={() => void changeStatus(previousStatus)}
@@ -217,16 +276,62 @@ export default function OrderDetail() {
             </button>
           )}
 
-          {order.status !== 'cancelled' && order.status !== 'delivered' && (
-            <button
-              type="button"
-              onClick={() => void changeStatus('cancelled')}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-            >
-              Annuler la commande
-            </button>
-          )}
+          {peutAnnuler &&
+            order.status !== 'cancelled' &&
+            order.status !== 'delivered' &&
+            !annulationOuverte && (
+              <button
+                type="button"
+                onClick={() => setAnnulationOuverte(true)}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                Annuler la commande
+              </button>
+            )}
         </div>
+
+        {annulationOuverte && (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-rose-900">
+                Motif de l’annulation (recommandé, conservé dans l’historique)
+              </span>
+              <textarea
+                value={motifAnnulation}
+                onChange={(event) => setMotifAnnulation(event.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="Ex. : client absent depuis trois semaines, vêtements rendus au dépôt"
+                className="w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm outline-none focus:border-rose-500"
+              />
+            </label>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void changeStatus('cancelled', motifAnnulation)
+                  setAnnulationOuverte(false)
+                  setMotifAnnulation('')
+                }}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-bold text-white hover:bg-rose-800"
+              >
+                Confirmer l’annulation
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAnnulationOuverte(false)
+                  setMotifAnnulation('')
+                }}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700"
+              >
+                Retour
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   )

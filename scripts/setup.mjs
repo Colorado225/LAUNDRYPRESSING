@@ -266,7 +266,11 @@ function stepSecrets(config) {
     CINETPAY_SECRET_KEY: config.cinetpay.secretKey,
     CINETPAY_BASE_URL: config.cinetpay.baseUrl,
     CINETPAY_NOTIFY_URL: config.cinetpay.notifyUrl,
+    // Sans ce secret, l'Edge Function retombe sur « production » et refuse une
+    // clé d'essai : le mode doit voyager avec les identifiants.
+    CINETPAY_MODE: config.cinetpay.mode,
     APP_URL: config.appUrl,
+    APP_ENV: config.appEnv,
   }).filter(([, value]) => Boolean(value))
 
   if (entries.length === 0) {
@@ -329,6 +333,7 @@ export async function stepAccount(config) {
     info(`POST ${base}/rest/v1/tenants`)
     info(`POST ${base}/auth/v1/admin/users`)
     info(`POST ${base}/rest/v1/tenant_users`)
+    if (config.platformAdmin) info(`POST ${base}/rest/v1/platform_admins`)
     info('(ignoré : --dry-run)')
     return { tenantId: '(simulé)', userId: '(simulé)' }
   }
@@ -407,23 +412,62 @@ export async function stepAccount(config) {
 
   // --- Le rattachement -----------------------------------------------------
   const membership = await request(
-    `${base}/rest/v1/tenant_users?select=user_id&user_id=eq.${userId}&tenant_id=eq.${tenantId}&limit=1`,
+    `${base}/rest/v1/tenant_users?select=user_id,display_name&user_id=eq.${userId}&tenant_id=eq.${tenantId}&limit=1`,
     { key },
   )
 
-  if (Array.isArray(membership.data) && membership.data.length > 0) {
+  const ligne = Array.isArray(membership.data) ? membership.data[0] : null
+
+  if (ligne) {
     ok('Rattachement au pressing déjà en place')
+
+    // Nom affiché : il sert au sélecteur d'attribution des commandes.
+    if (!ligne.display_name) {
+      await request(`${base}/rest/v1/tenant_users?user_id=eq.${userId}&tenant_id=eq.${tenantId}`, {
+        method: 'PATCH',
+        key,
+        body: { display_name: 'Propriétaire' },
+      })
+      ok('Nom affiché renseigné (Propriétaire)')
+    }
   } else {
     const link = await request(`${base}/rest/v1/tenant_users`, {
       method: 'POST',
       key,
-      body: { user_id: userId, tenant_id: tenantId, role: 'owner' },
+      body: {
+        user_id: userId,
+        tenant_id: tenantId,
+        role: 'owner',
+        display_name: 'Propriétaire',
+      },
     })
 
     if (!link.ok) {
       throw new Error(`Rattachement impossible (HTTP ${link.status}).`)
     }
     ok('Compte rattaché au pressing (rôle propriétaire)')
+  }
+
+  // --- Supervision de la plateforme (facultatif) ---------------------------
+  // `platform_admins` n'a aucune politique RLS : seule la clé service_role
+  // peut l'écrire, d'où ce passage par l'API REST d'administration.
+  if (config.platformAdmin) {
+    const admin = await request(`${base}/rest/v1/platform_admins?on_conflict=user_id`, {
+      method: 'POST',
+      key,
+      body: { user_id: userId, display_name: 'Éditeur' },
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    })
+
+    if (!admin.ok) {
+      // La table n'existe pas encore si 007 n'a pas été appliquée : on le dit
+      // sans faire échouer l'installation du pressing.
+      warn(
+        `Compte éditeur non enregistré (HTTP ${admin.status}). Appliquez 007_palier4.sql puis relancez.`,
+      )
+    } else {
+      ok('Compte éditeur autorisé sur la console de supervision')
+    }
   }
 
   return { tenantId, userId }
@@ -538,6 +582,7 @@ function report(config) {
     ['SUPABASE_SERVICE_ROLE_KEY', redact(config.serviceRoleKey)],
     ['APP_URL', config.appUrl],
     ['CINETPAY_SITE_ID', config.cinetpay.siteId ?? '(non configuré)'],
+    ['CINETPAY_MODE', config.cinetpay.mode ?? 'production'],
     ['CINETPAY_SECRET_KEY', redact(config.cinetpay.secretKey)],
     ['Compte propriétaire', config.owner.email ?? '(non configuré)'],
   ]
