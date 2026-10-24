@@ -14,6 +14,14 @@ import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import { formatFcfa } from '@/lib/formatters'
 
+function afficherTarif(entree: LocalCatalogEntry): string {
+  if (entree.pricingMode === 'QUOTE') return 'Sur devis'
+  if (entree.pricingMode === 'UNCONFIGURED') return 'À configurer'
+  const prix = formatFcfa(entree.price)
+  if (entree.pricingMode === 'FROM') return `À partir de ${prix}`
+  return prix
+}
+
 /**
  * Catalogue des prestations (palier 2).
  *
@@ -83,7 +91,8 @@ export default function Catalogue() {
     try {
       const tarif = { article: article.trim(), service: service.trim(), price: montant }
       if (editingId) {
-        await updateCatalogEntry(tenantId, editingId, tarif)
+        // Enregistrer constitue une confirmation explicite d'un tarif hérité.
+        await updateCatalogEntry(tenantId, editingId, { ...tarif, requiresReview: false })
       } else {
         await createCatalogEntry(tenantId, tarif)
       }
@@ -165,6 +174,7 @@ export default function Catalogue() {
 
   const nombreActives = entrees.filter((entree) => entree.isActive).length
   const nombreArchives = entrees.length - nombreActives
+  const nombreAConfirmer = entrees.filter((entree) => entree.requiresReview).length
 
   if (!peutGerer) {
     return (
@@ -191,6 +201,13 @@ export default function Catalogue() {
             Les prix appliqués à une commande sont recopiés sur chaque ligne : modifier le
             catalogue ne change jamais une commande déjà enregistrée.
           </p>
+          {nombreAConfirmer > 0 && (
+            <p className="mt-2 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+              {nombreAConfirmer} tarif{nombreAConfirmer > 1 ? 's sont' : ' est'} à vérifier par le
+              propriétaire avant utilisation. Ouvrez « Modifier » puis enregistrez après avoir
+              confirmé le montant.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -235,11 +252,19 @@ export default function Catalogue() {
           )}
         </div>
 
+        {editingId && entrees.find((entree) => entree.id === editingId)?.requiresReview && (
+          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+            Confirmez d’abord le tarif réel de votre pressing. L’enregistrement lèvera le blocage
+            des nouvelles commandes pour cette ligne.
+          </p>
+        )}
+
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_140px_auto]">
           <label className="block">
             <span className="mb-1 block text-xs font-semibold text-slate-600">Article</span>
             <input
               value={article}
+              maxLength={60}
               onChange={(event) => setArticle(event.target.value)}
               placeholder="Chemise"
               className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
@@ -250,6 +275,7 @@ export default function Catalogue() {
             <span className="mb-1 block text-xs font-semibold text-slate-600">Prestation</span>
             <input
               value={service}
+              maxLength={60}
               onChange={(event) => setService(event.target.value)}
               placeholder="Lavage"
               className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
@@ -326,7 +352,15 @@ export default function Catalogue() {
                     }`}
                   >
                     <span className="font-medium text-slate-700">{prestation.service}</span>
-                    <span className="font-bold text-brand-navy">{formatFcfa(prestation.price)}</span>
+                    <span className="font-bold text-brand-navy">{afficherTarif(prestation)}</span>
+                    {prestation.billingUnit !== 'PIECE' && (
+                      <span className="text-xs text-slate-500">/ {prestation.billingUnit}</span>
+                    )}
+                    {prestation.requiresReview && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                        À vérifier
+                      </span>
+                    )}
                     {!prestation.isActive && (
                       <span className="text-xs font-semibold text-amber-800">Archivée</span>
                     )}

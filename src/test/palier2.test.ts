@@ -210,10 +210,13 @@ describe('catalogue — jeu de départ et sélecteurs', () => {
   })
 
   const cache: LocalCatalogEntry[] = [
-    { id: '1', tenantId: 't', article: 'Chemise', service: 'Lavage', price: 1500, isActive: true, sortOrder: 0 },
-    { id: '2', tenantId: 't', article: 'Chemise', service: 'Repassage seul', price: 750, isActive: true, sortOrder: 1 },
-    { id: '3', tenantId: 't', article: 'Pantalon', service: 'Lavage', price: 1500, isActive: true, sortOrder: 2 },
-    { id: '4', tenantId: 't', article: 'Ancien article', service: 'Lavage', price: 100, isActive: false, sortOrder: 3 },
+    { id: '1', tenantId: 't', article: 'Chemise', service: 'Lavage', price: 1500, pricingMode: 'FIXED', billingUnit: 'PIECE', requiresReview: false, isActive: true, sortOrder: 0 },
+    { id: '2', tenantId: 't', article: 'Chemise', service: 'Repassage seul', price: 750, pricingMode: 'FIXED', billingUnit: 'PIECE', requiresReview: false, isActive: true, sortOrder: 1 },
+    { id: '3', tenantId: 't', article: 'Pantalon', service: 'Lavage', price: 1500, pricingMode: 'FIXED', billingUnit: 'PIECE', requiresReview: false, isActive: true, sortOrder: 2 },
+    { id: '4', tenantId: 't', article: 'Ancien article', service: 'Lavage', price: 100, pricingMode: 'FIXED', billingUnit: 'PIECE', requiresReview: false, isActive: false, sortOrder: 3 },
+    { id: '5', tenantId: 't', article: 'Chemise', service: 'Tarif héritée', price: 1200, pricingMode: 'FIXED', billingUnit: 'PIECE', requiresReview: true, isActive: true, sortOrder: 4 },
+    { id: '6', tenantId: 't', article: 'Drap', service: 'Au kilo', price: 1000, pricingMode: 'FROM', billingUnit: 'KG', requiresReview: false, isActive: true, sortOrder: 5 },
+    { id: '7', tenantId: 't', article: 'Robe', service: 'Sur devis', price: 0, pricingMode: 'QUOTE', billingUnit: 'PIECE', requiresReview: false, isActive: true, sortOrder: 6 },
   ]
 
   it('liste les articles actifs, sans doublon et triés', () => {

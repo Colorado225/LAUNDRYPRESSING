@@ -1,5 +1,11 @@
 import Dexie, { type Table } from 'dexie'
-import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/database'
+import type {
+  CatalogBillingUnit,
+  CatalogPricingMode,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from '@/types/database'
 
 /**
  * Base locale (IndexedDB via Dexie) — socle du mode offline-first.
@@ -97,6 +103,9 @@ export interface LocalCatalogEntry {
   article: string
   service: string
   price: number
+  pricingMode: CatalogPricingMode
+  billingUnit: CatalogBillingUnit
+  requiresReview: boolean
   isActive: boolean
   sortOrder: number
 }

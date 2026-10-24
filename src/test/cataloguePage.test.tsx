@@ -10,6 +10,9 @@ const depot = vi.hoisted(() => ({
     article: string
     service: string
     price: number
+    pricingMode: 'FIXED' | 'FROM' | 'QUOTE' | 'UNCONFIGURED'
+    billingUnit: 'PIECE' | 'PAIR' | 'SET' | 'KG' | 'M2' | 'METER' | 'PACKAGE' | 'FLAT'
+    requiresReview: boolean
     isActive: boolean
     sortOrder: number
   }>,
@@ -68,6 +71,9 @@ beforeEach(() => {
       article: 'Chemise',
       service: 'Lavage et repassage',
       price: 1000,
+      pricingMode: 'FIXED',
+      billingUnit: 'PIECE',
+      requiresReview: false,
       isActive: true,
       sortOrder: 1,
     },
@@ -77,6 +83,9 @@ beforeEach(() => {
       article: 'Pantalon',
       service: 'Repassage seul',
       price: 500,
+      pricingMode: 'FIXED',
+      billingUnit: 'PIECE',
+      requiresReview: false,
       isActive: false,
       sortOrder: 2,
     },
@@ -136,6 +145,29 @@ describe('Catalogue — administration des tarifs existants', () => {
       article: 'Chemise délicate',
       service: 'Lavage et repassage',
       price: 1800,
+      requiresReview: false,
+    })
+    demonter()
+  })
+
+  it('signale un tarif hérité et exige une confirmation du propriétaire', async () => {
+    depot.entries[0]!.requiresReview = true
+    await monter()
+
+    expect(hote.textContent).toContain('À vérifier')
+    await act(async () => {
+      hote
+        .querySelector<HTMLButtonElement>('[aria-label="Modifier Chemise — Lavage et repassage"]')
+        ?.click()
+    })
+    expect(hote.textContent).toContain('Confirmez d’abord le tarif réel')
+
+    await act(async () => bouton('Enregistrer').click())
+    expect(depot.updateCatalogEntry).toHaveBeenCalledWith(TENANT, 'tarif-actif', {
+      article: 'Chemise',
+      service: 'Lavage et repassage',
+      price: 1000,
+      requiresReview: false,
     })
     demonter()
   })

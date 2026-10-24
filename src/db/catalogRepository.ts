@@ -29,6 +29,9 @@ function toLocal(row: CatalogEntryRow): LocalCatalogEntry {
     article: row.article,
     service: row.service,
     price: row.price,
+    pricingMode: row.pricing_mode,
+    billingUnit: row.billing_unit,
+    requiresReview: row.requires_review,
     isActive: row.is_active,
     sortOrder: row.sort_order,
   }
@@ -47,25 +50,45 @@ export async function getCachedCatalog(
 ): Promise<LocalCatalogEntry[]> {
   const entrees = await db.catalogEntries.where('tenantId').equals(tenantId).toArray()
   return entrees
+    // Les propriétés ajoutées au cache sont normalisées à la lecture pour
+    // garder compatibles les données Dexie créées par une version précédente.
+    .map((entree) => ({
+      ...entree,
+      pricingMode: entree.pricingMode ?? (entree.price === 0 ? 'UNCONFIGURED' : 'FIXED'),
+      billingUnit: entree.billingUnit ?? 'PIECE',
+      // Une entrée mise en cache par une ancienne version n'a pas de preuve de
+      // validation : elle reste masquée jusqu'au prochain rafraîchissement serveur.
+      requiresReview: entree.requiresReview ?? true,
+    }))
     .filter((entree) => options.includeInactive || entree.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.article.localeCompare(b.article, 'fr'))
 }
 
-/** Articles distincts du catalogue local (pour le sélecteur). */
+function tarifProposable(entree: LocalCatalogEntry): boolean {
+  return (
+    entree.isActive &&
+    !entree.requiresReview &&
+    entree.billingUnit === 'PIECE' &&
+    (entree.pricingMode === 'FIXED' || entree.pricingMode === 'FROM') &&
+    entree.price > 0
+  )
+}
+
+/** Articles distincts des tarifs prêts à être utilisés en commande. */
 export function uniqueArticles(entrees: LocalCatalogEntry[]): string[] {
-  const actives = entrees.filter((entree) => entree.isActive)
-  return [...new Set(actives.map((entree) => entree.article))].sort((a, b) =>
+  const proposables = entrees.filter(tarifProposable)
+  return [...new Set(proposables.map((entree) => entree.article))].sort((a, b) =>
     a.localeCompare(b, 'fr'),
   )
 }
 
-/** Prestations proposées pour un article donné. */
+/** Prestations proposées pour un article donné, hors tarifs à confirmer/devis. */
 export function servicesForArticle(
   entrees: LocalCatalogEntry[],
   article: string,
 ): LocalCatalogEntry[] {
   return entrees
-    .filter((entree) => entree.isActive && entree.article === article)
+    .filter((entree) => tarifProposable(entree) && entree.article === article)
     .sort((a, b) => a.service.localeCompare(b.service, 'fr'))
 }
 
@@ -123,7 +146,7 @@ export async function createCatalogEntry(
 export async function updateCatalogEntry(
   tenantId: string,
   entryId: string,
-  input: Partial<CatalogEntryInput> & { isActive?: boolean },
+  input: Partial<CatalogEntryInput> & { isActive?: boolean; requiresReview?: boolean },
 ): Promise<void> {
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
@@ -131,7 +154,10 @@ export async function updateCatalogEntry(
     .update({
       ...(input.article !== undefined ? { article: input.article.trim() } : {}),
       ...(input.service !== undefined ? { service: input.service.trim() } : {}),
-      ...(input.price !== undefined ? { price: input.price } : {}),
+      ...(input.price !== undefined
+        ? { price: input.price, pricing_mode: input.price > 0 ? 'FIXED' : 'UNCONFIGURED' }
+        : {}),
+      ...(input.requiresReview !== undefined ? { requires_review: input.requiresReview } : {}),
       ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
     })
     .eq('tenant_id', tenantId)
@@ -223,6 +249,9 @@ export async function seedDefaultCatalog(tenantId: string): Promise<number> {
     article: entree.article,
     service: entree.service,
     price: entree.price,
+    pricing_mode: 'FIXED' as const,
+    billing_unit: 'PIECE' as const,
+    requires_review: true,
     sort_order: entree.sortOrder,
   }))
 

@@ -342,7 +342,11 @@ Bouton **Quitter** en haut à droite → confirmation.
 Onglet **Prestations** (propriétaire uniquement) : créer ou modifier les couples
 **article × prestation** et leurs tarifs. Une entrée peut être désactivée sans
 supprimer son historique ; **Voir les archives** permet de la consulter puis de
-la réactiver. Modifier un tarif ne change **jamais** une facture déjà émise :
+la réactiver. Après la reprise du catalogue, les tarifs hérités portent le badge
+**À vérifier** et ne sont pas proposés aux nouvelles commandes. Le propriétaire
+ouvre **Modifier**, confirme le prix réel puis enregistre pour lever ce blocage.
+La grille de départ installée par l'application est elle aussi indicative et doit
+être vérifiée. Modifier un tarif ne change **jamais** une facture déjà émise :
 le prix est recopié sur la ligne au moment de la vente.
 
 ### 5.6 Créer les articles de stock et les fournisseurs

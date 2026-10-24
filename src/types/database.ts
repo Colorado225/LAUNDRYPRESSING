@@ -208,13 +208,80 @@ export type PaymentTransactionRow = {
   cash_session_id: string | null
 }
 
-/** Prestation tarifée du catalogue (table `catalog_entries`, migration 004). */
+/** Unités de facturation prises en charge par le catalogue. */
+export type CatalogBillingUnit =
+  | 'PIECE'
+  | 'PAIR'
+  | 'SET'
+  | 'KG'
+  | 'M2'
+  | 'METER'
+  | 'PACKAGE'
+  | 'FLAT'
+
+/** Modes d'évaluation d'un tarif. */
+export type CatalogPricingMode = 'FIXED' | 'FROM' | 'QUOTE' | 'UNCONFIGURED'
+export type CatalogServiceType = 'treatment' | 'option' | 'logistics' | 'other'
+export type CatalogApplicationScope = 'article' | 'order'
+
+export type CatalogFamilyRow = {
+  id: string
+  tenant_id: string
+  name: string
+  description: string | null
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CatalogArticleRow = {
+  id: string
+  tenant_id: string
+  family_id: string
+  name: string
+  description: string | null
+  care_instructions: string | null
+  default_unit: CatalogBillingUnit
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CatalogServiceRow = {
+  id: string
+  tenant_id: string
+  name: string
+  service_type: CatalogServiceType
+  application_scope: CatalogApplicationScope
+  description: string | null
+  is_active: boolean
+  sort_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Tarif tenant-scoped (table `catalog_entries`, migrations 004 et 013). */
 export type CatalogEntryRow = {
   id: string
   tenant_id: string
+  /** Libellés de compatibilité, synchronisés avec les références ci-dessous. */
   article: string
   service: string
+  article_id: string | null
+  service_id: string
   price: number
+  pricing_mode: CatalogPricingMode
+  billing_unit: CatalogBillingUnit
+  minimum_quantity: number | null
+  billing_increment: number | null
+  minimum_charge: number | null
+  conditions: string | null
+  requires_review: boolean
   is_active: boolean
   sort_order: number
   created_at: string
@@ -503,11 +570,67 @@ export interface Database {
         Update: Partial<Omit<OrderStatusHistoryRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
+      catalog_families: {
+        Row: CatalogFamilyRow
+        Insert: InsertOf<
+          CatalogFamilyRow,
+          'id' | 'description' | 'is_active' | 'sort_order' | 'created_by' | 'created_at' | 'updated_at'
+        >
+        Update: Partial<Omit<CatalogFamilyRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      catalog_articles: {
+        Row: CatalogArticleRow
+        Insert: InsertOf<
+          CatalogArticleRow,
+          | 'id'
+          | 'description'
+          | 'care_instructions'
+          | 'default_unit'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<CatalogArticleRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
+      catalog_services: {
+        Row: CatalogServiceRow
+        Insert: InsertOf<
+          CatalogServiceRow,
+          | 'id'
+          | 'service_type'
+          | 'application_scope'
+          | 'description'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+        >
+        Update: Partial<Omit<CatalogServiceRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
       catalog_entries: {
         Row: CatalogEntryRow
         Insert: InsertOf<
           CatalogEntryRow,
-          'id' | 'is_active' | 'sort_order' | 'created_at' | 'updated_at'
+          | 'id'
+          | 'article_id'
+          | 'service_id'
+          | 'pricing_mode'
+          | 'billing_unit'
+          | 'minimum_quantity'
+          | 'billing_increment'
+          | 'minimum_charge'
+          | 'conditions'
+          | 'requires_review'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_at'
+          | 'updated_at'
         >
         Update: Partial<Omit<CatalogEntryRow, 'id' | 'tenant_id'>>
         Relationships: []
