@@ -2,7 +2,7 @@
 
 **Date de mise à jour :** 24 octobre 2026
 **Révision auditée :** branche active `arena/6a467918-laundrypressing`, palier 4,
-lots 2 et 3 vérifiés automatiquement ; charge/activité par membre intégrée sans historique de réattribution
+lots 2 et 3 vérifiés automatiquement ; améliorations UX hors ligne, comptoir et atelier intégrées
 **Méthode :** inventaire automatisé du code (analyse des imports, comptage des
 tables, politiques et tests), puis lecture ciblée des zones sensibles
 (authentification, synchronisation, paiement, RLS).
@@ -19,8 +19,8 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 
 | Élément | Valeur |
 | --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 143 (93 applicatifs, 49 tests et 1 fichier de support) |
-| Lignes de code applicatif | 24 621 (hors dossier `src/test/`) |
+| Fichiers TypeScript / TSX dans `src/` | 148 (94 applicatifs, 53 tests et 1 fichier de support) |
+| Lignes de code applicatif | 24 843 (hors dossier `src/test/`) |
 | Migrations | 19 (`001_init` → `019_catalogue_commercial_models`) |
 | Tables PostgreSQL | 38 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
 | Politiques RLS | 91 |
@@ -28,8 +28,8 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Déclencheurs | 56 (hors déclencheurs internes PostgreSQL) |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
-| Fichiers de tests | 55 Vitest (49 sous `src/`, 6 pour les scripts) + 23 fichiers SQL sous `supabase/tests/` |
-| Tests automatisés | 627 (suite relancée le 24/10/2026 après ajout des tests coûts stock et charge équipe) |
+| Fichiers de tests | 59 Vitest (53 sous `src/`, 6 pour les scripts) + 23 fichiers SQL sous `supabase/tests/` |
+| Tests automatisés | 637 (suite relancée le 24/10/2026 après ajouts stock, rapport d’équipe et améliorations UX) |
 | Contrôles SQL exécutés | 175 lors des recettes antérieures (jusqu'aux migrations précédentes) ; tests SQL ajoutés pour 019 non rejoués localement faute de `psql` |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |

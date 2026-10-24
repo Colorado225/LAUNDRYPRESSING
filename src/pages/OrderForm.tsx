@@ -16,7 +16,8 @@ import {
   Wallet,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useCreateOrder } from '@/db/hooks'
+import { useCreateOrder, useLocalOrders } from '@/db/hooks'
+import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
@@ -131,6 +132,7 @@ const articlesSchema = createOrderSchema.pick({ items: true })
 export default function OrderForm() {
   const navigate = useNavigate()
   const createOrder = useCreateOrder()
+  const localOrders = useLocalOrders()
   const tenantId = useTenantStore((state) => state.tenantId)
   const role = useTenantStore((state) => state.role)
   const canCreate = can(role, 'orders.create')
@@ -138,6 +140,7 @@ export default function OrderForm() {
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [existingCustomerSelected, setExistingCustomerSelected] = useState(false)
   const [dueDate, setDueDate] = useState('')
   const [items, setItems] = useState<OrderItemDraft[]>([{ ...EMPTY_ITEM }])
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
@@ -188,6 +191,11 @@ export default function OrderForm() {
   const tarifsActifsExistants = catalog.some((entree) => entree.isActive)
 
   const total = items.reduce((sum, item) => sum + (Number.isFinite(item.price) ? item.price : 0), 0)
+  const hasUnconfirmedPrice = items.some((item) => item.priceStatus === 'ESTIMATED')
+  const customerSuggestions = useMemo(
+    () => suggestCustomersByPhone(localOrders ?? [], customerPhone),
+    [localOrders, customerPhone],
+  )
 
   // L'onglet est masqué pour l'artisan, mais une URL saisie à la main ne doit
   // pas contourner la règle — le serveur la refuserait de toute façon (RLS).
@@ -727,16 +735,45 @@ export default function OrderForm() {
                 />
               </Field>
 
-              <Field label="Téléphone" htmlFor="customer-phone" hint="10 chiffres, ex. 07 00 00 00 00">
+              <Field label="Téléphone" htmlFor="customer-phone">
                 <input
                   id="customer-phone"
                   value={customerPhone}
-                  onChange={(event) => setCustomerPhone(event.target.value)}
+                  onChange={(event) => {
+                    setCustomerPhone(event.target.value)
+                    setExistingCustomerSelected(false)
+                  }}
                   inputMode="tel"
                   autoComplete="tel"
                   placeholder="07 00 00 00 00"
+                  aria-describedby="customer-phone-help"
                   className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
                 />
+                {!existingCustomerSelected && customerSuggestions.length > 0 && (
+                  <ul className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Clients déjà rencontrés">
+                    {customerSuggestions.map((suggestion) => (
+                      <li key={suggestion.normalizedPhone}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerName(suggestion.name)
+                            setCustomerPhone(suggestion.phone)
+                            setExistingCustomerSelected(true)
+                            setErrors([])
+                          }}
+                          className="flex min-h-12 w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-teal-50 active:bg-teal-100"
+                          aria-label={`Utiliser ${suggestion.name}, ${suggestion.phone}`}
+                        >
+                          <span className="font-semibold text-slate-800">{suggestion.name}</span>
+                          <span className="shrink-0 text-slate-500">{suggestion.phone}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p id="customer-phone-help" className="mt-1 text-xs text-slate-500">
+                  10 chiffres, par exemple 07 00 00 00 00. Les suggestions viennent des commandes de cette tablette.
+                </p>
               </Field>
 
               <Field
@@ -755,8 +792,8 @@ export default function OrderForm() {
             </div>
 
             <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
-              Le téléphone identifie le client : un numéro déjà connu retrouve automatiquement son
-              historique, sans créer de doublon.
+              Un numéro déjà utilisé propose les coordonnées des commandes précédentes de cette
+              tablette. La nouvelle commande reste indépendante et n’écrase jamais l’historique.
             </p>
           </section>
         )}
@@ -1179,6 +1216,11 @@ export default function OrderForm() {
                   </li>
                 ))}
               </ul>
+              {hasUnconfirmedPrice && (
+                <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
+                  Le total affiché est estimatif. Confirmez le montant avec le client avant d’enregistrer la commande.
+                </p>
+              )}
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -1224,7 +1266,9 @@ export default function OrderForm() {
         {/* Pied de formulaire */}
         <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">Total</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              {hasUnconfirmedPrice ? 'Total estimé' : 'Total'}
+            </p>
             <p className="text-xl font-bold text-brand-navy">{formatFcfa(total)}</p>
           </div>
 

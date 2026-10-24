@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const depot = vi.hoisted(() => ({
   models: [] as Array<Record<string, unknown>>,
+  localOrders: [] as Array<Record<string, unknown>>,
   createOrder: vi.fn(),
   getCachedCatalog: vi.fn(),
   refreshCatalog: vi.fn(),
@@ -12,7 +13,10 @@ const depot = vi.hoisted(() => ({
   refreshLaundryModels: vi.fn(),
 }))
 
-vi.mock('@/db/hooks', () => ({ useCreateOrder: () => depot.createOrder }))
+vi.mock('@/db/hooks', () => ({
+  useCreateOrder: () => depot.createOrder,
+  useLocalOrders: () => depot.localOrders,
+}))
 vi.mock('@/db/catalogRepository', () => ({
   getCachedCatalog: depot.getCachedCatalog,
   refreshCatalog: depot.refreshCatalog,
@@ -83,6 +87,7 @@ function changeInput(id: string, value: string) {
 
 beforeEach(() => {
   depot.models = [MODEL]
+  depot.localOrders = []
   depot.createOrder.mockResolvedValue({ order: { id: 'order-new' } })
   depot.getCachedCatalog.mockResolvedValue([])
   depot.refreshCatalog.mockResolvedValue(false)
@@ -100,6 +105,20 @@ afterEach(() => {
 })
 
 describe('modèle commercial dans la création de commande', () => {
+  it('propose un client déjà rencontré à partir du téléphone', async () => {
+    depot.localOrders = [{
+      customerName: 'Awa Koné',
+      customerPhone: '07 00 00 00 01',
+      createdAt: '2026-02-01T10:00:00.000Z',
+    }]
+    await mount()
+    changeInput('customer-phone', '070')
+    expect(host.textContent).toContain('Awa Koné')
+    clickButton('Awa Koné')
+    expect(host.querySelector<HTMLInputElement>('#customer-name')?.value).toBe('Awa Koné')
+    expect(host.querySelector<HTMLInputElement>('#customer-phone')?.value).toBe('07 00 00 00 01')
+  })
+
   it('calcule et transmet le poids réel et le tarif au kilo dans la ligne', async () => {
     await mount()
     changeInput('customer-name', 'Aïssata Koné')

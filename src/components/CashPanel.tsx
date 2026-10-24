@@ -104,6 +104,11 @@ export default function CashPanel({
       toast.error('Indiquez un montant valide.')
       return
     }
+    if (valeur > remboursable) {
+      toast.error(`Le montant ne peut pas dépasser ${formatFcfa(remboursable)}.`)
+      return
+    }
+    if (!window.confirm(`Confirmer le remboursement de ${formatFcfa(valeur)} ?`)) return
 
     setEnvoiRemboursement(true)
     try {

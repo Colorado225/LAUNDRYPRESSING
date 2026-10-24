@@ -104,9 +104,11 @@ Le bouton **Précédent** permet de revenir corriger une étape déjà validée.
    CinetPay exige une référence de commande déjà enregistrée.
 5. Appuyer sur **Enregistrer la commande**.
 
-Le **téléphone** suffit à retrouver le client : les commandes passées avec le
-même numéro — avec ou sans indicatif `+225` — sont regroupées dans son
-historique.
+À partir de trois chiffres, le champ **Téléphone** propose des coordonnées
+repérées dans les commandes déjà enregistrées sur cette tablette (avec ou sans
+indicatif `+225`). Choisir une suggestion préremplit le nom et le numéro ; la
+nouvelle commande reste indépendante. Le total estimatif est signalé avant
+l'enregistrement lorsqu'une mesure ou un tarif doit encore être confirmé.
 
 La commande est immédiatement visible dans la liste, **même sans réseau**. Un
 badge orange indique qu'elle attend l'envoi vers le serveur.
@@ -273,7 +275,7 @@ l'application reste léger.
 1. Appuyer sur **Scanner une étiquette** et autoriser l'accès à la caméra
    (une seule fois).
 2. Présenter le **QR code** de l'étiquette devant l'objectif.
-3. La fiche de la commande s'affiche : client, total, paiement, liste des vêtements.
+3. La fiche de la commande s'affiche : client, total, paiement, vêtements et progression visuelle de l'étape actuelle. Le résultat du scan est annoncé à l'écran.
 
 **Si la caméra ne fonctionne pas** (autorisée refusée, objectif sale, étiquette
 abîmée) : saisir le code à la main dans le champ de recherche
@@ -281,26 +283,28 @@ abîmée) : saisir le code à la main dans le champ de recherche
 
 ### 4.3 Faire avancer une commande
 
-Depuis la fiche affichée, choisir le statut suivant :
+Depuis la fiche affichée, la progression indique l'étape actuelle et le bouton
+principal propose directement **l'étape suivante**. Les autres statuts possibles
+restent disponibles en dessous.
 
-**Reçue → En lavage → Repassage → Prête → Livrée**
-
-- Le bouton **Revenir à « … »** corrige une erreur de manipulation.
-- Une commande **annulée** ne peut plus être payée.
+- Le propriétaire peut revenir à une étape précédente pour corriger une erreur.
+- L'annulation demande une confirmation ; une commande **annulée** ne peut plus être payée.
 
 Le statut change **immédiatement** sur la tablette, sans réseau. Il est transmis
 au serveur dès le retour de la connexion.
 
 ### 4.4 Vérifier que tout est envoyé
 
-En haut de l'écran, le badge de synchronisation indique :
+En haut de l'écran, le badge indique l'état, le nombre d'éléments en attente
+(commandes, encaissements, réclamations et notifications locales) et la date de
+la dernière synchronisation réussie pour ce pressing.
 
 | Badge | Signification |
 | --- | --- |
-| 🟢 **Synchronisé** | Tout est enregistré sur le serveur. |
-| 🟠 **Hors ligne** | Pas de réseau : les commandes attendent sur la tablette. |
+| 🟢 **Synchronisé** | Aucun élément local n'attend son envoi. |
+| 🟠 **Hors ligne** | Pas de réseau : le travail reste enregistré sur la tablette. |
 | 🔵 **Synchronisation…** | Envoi en cours. |
-| 🔴 **Erreur de synchro** | Un envoi a échoué ; le texte de l'erreur est affiché à côté. |
+| 🔴 **Erreur de synchro** | L'erreur et la marche à suivre sont affichées ; le bouton **Synchroniser** permet de réessayer quand le réseau est disponible. |
 
 Le bouton **Synchroniser** force un envoi immédiat.
 

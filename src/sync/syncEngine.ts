@@ -435,7 +435,7 @@ async function runSync(): Promise<SyncResult> {
   ) {
     // Rien à envoyer, mais d'autres appareils ont peut-être écrit : on relit.
     const pulled = await pullOrders(tenantId).catch(() => 0)
-    useSyncStore.getState().finishSync({ pendingCount: 0, lastError: null })
+    useSyncStore.getState().finishSync({ pendingCount: 0, lastError: null, tenantId })
     return { ...EMPTY_RESULT, pulled, skipped: false }
   }
 
@@ -544,6 +544,7 @@ async function runSync(): Promise<SyncResult> {
   useSyncStore.getState().finishSync({
     pendingCount: remaining + cashSummary.pending + remainingIssues + remainingNotifications,
     lastError,
+    tenantId,
   })
 
   return {

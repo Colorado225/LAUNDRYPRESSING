@@ -19,6 +19,7 @@ import { findOrderByQrCode, getOrderWithItems, getWorkshopOrders } from '@/db/or
 import type { LocalOrderWithItems } from '@/db/ordersRepository'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
+  ORDER_FLOW,
   ORDER_STATUSES,
   PAYMENT_STATUS_LABELS,
   allowedStatusTargets,
@@ -119,9 +120,14 @@ export default function Atelier() {
   )
 
   const changeStatus = async (orderId: string, status: OrderStatus) => {
+    if (
+      status === 'cancelled' &&
+      !window.confirm('Annuler cette commande ? Cette action sera synchronisée avec le pressing.')
+    ) return
+
     try {
       await updateStatus(orderId, status)
-      toast.success(`Statut : ${ORDER_STATUSES[status].label}`, { icon: '✅' })
+      toast.success(`Statut « ${ORDER_STATUSES[status].label} » enregistré sur la tablette.`, { icon: '✅' })
       // Rafraîchit la fiche affichée à partir de la base locale
       const refreshed = await getOrderWithItems(orderId)
       if (refreshed) {
@@ -360,12 +366,14 @@ function ScanResult({
   const { order, items } = outcome.data
   const meta = ORDER_STATUSES[order.status]
   const cibles = allowedStatusTargets(order.status, role)
+  const nextStatus = ORDER_FLOW.find((status) => ORDER_STATUSES[status].step === (meta.step ?? 0) + 1)
+  const primaryNextStatus = nextStatus && cibles.includes(nextStatus) ? nextStatus : null
 
   return (
     <section className="rounded-2xl border-2 border-brand-teal/40 bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-brand-teal">
+          <p role="status" aria-live="polite" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-brand-teal">
             <CheckCircle2 size={14} aria-hidden />
             Commande trouvée
           </p>
@@ -398,6 +406,37 @@ function ScanResult({
         </div>
       </dl>
 
+      {meta.step !== null && (
+        <div className="mt-3 rounded-xl bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+            <span className="font-semibold uppercase tracking-wide text-slate-500">Progression</span>
+            <span className="font-bold text-brand-navy">Étape {meta.step} sur {ORDER_FLOW.length} · {meta.label}</span>
+          </div>
+          <div
+            className="mt-2 grid grid-cols-8 gap-1"
+            role="progressbar"
+            aria-label="Avancement de la commande"
+            aria-valuemin={0}
+            aria-valuemax={ORDER_FLOW.length}
+            aria-valuenow={meta.step}
+            aria-valuetext={`Étape ${meta.step} sur ${ORDER_FLOW.length} : ${meta.label}`}
+          >
+            {ORDER_FLOW.map((status) => (
+              <span
+                key={status}
+                aria-hidden="true"
+                className={`h-2 rounded-full ${
+                  (ORDER_STATUSES[status].step ?? 0) <= meta.step!
+                    ? 'bg-brand-teal'
+                    : 'bg-slate-200'
+                }`}
+              />
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-600">{meta.description}</p>
+        </div>
+      )}
+
       {items.length > 0 && (
         <ul className="mt-3 divide-y divide-slate-100 text-sm">
           {items.map((item) => (
@@ -415,8 +454,21 @@ function ScanResult({
         <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
           Changer le statut
         </p>
+        {primaryNextStatus && (
+          <button
+            type="button"
+            onClick={() => void onStatusChange(order.id, primaryNextStatus)}
+            className="mt-2 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-base font-bold text-white hover:bg-brand-teal-dark active:bg-brand-teal-dark"
+          >
+            <CheckCircle2 size={18} aria-hidden />
+            Étape suivante : {ORDER_STATUSES[primaryNextStatus].label}
+          </button>
+        )}
+        {cibles.some((status) => status !== primaryNextStatus) && (
+          <p className="mt-3 text-xs font-semibold text-slate-500">Autres changements possibles</p>
+        )}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {cibles.map((status) => {
+          {cibles.filter((status) => status !== primaryNextStatus && status !== 'cancelled').map((status) => {
             const statusMeta = ORDER_STATUSES[status]
             const isCurrent = status === order.status
             return (

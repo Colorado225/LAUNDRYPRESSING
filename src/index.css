@@ -393,3 +393,13 @@
 .print-only {
   display: none;
 }
+
+/* Cible tactile et focus clavier visibles dans toute l'application. */
+:where(button, a, [role='button']) {
+  touch-action: manipulation;
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #0f766e !important;
+  outline-offset: 2px !important;
+}
