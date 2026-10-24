@@ -223,7 +223,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
 | `npm run db:etat` | Inventaire **lecture seule** d'une base gérée (`DATABASE_URL`) : tables, RLS, migrations |
 | `npm run db:push` | Applique le socle, les migrations et le jeu de démonstration sur cette base |
-| `npm run db:verifier` | Rejoue les 174 contrôles SQL sur cette base (transaction annulée) |
+| `npm run db:verifier` | Rejoue les 175 contrôles SQL sur cette base (transaction annulée) |
 | `npm run test:watch` | Vitest en mode surveillance |
 
 ### Vérifier la PWA
@@ -1111,12 +1111,17 @@ rattacher un compte (avec les limites `max_users` / `max_shops` de la formule),
 enfin de répondre aux demandes de support. Côté pressing, `/support` ouvre une
 demande et lit la réponse ; les demandes sont cloisonnées par `tenant_id`.
 
-Pour devenir éditeur : `PLATFORM_ADMIN=true` dans `.env` avant `npm run setup`
-(une seule fois, sur le compte de l'éditeur), ou à la main :
+**Accès au back-office :** connectez-vous dans l'application avec votre compte
+Supabase, puis ouvrez **Supervision** dans le menu ou `/supervision`. Le lien
+n'apparaît qu'après vérification serveur de votre compte. Un pressing client,
+même propriétaire, ne peut ni ouvrir la console ni appeler ses fonctions SQL.
 
-```sql
-insert into public.platform_admins (user_id) values ('<uuid du compte>');
-```
+Le compte doit d'abord exister dans Supabase Auth et figurer dans
+`platform_admins`. Le provisionnement éditeur se fait uniquement côté
+administration (`PLATFORM_ADMIN=true` pour le compte concerné dans `.env` avant
+`npm run setup`, ou ajout sécurisé par `service_role`). La migration 011 impose
+une seule ligne : il ne peut y avoir qu'un seul super-administrateur à la fois.
+Ne donnez jamais `service_role` à l'application ni à un pressing.
 
 ### Limites connues
 

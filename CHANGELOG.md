@@ -6,6 +6,25 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.15.0] — 2026-10-24
+
+Accès à la supervision SaaS réservé à un seul compte super-administrateur.
+
+### Renforcé
+
+- **Migration 011** — index unique singleton sur `platform_admins` : au plus un
+  compte éditeur peut être autorisé à administrer les pressings clients.
+- **Accès documenté** — connexion à l'application puis menu **Supervision** ou
+  `/supervision`. La navigation est conditionnée par la vérification serveur ;
+  les RPC refusent toujours un compte de pressing non autorisé.
+- **Contrôle SQL** — tentative d'inscrire un second éditeur rejetée
+  (`palier4.sql`, contrôle 0.1).
+
+### Vérifié
+
+- 175 contrôles SQL passés sur PostgreSQL local ; le compte à autoriser doit
+  déjà exister dans Supabase Auth avant son inscription dans la liste blanche.
+
 ## [0.14.0] — 2026-10-24
 
 Préparer le paiement productif CinetPay ; la simulation locale sécurisée valide le parcours sans encaisser.

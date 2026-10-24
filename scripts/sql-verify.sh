@@ -85,6 +85,7 @@ FICHIERS=(
   "supabase/migrations/008_inscription.sql"
   "supabase/migrations/009_audit.sql"
   "supabase/migrations/010_notifications.sql"
+  "supabase/migrations/011_superadmin_single.sql"
   "supabase/seed.sql"
   "supabase/tests/isolation.sql"
   "supabase/tests/palier1.sql"

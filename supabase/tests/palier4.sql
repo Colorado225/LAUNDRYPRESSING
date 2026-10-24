@@ -41,6 +41,18 @@ insert into public.platform_admins (user_id, display_name)
 values ('00000000-0000-4000-8000-0000000000e5', 'Éditeur Pressing Pro')
 on conflict (user_id) do nothing;
 
+do $$
+begin
+  begin
+    insert into public.platform_admins (user_id, display_name)
+    values ('00000000-0000-4000-8000-0000000000d4', 'Compte client interdit');
+    raise exception 'ÉCHEC 0.1 — un second super-administrateur a été ajouté.';
+  exception
+    when unique_violation then
+      raise notice 'OK 0.1 — un seul super-administrateur peut être inscrit.';
+  end;
+end $$;
+
 -- =============================================================================
 -- 1. FORMULES
 -- =============================================================================

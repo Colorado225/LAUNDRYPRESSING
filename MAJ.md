@@ -619,5 +619,7 @@ instance**. C'est fait, sur le projet Supabase de recette :
 
 | 24/10/2026 | 4 | Paiement Mobile Money : simulation explicite sans encaissement, prérequis production, secrets lus dans `.env` puis déployés automatiquement | à valider |
 
+| 24/10/2026 | 4 | Supervision éditeur : index unique, un seul super-administrateur possible, contrôle SQL 0.1 | en attente du compte Auth |
+
 **Règle de tenue :** chaque ligne du journal indique le palier, l'action et le
 commit ; une case n'est cochée qu'après vérification sur le commit concerné.

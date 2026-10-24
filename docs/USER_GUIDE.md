@@ -481,8 +481,12 @@ Onglet **Supervision** — visible seulement pour les comptes inscrits dans
   propriétaire d'un pressing ne peut pas être détaché ;
 - **Support** : répondre et clôturer une demande.
 
-Pour désigner un éditeur : `PLATFORM_ADMIN=true` dans `.env` avant
-`npm run setup`, ou `insert into public.platform_admins (user_id) values (…)`.
+**Accès :** connectez-vous avec le compte Supabase inscrit dans
+`platform_admins`, puis choisissez **Supervision** dans le menu ou ouvrez
+`/supervision`. Les pressings clients n'ont pas accès à cette page ni aux
+fonctions serveur qui la pilotent. La migration 011 limite la liste à un seul
+compte éditeur. L'inscription du compte se fait côté administration, jamais
+par un bouton d'auto-attribution dans l'application.
 
 ---
 
