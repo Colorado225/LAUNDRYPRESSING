@@ -28,8 +28,8 @@ tables, politiques et tests), puis lecture ciblée des zones sensibles
 | Déclencheurs | 18 |
 | Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
 | Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
-| Fichiers de tests | 37 Vitest (31 sous `src/`, 6 pour les scripts) + 11 fichiers SQL |
-| Tests automatisés | 546 |
+| Fichiers de tests | 38 Vitest (32 sous `src/`, 6 pour les scripts) + 11 fichiers SQL |
+| Tests automatisés | 550 |
 | Contrôles SQL exécutés | 175 (isolations, rôles, paliers 1 à 4, inscription, audit, notifications, recette réelle) |
 | Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
 | Code mort | 0 fichier (voir §3) |
@@ -209,7 +209,7 @@ sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
 | --- | --- | --- |
 | Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
 | Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 546 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, commande, isolation, CinetPay, paiement simulé, notifications |
+| Tests | `npm test` | 550 tests : QR, synchronisation, rôles, caisse, soldes, retard, clients, stock, dépenses, tableau de bord, abonnement, langue, commande, isolation, CinetPay, paiement simulé, notifications, authentification éditeur |
 | Build | `npm run build` | compilation TypeScript + PWA (précache 81 fichiers, 1 369 KiB) |
 | SQL réel | `npm run sql:verify` | migrations `001`→`011`, jeu de démonstration, 175 contrôles (isolation, rôles, verrou optimiste, guichet unique, catalogue, caisse, attribution, réclamations, remboursements, clients, stock, dépenses, abonnement, multi-boutiques, supervision, support, journal d’audit, recette à deux pressings) sur un PostgreSQL 16 jetable |
 | Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |

@@ -39,6 +39,8 @@ export interface RestoredSession {
   membership: TenantMembership | null
   /** `true` quand le contexte vient du cache local (démarrage hors ligne). */
   fromCache: boolean
+  /** `true` si le compte éditeur est autorisé sans appartenance à un pressing. */
+  isPlatformAdmin: boolean
 }
 
 /** Contexte mémorisé, reconstruit sans requête réseau. */
@@ -46,6 +48,16 @@ function cachedMembership(): TenantMembership | null {
   const { tenantId, tenantName, role, userId } = useTenantStore.getState()
   if (!tenantId || !tenantName || !role) return null
   return { tenantId, tenantName, role, userId }
+}
+
+/** Vérifie côté serveur l'accès éditeur indépendant d'un pressing. */
+async function compteEditeurAutorise(supabase: ReturnType<typeof getSupabaseClient>): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('is_platform_admin')
+    return !error && data === true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -79,29 +91,39 @@ export async function signInWithPassword(
   }
 
   let membership = await resolveTenantForUser(data.user.id)
+  let isPlatformAdmin = false
 
-  // Compte confirmé mais pressing jamais créé (confirmation par e-mail activée
-  // à l'inscription) : on termine l'inscription ici, une seule fois.
   if (!membership) {
+    // Le compte éditeur est le seul à pouvoir ouvrir la console sans être membre
+    // d'un pressing. La décision vient du RPC sécurisé, jamais du profil local.
+    isPlatformAdmin = await compteEditeurAutorise(supabase)
+  }
+
+  // Compte confirmé mais pressing jamais créé : on termine l'inscription ici,
+  // sauf pour l'éditeur, qui ne doit pas recevoir un pressing artificiel.
+  if (!membership && !isPlatformAdmin) {
     const cree = await finaliserInscriptionEnAttente(data.user.user_metadata).catch(() => null)
     if (cree) membership = await resolveTenantForUser(data.user.id)
   }
 
-  if (!membership) {
-    // Compte valide mais non rattaché : on referme la session pour ne pas
-    // laisser croire à un accès. Le rattachement se fait côté serveur.
+  if (!membership && !isPlatformAdmin) {
+    // Compte valide mais non rattaché ni autorisé comme éditeur : la session
+    // est fermée, et le rôle ne peut pas être demandé depuis le navigateur.
     await supabase.auth.signOut()
     throw new AuthError(
       'no_membership',
-      'Ce compte n’est rattaché à aucun pressing. Demandez au propriétaire de vous ajouter à son équipe.',
+      'Ce compte n’est rattaché à aucun pressing et n’est pas autorisé à superviser la plateforme.',
     )
   }
+
+  useTenantStore.getState().setPlatformAdmin(isPlatformAdmin)
 
   return {
     userId: data.user.id,
     email: data.user.email ?? null,
     membership,
     fromCache: false,
+    isPlatformAdmin,
   }
 }
 
@@ -134,16 +156,22 @@ export async function restoreSession(): Promise<RestoredSession | null> {
       email: user.email ?? null,
       membership: cached,
       fromCache: true,
+      // Ce drapeau mémorisé n'ouvre que l'interface ; toutes les actions restent
+      // protégées par les RPC serveur quand la connexion revient.
+      isPlatformAdmin: useTenantStore.getState().isPlatformAdmin,
     }
   }
 
   try {
     const membership = await resolveTenantForUser(user.id)
+    const isPlatformAdmin = membership ? false : await compteEditeurAutorise(supabase)
+    if (isPlatformAdmin) useTenantStore.getState().setPlatformAdmin(true)
     return {
       userId: user.id,
       email: user.email ?? null,
       membership,
       fromCache: false,
+      isPlatformAdmin,
     }
   } catch {
     // Serveur injoignable alors que `navigator.onLine` est vrai (Wi-Fi captif,
@@ -153,6 +181,7 @@ export async function restoreSession(): Promise<RestoredSession | null> {
       email: user.email ?? null,
       membership: cached,
       fromCache: true,
+      isPlatformAdmin: useTenantStore.getState().isPlatformAdmin,
     }
   }
 }
@@ -377,6 +406,7 @@ export async function signUpWithPassword(
         email: existante.session.user.email ?? email,
         membership,
         fromCache: false,
+        isPlatformAdmin: false,
       },
       tenantId,
     }
@@ -417,6 +447,7 @@ export async function signUpWithPassword(
       email: data.session.user.email ?? email,
       membership,
       fromCache: false,
+      isPlatformAdmin: false,
     },
     tenantId,
   }
@@ -425,9 +456,9 @@ export async function signUpWithPassword(
 /**
  * À appeler après confirmation de l'adresse e-mail, au moment de la connexion.
  *
- * `signInWithPassword` refuse un compte sans pressing ; or c'est exactement
- * l'état d'un compte fraîchement confirmé dont le pressing n'a pas encore été
- * créé. On réessaie donc la création ici, une seule fois, avec le nom saisi à
+ * `signInWithPassword` termine l'inscription d'un compte sans pressing, sauf si
+ * le RPC confirme qu'il s'agit de l'éditeur de la plateforme. Pour un nouveau
+ * client, on réessaie ici la création du pressing avec le nom saisi à
  * l'inscription (conservé dans `user_metadata`).
  */
 export async function finaliserInscriptionEnAttente(

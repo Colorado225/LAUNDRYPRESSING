@@ -7,7 +7,7 @@
 
 | Contrôle | Commande | Résultat |
 | --- | --- | --- |
-| Types, style, tests, build | `npm run typecheck && npm run lint && npm test && npm run build` | 546 tests, 37 fichiers |
+| Types, style, tests, build | `npm run typecheck && npm run lint && npm test && npm run build` | 550 tests, 38 fichiers |
 | Schéma, RLS, rôles, abonnement | `npm run sql:verify` | 175 contrôles sur PostgreSQL 16.2 |
 | Recette technique du projet déployé | `npm run recette` | 7 contrôles en lecture seule |
 

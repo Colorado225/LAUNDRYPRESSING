@@ -481,12 +481,12 @@ Onglet **Supervision** — visible seulement pour les comptes inscrits dans
   propriétaire d'un pressing ne peut pas être détaché ;
 - **Support** : répondre et clôturer une demande.
 
-**Accès :** connectez-vous avec le compte Supabase inscrit dans
-`platform_admins`, puis choisissez **Supervision** dans le menu ou ouvrez
-`/supervision`. Les pressings clients n'ont pas accès à cette page ni aux
-fonctions serveur qui la pilotent. La migration 011 limite la liste à un seul
-compte éditeur. L'inscription du compte se fait côté administration, jamais
-par un bouton d'auto-attribution dans l'application.
+**Accès :** le compte éditeur peut être créé dans Supabase Auth sans être
+rattaché à un pressing. Après son inscription dans `platform_admins`, connectez-
+vous à l'application : elle ouvre `/supervision` directement. Les pressings
+clients n'ont pas accès à cette page ni aux fonctions serveur qui la pilotent.
+La migration 011 limite la liste à un seul compte éditeur. Aucun bouton
+d'auto-attribution n'existe dans l'application.
 
 ---
 

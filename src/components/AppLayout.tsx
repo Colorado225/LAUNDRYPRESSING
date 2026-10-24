@@ -108,7 +108,7 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
     items.push({ to: '/supervision', label: 'Supervision', icon: Building2 })
   }
 
-  items.push({ to: '/parametres', label: 'Paramètres', icon: Settings })
+  if (role) items.push({ to: '/parametres', label: 'Paramètres', icon: Settings })
 
   return items
 }
@@ -117,6 +117,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const isPlatformAdmin = useTenantStore((state) => state.isPlatformAdmin)
+  const libelleRole = role
+    ? TENANT_ROLE_LABELS[role]
+    : isPlatformAdmin
+      ? 'Administrateur de la plateforme'
+      : 'Rôle inconnu'
   const navigation = buildNavigation(role, isPlatformAdmin)
 
   const handleSignOut = async () => {
@@ -152,7 +157,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-slate-50 lg:flex">
       {/* ---------------------------- Barre latérale (bureau) ---------------- */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <Link to="/commandes" className="flex items-center gap-2.5 px-4 py-4">
+        <Link to="/" className="flex items-center gap-2.5 px-4 py-4">
           <span className="flex size-10 items-center justify-center rounded-xl bg-brand-navy text-brand-teal">
             <Shirt size={22} aria-hidden />
           </span>
@@ -176,7 +181,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="border-t border-slate-200 p-3">
           <ShopSwitcher />
           <p className="mt-2 px-1 text-xs text-slate-500">
-            {role ? TENANT_ROLE_LABELS[role] : 'Rôle inconnu'}
+            {libelleRole}
           </p>
           <div className="mt-2">
             <OfflineBadge />
@@ -199,7 +204,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
             {/* Identité : masquée sur bureau, la barre latérale la porte déjà. */}
-            <Link to="/commandes" className="flex items-center gap-2.5 lg:hidden">
+            <Link to="/" className="flex items-center gap-2.5 lg:hidden">
               <span className="flex size-10 items-center justify-center rounded-xl bg-brand-navy text-brand-teal">
                 <Shirt size={22} aria-hidden />
               </span>
@@ -207,7 +212,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <span className="block text-sm font-bold text-brand-navy">Pressing Pro</span>
                 <span className="block text-xs text-slate-500">
                   {tenantName ?? 'Pressing non sélectionné'}
-                  {role && ` · ${TENANT_ROLE_LABELS[role]}`}
+                  {(role || isPlatformAdmin) && ` · ${libelleRole}`}
                 </span>
               </span>
             </Link>
@@ -216,10 +221,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 restent visibles même quand on fait défiler. */}
             <p className="hidden text-sm font-semibold text-slate-600 lg:block">
               {tenantName ?? 'Pressing non sélectionné'}
-              {role && (
-                <span className="ml-2 text-xs font-medium text-slate-400">
-                  {TENANT_ROLE_LABELS[role]}
-                </span>
+              {(role || isPlatformAdmin) && (
+                <span className="ml-2 text-xs font-medium text-slate-400">{libelleRole}</span>
               )}
             </p>
 
@@ -235,9 +238,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}
-                  title={
-                    role ? `Se déconnecter (${TENANT_ROLE_LABELS[role]})` : 'Se déconnecter'
-                  }
+                  title={`Se déconnecter (${libelleRole})`}
                   className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-600 transition-colors active:bg-slate-100 lg:hidden"
                 >
                   <LogOut size={16} aria-hidden />

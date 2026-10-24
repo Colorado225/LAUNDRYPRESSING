@@ -213,7 +213,7 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (546 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
+| `npm test` | Suite Vitest complète (550 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run simulateur` | Faux CinetPay local (`0.0.0.0:54321`) pour tester le paiement en mode `test` |
@@ -1117,11 +1117,17 @@ n'apparaît qu'après vérification serveur de votre compte. Un pressing client,
 même propriétaire, ne peut ni ouvrir la console ni appeler ses fonctions SQL.
 
 Le compte doit d'abord exister dans Supabase Auth et figurer dans
-`platform_admins`. Le provisionnement éditeur se fait uniquement côté
-administration (`PLATFORM_ADMIN=true` pour le compte concerné dans `.env` avant
-`npm run setup`, ou ajout sécurisé par `service_role`). La migration 011 impose
-une seule ligne : il ne peut y avoir qu'un seul super-administrateur à la fois.
-Ne donnez jamais `service_role` à l'application ni à un pressing.
+`platform_admins`. Vous pouvez créer un compte éditeur **sans pressing** dans
+Supabase Auth ; une fois autorisé côté administration, connectez-vous à
+l'application et `/` ouvre directement `/supervision`. Le RPC réservé aux
+éditeurs est le seul moyen d'obtenir cet accès sans adhésion à un pressing.
+
+`PLATFORM_ADMIN=true` dans `.env` reste disponible si l'éditeur est le compte
+propriétaire créé par `npm run setup`. Pour un compte éditeur indépendant, son
+inscription dans `platform_admins` se fait uniquement côté administration.
+La migration 011 impose une seule ligne : aucun second super-administrateur ne
+peut être ajouté par erreur. Ne donnez jamais `service_role` à l'application
+ni à un pressing.
 
 ### Limites connues
 

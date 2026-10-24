@@ -261,6 +261,6 @@ C'est une décision de mise sur le marché, pas de code.
 
 - `npm run typecheck` — 0 erreur
 - `npm run lint` — 0 avertissement
-- `npm test` — **546 tests**, 37 fichiers
+- `npm test` — **550 tests**, 38 fichiers
 - `npm run sql:verify` — **175 contrôles** sur PostgreSQL 16.2
 - `npm run build` — PWA, 81 fichiers précachés

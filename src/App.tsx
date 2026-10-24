@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import AppLayout from '@/components/AppLayout'
 import AuthGate from '@/components/AuthGate'
 import { useAndroidBackButton } from '@/hooks/useAndroidBackButton'
+import { useTenantStore } from '@/lib/tenantContext'
 import { startSyncEngine, stopSyncEngine } from '@/sync/syncEngine'
 
 /**
@@ -98,7 +99,7 @@ function RootRoutes() {
       <AppLayout>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Navigate to="/commandes" replace />} />
+            <Route path="/" element={<Accueil />} />
             <Route path="/commandes" element={<Orders />} />
             <Route path="/commandes/nouvelle" element={<OrderForm />} />
             <Route path="/commandes/:orderId" element={<OrderDetail />} />
@@ -121,12 +122,20 @@ function RootRoutes() {
             {/* Retour CinetPay. L'alias anglais évite de casser un lien déjà partagé. */}
             <Route path="/paiement/retour" element={<PaymentReturn />} />
             <Route path="/payment/return" element={<PaymentAliasRedirect />} />
-            <Route path="*" element={<Navigate to="/commandes" replace />} />
+            <Route path="*" element={<Accueil />} />
           </Routes>
         </Suspense>
       </AppLayout>
     </AuthGate>
   )
+}
+
+/** Renvoie un éditeur sans pressing directement vers son back-office. */
+function Accueil() {
+  const tenantId = useTenantStore((state) => state.tenantId)
+  const isPlatformAdmin = useTenantStore((state) => state.isPlatformAdmin)
+
+  return <Navigate to={!tenantId && isPlatformAdmin ? '/supervision' : '/commandes'} replace />
 }
 
 /**

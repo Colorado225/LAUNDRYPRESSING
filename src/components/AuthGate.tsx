@@ -13,7 +13,9 @@ import { isPlatformAdmin } from '@/services/platformService'
  * Porte d'entrée de l'application (phase 5).
  *
  * Remplace l'écran temporaire `TenantGate` : le pressing n'est plus choisi à la
- * main mais déduit du compte connecté (`tenant_users`).
+ * main mais déduit du compte connecté (`tenant_users`). L'éditeur de la
+ * plateforme est une exception explicite : le RPC `is_platform_admin()` lui
+ * permet d'ouvrir la supervision sans appartenance à un pressing.
  *
  * Trois chemins :
  *  1. **Supabase configuré + session valide** → l'application s'ouvre. La
@@ -28,6 +30,7 @@ type Phase = 'chargement' | 'anonyme' | 'connecte'
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const tenantId = useTenantStore((state) => state.tenantId)
+  const isPlatformAdminStore = useTenantStore((state) => state.isPlatformAdmin)
   const [phase, setPhase] = useState<Phase>(() =>
     isSupabaseConfigured ? 'chargement' : 'anonyme',
   )
@@ -43,6 +46,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       try {
         const restored = await restoreSession()
         if (cancelled) return
+
+        if (restored?.isPlatformAdmin) {
+          useTenantStore.getState().setPlatformAdmin(true)
+          setPhase('connecte')
+          return
+        }
 
         if (restored?.membership) {
           setPhase('connecte')
@@ -133,10 +142,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     )
   }
 
-  // Le bouton « Quitter » vide le store du pressing avant que l'événement
-  // d'authentification n'arrive : sans ce garde-fou, l'interface s'afficherait
-  // un instant sans pressing (liste vide, en-tête « Pressing non sélectionné »).
-  if (phase === 'anonyme' || !tenantId) {
+  // L'éditeur de la plateforme n'est membre d'aucun pressing : son accès est
+  // autorisé uniquement par `is_platform_admin()` côté serveur.
+  // Pour un compte de pressing, l'absence de boutique reste un refus d'accès.
+  if (phase === 'anonyme' || (!tenantId && !isPlatformAdminStore)) {
     return (
       <Login
         onAuthenticated={() => setPhase('connecte')}
