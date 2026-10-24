@@ -351,7 +351,7 @@ export default function Depenses() {
                     type="button"
                     onClick={() => void supprimer(depense)}
                     aria-label={`Supprimer la dépense ${depense.label}`}
-                    className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600"
+                    className="inline-flex size-12 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600"
                   >
                     <Trash2 size={16} aria-hidden />
                   </button>

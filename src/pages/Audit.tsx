@@ -121,7 +121,7 @@ export default function Audit() {
           <select
             value={famille}
             onChange={(evenement) => setFamille(evenement.target.value as FamilleAudit | 'toutes')}
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+            className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-teal"
           >
             <option value="toutes">Toutes</option>
             {FAMILLES_AUDIT.map((entree) => (
@@ -180,7 +180,7 @@ export default function Audit() {
             type="button"
             onClick={() => void chargerSuite()}
             disabled={chargementSuite}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-navy ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
+            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-brand-navy ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
           >
             {chargementSuite && <Loader2 size={15} className="animate-spin" aria-hidden />}
             Afficher les événements plus anciens

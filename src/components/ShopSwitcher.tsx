@@ -30,7 +30,7 @@ export default function ShopSwitcher() {
       <select
         value={tenantId ?? ''}
         onChange={(event) => changer(event.target.value)}
-        className="min-h-10 max-w-52 rounded-xl border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-brand-teal"
+        className="min-h-12 max-w-52 rounded-xl border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-brand-teal"
       >
         {shops.map((shop) => (
           <option key={shop.tenantId} value={shop.tenantId}>

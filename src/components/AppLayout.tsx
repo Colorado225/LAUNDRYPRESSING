@@ -147,7 +147,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }`
 
   const sidebarLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors ${
+    `flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors ${
       isActive
         ? 'bg-brand-teal/10 text-brand-navy shadow-[inset_3px_0_0_0_var(--color-brand-teal)]'
         : 'text-slate-600 hover:bg-slate-100 hover:text-brand-navy'
@@ -190,7 +190,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => void handleSignOut()}
-              className="mt-2 inline-flex min-h-11 w-full items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 active:bg-slate-100"
+              className="mt-2 inline-flex min-h-12 w-full items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 active:bg-slate-100"
             >
               <LogOut size={16} aria-hidden />
               Quitter

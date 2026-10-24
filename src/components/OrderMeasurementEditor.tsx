@@ -76,7 +76,7 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
         <button
           type="button"
           onClick={ouvrir}
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-brand-teal/30 px-3 text-xs font-semibold text-brand-navy hover:bg-brand-teal/5"
+          className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-brand-teal/30 px-3 text-xs font-semibold text-brand-navy hover:bg-brand-teal/5"
         >
           {item.priceStatus === 'ESTIMATED' ? (
             <>
@@ -106,7 +106,7 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
               inputMode="decimal"
               value={quantite}
               onChange={(event) => setQuantite(event.target.value)}
-              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+              className="min-h-12 w-full rounded-lg border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
             />
             {item.minimumQuantitySnapshot !== null || item.billingIncrementSnapshot !== null ? (
               <span className="mt-1 block text-xs text-slate-500">
@@ -136,7 +136,7 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
             <button
               type="submit"
               disabled={enregistrement || totalPrevu === null}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-brand-teal px-3 text-xs font-bold text-white disabled:opacity-50"
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-brand-teal px-3 text-xs font-bold text-white disabled:opacity-50"
             >
               <Check size={14} aria-hidden />
               {enregistrement ? 'Enregistrement…' : confirmee ? 'Confirmer la mesure' : 'Enregistrer l’estimation'}
@@ -145,7 +145,7 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
               type="button"
               onClick={() => setOuvert(false)}
               disabled={enregistrement}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-600"
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-600"
             >
               <X size={14} aria-hidden />
               Annuler

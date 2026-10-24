@@ -217,7 +217,7 @@ export default function Orders() {
                 type="button"
                 onClick={() => setPagination({ cle: cleFiltre, page: page.page - 1 })}
                 disabled={page.page === 1}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
               >
                 <ChevronLeft size={16} aria-hidden />
                 Précédent
@@ -231,7 +231,7 @@ export default function Orders() {
                 type="button"
                 onClick={() => setPagination({ cle: cleFiltre, page: page.page + 1 })}
                 disabled={page.page === page.pageCount}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
               >
                 Suivant
                 <ChevronRight size={16} aria-hidden />

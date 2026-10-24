@@ -976,7 +976,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       aria-pressed={actif}
-      className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+      className={`inline-flex min-h-12 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
         actif
           ? 'border-brand-teal bg-brand-teal/10 text-brand-navy'
           : 'border-slate-300 bg-white text-slate-600 hover:border-brand-teal'

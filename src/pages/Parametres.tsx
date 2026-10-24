@@ -314,7 +314,7 @@ export default function Parametres() {
               <button
                 type="button"
                 onClick={() => void commencerEdition()}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
               >
                 <Pencil size={13} aria-hidden /> Modifier
               </button>
@@ -354,7 +354,7 @@ export default function Parametres() {
                   type="button"
                   onClick={() => void enregistrerPressing()}
                   disabled={enregistrement}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
                 >
                   {enregistrement ? (
                     <Loader2 className="animate-spin" size={16} aria-hidden />
@@ -366,7 +366,7 @@ export default function Parametres() {
                 <button
                   type="button"
                   onClick={() => setEdition(false)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"
                 >
                   <X size={16} aria-hidden /> Annuler
                 </button>
@@ -388,7 +388,7 @@ export default function Parametres() {
                     <button
                       type="button"
                       onClick={() => void copier(tenantId, 'Identifiant')}
-                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600"
+                      className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600"
                     >
                       <Copy size={14} aria-hidden /> Copier
                     </button>
@@ -436,7 +436,7 @@ export default function Parametres() {
                   <button
                     type="button"
                     onClick={() => void copier(userId, 'Identifiant du compte')}
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600"
+                    className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600"
                   >
                     <Copy size={14} aria-hidden /> Copier
                   </button>
@@ -450,7 +450,7 @@ export default function Parametres() {
               type="button"
               onClick={() => void envoyerLien()}
               disabled={envoiLien || !isSupabaseConfigured || !enLigne}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
             >
               {envoiLien ? (
                 <Loader2 className="animate-spin" size={16} aria-hidden />
@@ -464,7 +464,7 @@ export default function Parametres() {
               type="button"
               onClick={() => void deconnecterPartout()}
               disabled={!isSupabaseConfigured}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
             >
               <LogOut size={16} aria-hidden /> Déconnecter tous les appareils
             </button>
@@ -541,7 +541,7 @@ export default function Parametres() {
             type="button"
             onClick={() => void synchroniser()}
             disabled={synchronisation || !enLigne}
-            className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+            className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
           >
             {synchronisation ? (
               <Loader2 className="animate-spin" size={16} aria-hidden />
@@ -606,7 +606,7 @@ export default function Parametres() {
                   type="button"
                   onClick={() => void exporter()}
                   disabled={traitementLocal || resume.commandes === 0}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
                 >
                   {traitementLocal ? (
                     <Loader2 className="animate-spin" size={16} aria-hidden />
@@ -620,7 +620,7 @@ export default function Parametres() {
                   type="button"
                   onClick={() => void purger()}
                   disabled={traitementLocal || resume.purgeables === 0}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                 >
                   <Trash2 size={16} aria-hidden /> Effacer les commandes synchronisées
                 </button>
@@ -663,7 +663,7 @@ export default function Parametres() {
           {can(role, 'subscription.view') && (
             <Link
               to="/abonnement"
-              className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-teal px-3 text-sm font-bold text-white"
+              className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-3 text-sm font-bold text-white"
             >
               <CreditCard size={16} aria-hidden /> Voir l’abonnement
             </Link>

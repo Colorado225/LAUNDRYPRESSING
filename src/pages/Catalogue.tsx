@@ -302,7 +302,7 @@ export default function Catalogue() {
               type="button"
               onClick={annulerModification}
               disabled={envoi}
-              className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              className="min-h-12 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100"
             >
               Annuler
             </button>
@@ -545,7 +545,7 @@ export default function Catalogue() {
                       onClick={() => modifier(prestation)}
                       disabled={envoi}
                       aria-label={`Modifier ${nomArticle} — ${prestation.service}`}
-                      className="inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-brand-navy disabled:opacity-40"
+                      className="inline-flex size-12 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-brand-navy disabled:opacity-40"
                     >
                       <Pencil size={14} aria-hidden />
                     </button>
@@ -555,7 +555,7 @@ export default function Catalogue() {
                         onClick={() => void retirer(prestation)}
                         disabled={envoi}
                         aria-label={`Désactiver ${nomArticle} — ${prestation.service}`}
-                        className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                        className="inline-flex size-12 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
                       >
                         ×
                       </button>
@@ -565,7 +565,7 @@ export default function Catalogue() {
                         onClick={() => void reactiver(prestation)}
                         disabled={envoi}
                         aria-label={`Réactiver ${nomArticle} — ${prestation.service}`}
-                        className="inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40"
+                        className="inline-flex size-12 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40"
                       >
                         <RotateCcw size={14} aria-hidden />
                       </button>

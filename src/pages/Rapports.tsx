@@ -137,7 +137,7 @@ export default function Rapports() {
               type="button"
               aria-pressed={actif}
               onClick={() => setPeriode(valeur)}
-              className={`min-h-10 rounded-lg px-4 text-sm font-semibold transition ${
+              className={`min-h-12 rounded-lg px-4 text-sm font-semibold transition ${
                 actif
                   ? 'bg-brand-navy text-white'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-brand-navy'

@@ -190,7 +190,7 @@ export default function Caisse() {
               type="button"
               onClick={() => void synchroniser()}
               disabled={synchronisation}
-              className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 text-xs font-bold text-amber-900 disabled:opacity-60"
+              className="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 text-xs font-bold text-amber-900 disabled:opacity-60"
             >
               {synchronisation ? (
                 <Loader2 className="animate-spin" size={14} aria-hidden />
@@ -316,7 +316,7 @@ export default function Caisse() {
             <button
               type="button"
               onClick={() => setSession(null)}
-              className="inline-flex min-h-10 items-center rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700"
+              className="inline-flex min-h-12 items-center rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700"
             >
               Corriger la clôture
             </button>

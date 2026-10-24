@@ -294,7 +294,7 @@ function Onglets({ value, onChange }: { value: Onglet; onChange: (valeur: Onglet
             type="button"
             aria-selected={actif}
             onClick={() => onChange(option.id)}
-            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-all duration-300 ${
+            className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-all duration-300 ${
               actif
                 ? 'bg-white text-brand-navy shadow-[0_6px_18px_-8px_rgba(15,23,42,0.55)]'
                 : 'text-slate-500 hover:bg-white/60 hover:text-brand-navy'
@@ -894,7 +894,7 @@ function ResetPanel({ email, onClose }: { email: string; onClose: () => void }) 
         <button
           type="button"
           onClick={onClose}
-          className="mt-2 min-h-10 font-semibold text-emerald-900 underline underline-offset-2"
+          className="mt-2 min-h-12 font-semibold text-emerald-900 underline underline-offset-2"
         >
           Revenir à la connexion
         </button>

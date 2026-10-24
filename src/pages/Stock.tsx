@@ -591,7 +591,7 @@ export default function Stock() {
               <button
                 type="button"
                 onClick={() => setFournisseurOuvert((ouvert) => !ouvert)}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal"
+                className="inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-brand-teal"
               >
                 <Plus size={15} aria-hidden />
                 Ajouter
