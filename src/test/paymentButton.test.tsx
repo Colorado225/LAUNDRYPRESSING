@@ -11,17 +11,22 @@ import type { LocalOrder } from '@/db/localDb'
  * **simulé** et que rien n'a été encaissé.
  */
 
+vi.mock('@/lib/env', () => ({ isSupabaseConfigured: false }))
+
 vi.mock('@/services/paymentService', async () => {
   const reel = await vi.importActual<typeof import('@/services/paymentService')>(
     '@/services/paymentService',
   )
   return {
     ...reel,
-    canInitiatePayment: () => ({ ok: true, reason: null }),
+    canInitiatePayment: () => ({
+      ok: false,
+      reason: 'Supabase n’est pas configuré : simulation locale uniquement.',
+    }),
     initiatePayment: async () => {
       throw new reel.PaymentError(
-        'provider_not_configured',
-        'CinetPay n’est pas configuré : définissez CINETPAY_API_KEY.',
+        'supabase_unconfigured',
+        'Supabase n’est pas configuré : simulation locale uniquement.',
       )
     },
     redirectToPayment: () => undefined,

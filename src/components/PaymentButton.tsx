@@ -10,6 +10,7 @@ import {
   redirectToPayment,
 } from '@/services/paymentService'
 import { formatFcfa } from '@/lib/formatters'
+import { isSupabaseConfigured } from '@/lib/env'
 import {
   cinetpayIndisponible,
   simulationExistante,
@@ -50,7 +51,12 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
   const charged = chargeableAmount(solde.remaining)
   const isRounded = charged !== solde.remaining
   const alreadyPaid = order.paymentStatus === 'paid' || solde.remaining <= 0
-  const blocked = alreadyPaid || order.status === 'cancelled' || !guard.ok
+  // Sans configuration Supabase, le bouton reste utilisable en ligne pour
+  // valider l'écran par un toast de simulation, jamais pour encaisser.
+  const simulationDisponible =
+    !isSupabaseConfigured && typeof navigator !== 'undefined' && navigator.onLine
+  const blocked =
+    alreadyPaid || order.status === 'cancelled' || (!guard.ok && !simulationDisponible)
 
   // Une simulation précédente reste visible après rechargement : le comptoir
   // doit pouvoir expliquer pourquoi la commande n'est pas réglée.
@@ -190,7 +196,9 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
       {!guard.ok && !alreadyPaid && order.status !== 'cancelled' && (
         <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
           <WifiOff size={16} className="mt-0.5 shrink-0" aria-hidden />
-          {guard.reason}
+          {simulationDisponible
+            ? 'Mode de démonstration : le toast valide uniquement le parcours. Aucun paiement réel ne sera encaissé.'
+            : guard.reason}
         </p>
       )}
     </section>

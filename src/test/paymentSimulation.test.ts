@@ -111,8 +111,9 @@ describe('cinetpayIndisponible', () => {
     expect(cinetpayIndisponible(new PaymentError('provider_not_configured', 'CinetPay non configuré'))).toBe(true)
   })
 
-  it('reconnaît une fonction explicitement non déployée', () => {
+  it('reconnaît une fonction non déployée et la configuration Supabase absente', () => {
     expect(cinetpayIndisponible(new PaymentError('function_not_deployed', 'Fonction non déployée'))).toBe(true)
+    expect(cinetpayIndisponible(new PaymentError('supabase_unconfigured', 'Supabase non configuré'))).toBe(true)
   })
 
   it('ne masque PAS une panne réseau ou un vrai refus par une simulation', () => {

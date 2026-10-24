@@ -93,6 +93,8 @@ export function cinetpayIndisponible(error: unknown): boolean {
   // sont des états de démonstration prévus.
   return (
     error instanceof PaymentError &&
-    ['provider_not_configured', 'function_not_deployed'].includes(error.code)
+    ['provider_not_configured', 'function_not_deployed', 'supabase_unconfigured'].includes(
+      error.code,
+    )
   )
 }

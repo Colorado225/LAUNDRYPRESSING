@@ -44,7 +44,7 @@ export function canInitiatePayment(): { ok: boolean; reason: string | null } {
     return {
       ok: false,
       reason:
-        'Supabase n’est pas configuré sur cet appareil : le paiement Mobile Money est indisponible.',
+        'Supabase n’est pas configuré : le bouton permet seulement une simulation locale, sans encaissement réel.',
     }
   }
   if (!navigator.onLine) {
@@ -75,7 +75,8 @@ export async function initiatePayment(
 ): Promise<PaymentInitResult> {
   const guard = canInitiatePayment()
   if (!guard.ok) {
-    throw new PaymentError('offline_or_unconfigured', guard.reason ?? 'Paiement indisponible.')
+    const code = isSupabaseConfigured ? 'offline' : 'supabase_unconfigured'
+    throw new PaymentError(code, guard.reason ?? 'Paiement indisponible.')
   }
 
   const tenantId = getTenantId()
