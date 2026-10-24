@@ -371,15 +371,36 @@ Bouton **Quitter** en haut à droite → confirmation.
 
 ### 5.5 Tenir le catalogue
 
-Onglet **Prestations** (propriétaire uniquement) : créer ou modifier les couples
-**article × prestation** et leurs tarifs. Une entrée peut être désactivée sans
-supprimer son historique ; **Voir les archives** permet de la consulter puis de
-la réactiver. Après la reprise du catalogue, les tarifs hérités portent le badge
-**À vérifier** et ne sont pas proposés aux nouvelles commandes. Le propriétaire
-ouvre **Modifier**, confirme le prix réel puis enregistre pour lever ce blocage.
-La grille de départ installée par l'application est elle aussi indicative et doit
-être vérifiée. Modifier un tarif ne change **jamais** une facture déjà émise :
-le prix est recopié sur la ligne au moment de la vente.
+Menu **Catalogue** (propriétaire uniquement). Dans **Structure du catalogue**,
+gérer séparément :
+
+- les **catégories** (nom, description et ordre d'affichage) ;
+- les **articles** (catégorie, description, consignes d'entretien et unité par
+défaut) ;
+- les **prestations** (traitement, option, logistique ou autre ; par article ou
+pour la commande entière).
+
+L'onglet de chaque famille permet d'ajouter, modifier, réordonner, archiver et
+réactiver les références. Une référence ne peut être supprimée que si elle
+n'est pas utilisée ; les références liées à un tarif ou à un article doivent
+être archivées plutôt que détruites. Pour archiver un article ou une prestation,
+archivez d'abord ses tarifs actifs : les commandes déjà enregistrées conservent
+leurs libellés et prix.
+
+La **grille des tarifs** reste distincte : elle associe un article à une
+prestation et porte le mode de prix, l'unité, les minimums et les conditions.
+Une entrée tarifaire peut être désactivée sans supprimer son historique ;
+**Voir les archives** permet de la consulter puis de la réactiver. Après la
+reprise du catalogue, les tarifs hérités portent le badge **À vérifier** et ne
+sont pas proposés aux nouvelles commandes. Le propriétaire ouvre **Modifier**,
+confirme le prix réel puis enregistre pour lever ce blocage. La grille de départ
+installée par l'application est elle aussi indicative et doit être vérifiée.
+Modifier un tarif ne change **jamais** une facture déjà émise : le prix est
+recopié sur la ligne au moment de la vente.
+
+La structure du catalogue se gère **en ligne**. La grille de tarifs déjà mise
+en cache reste consultable pour prendre des commandes hors connexion ; les
+modifications de références et de tarifs attendent le retour du réseau.
 
 ### 5.6 Créer les articles de stock et les fournisseurs
 

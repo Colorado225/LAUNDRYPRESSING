@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, type LocalCatalogEntry } from '@/db/localDb'
-import { getCachedCatalog } from '@/db/catalogRepository'
+import { getCachedCatalog, servicesForArticle, uniqueArticles } from '@/db/catalogRepository'
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
 
@@ -114,6 +114,14 @@ describe('getCachedCatalog', () => {
 
     const entry = (await getCachedCatalog(TENANT)).find((candidate) => candidate.id === 'quote-cache-legacy')
     expect(entry?.billingUnit).toBe('FLAT')
+  })
+
+  it('ne propose plus les tarifs dont l’article ou la prestation a été archivé', async () => {
+    await db.catalogEntries.update('active', { referencesActive: false })
+
+    const entries = await getCachedCatalog(TENANT)
+    expect(uniqueArticles(entries)).toEqual([])
+    expect(servicesForArticle(entries, 'Chemise')).toEqual([])
   })
 
   it('bloque prudemment un ancien cache sans indicateur de vérification', async () => {

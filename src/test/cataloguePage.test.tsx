@@ -139,7 +139,7 @@ describe('Catalogue — administration des tarifs existants', () => {
       }
     })
 
-    await act(async () => bouton('Enregistrer').click())
+    await act(async () => bouton('Enregistrer le tarif').click())
 
     expect(depot.updateCatalogEntry).toHaveBeenCalledWith(TENANT, 'tarif-actif', {
       article: 'Chemise délicate',
@@ -158,12 +158,14 @@ describe('Catalogue — administration des tarifs existants', () => {
 
   it('configure un tarif à partir du kilogramme avec minimum, pas et plancher', async () => {
     await monter()
-    const selects = [...hote.querySelectorAll('select')]
-    const numeros = [...hote.querySelectorAll<HTMLInputElement>('input[type="number"]')]
-    const article = hote.querySelector<HTMLInputElement>('input[placeholder="Chemise"]')
-    const service = hote.querySelector<HTMLInputElement>('input[placeholder="Lavage"]')
-    const prix = hote.querySelector<HTMLInputElement>('input[placeholder="1500"]')
-    const conditions = hote.querySelector<HTMLTextAreaElement>('textarea')
+    const sectionTarifs = [...hote.querySelectorAll('section')].find((section) => section.textContent?.includes('Ajouter un tarif'))
+    expect(sectionTarifs).not.toBeUndefined()
+    const selects = [...(sectionTarifs?.querySelectorAll('select') ?? [])]
+    const numeros = [...(sectionTarifs?.querySelectorAll<HTMLInputElement>('input[type="number"]') ?? [])]
+    const article = sectionTarifs?.querySelector<HTMLInputElement>('input[placeholder="Chemise"]')
+    const service = sectionTarifs?.querySelector<HTMLInputElement>('input[placeholder="Lavage"]')
+    const prix = sectionTarifs?.querySelector<HTMLInputElement>('input[placeholder="1500"]')
+    const conditions = sectionTarifs?.querySelector<HTMLTextAreaElement>('textarea')
 
     await act(async () => {
       const setSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
@@ -197,7 +199,7 @@ describe('Catalogue — administration des tarifs existants', () => {
       }
     })
 
-    await act(async () => bouton('Ajouter').click())
+    await act(async () => bouton('Ajouter le tarif').click())
 
     expect(depot.createCatalogEntry).toHaveBeenCalledWith(TENANT, {
       article: 'Drap',
@@ -225,7 +227,7 @@ describe('Catalogue — administration des tarifs existants', () => {
     })
     expect(hote.textContent).toContain('Confirmez d’abord le tarif réel')
 
-    await act(async () => bouton('Enregistrer').click())
+    await act(async () => bouton('Enregistrer le tarif').click())
     expect(depot.updateCatalogEntry).toHaveBeenCalledWith(TENANT, 'tarif-actif', {
       article: 'Chemise',
       service: 'Lavage et repassage',

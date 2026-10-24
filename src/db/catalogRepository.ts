@@ -32,7 +32,11 @@ export interface CatalogEntryInput {
   conditions?: string | null
 }
 
-function toLocal(row: CatalogEntryRow, familyName: string | null = null): LocalCatalogEntry {
+function toLocal(
+  row: CatalogEntryRow,
+  familyName: string | null = null,
+  referencesActive = true,
+): LocalCatalogEntry {
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -48,6 +52,7 @@ function toLocal(row: CatalogEntryRow, familyName: string | null = null): LocalC
     conditions: row.conditions,
     requiresReview: row.requires_review,
     isActive: row.is_active,
+    referencesActive,
     sortOrder: row.sort_order,
   }
 }
@@ -82,6 +87,9 @@ export async function getCachedCatalog(
       // Une entrée mise en cache par une ancienne version n'a pas de preuve de
       // validation : elle reste masquée jusqu'au prochain rafraîchissement serveur.
       requiresReview: entree.requiresReview ?? true,
+      // Un ancien cache ne connaissait pas ces références structurées ; le
+      // prochain rafraîchissement serveur les vérifiera sans bloquer la saisie.
+      referencesActive: entree.referencesActive ?? true,
     }))
     .filter((entree) => options.includeInactive || entree.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.article.localeCompare(b.article, 'fr'))
@@ -90,6 +98,7 @@ export async function getCachedCatalog(
 function tarifProposable(entree: LocalCatalogEntry): boolean {
   return (
     entree.isActive &&
+    entree.referencesActive !== false &&
     !entree.requiresReview &&
     entree.pricingMode !== 'UNCONFIGURED' &&
     (entree.pricingMode === 'QUOTE' || entree.price > 0)
@@ -132,15 +141,20 @@ export async function refreshCatalog(tenantId: string): Promise<boolean> {
     if (error || !data) return false
 
     const articleIds = [...new Set(data.flatMap((row) => (row.article_id ? [row.article_id] : [])))]
+    const serviceIds = [...new Set(data.map((row) => row.service_id))]
     const familleParArticle = new Map<string, string>()
+    const articleActifParId = new Map<string, boolean>()
+    const serviceActifParId = new Map<string, boolean>()
+
     if (articleIds.length > 0) {
       const { data: articles, error: erreurArticles } = await supabase
         .from('catalog_articles')
-        .select('id,family_id')
+        .select('id,family_id,is_active')
         .eq('tenant_id', tenantId)
         .in('id', articleIds)
       if (erreurArticles || !articles) return false
 
+      articles.forEach((article) => articleActifParId.set(article.id, article.is_active))
       const familyIds = [...new Set(articles.map((article) => article.family_id))]
       const { data: familles, error: erreurFamilles } = await supabase
         .from('catalog_families')
@@ -156,10 +170,28 @@ export async function refreshCatalog(tenantId: string): Promise<boolean> {
       })
     }
 
+    if (serviceIds.length > 0) {
+      const { data: services, error: erreurServices } = await supabase
+        .from('catalog_services')
+        .select('id,is_active')
+        .eq('tenant_id', tenantId)
+        .in('id', serviceIds)
+      if (erreurServices || !services) return false
+      services.forEach((service) => serviceActifParId.set(service.id, service.is_active))
+    }
+
     await db.transaction('rw', db.catalogEntries, async () => {
       await db.catalogEntries.where('tenantId').equals(tenantId).delete()
       await db.catalogEntries.bulkPut(
-        data.map((row) => toLocal(row, row.article_id ? (familleParArticle.get(row.article_id) ?? null) : null)),
+        data.map((row) => {
+          const articleActive = row.article_id ? articleActifParId.get(row.article_id) === true : true
+          const serviceActive = serviceActifParId.get(row.service_id) === true
+          return toLocal(
+            row,
+            row.article_id ? (familleParArticle.get(row.article_id) ?? null) : null,
+            articleActive && serviceActive,
+          )
+        }),
       )
     })
 

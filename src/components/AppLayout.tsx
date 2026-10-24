@@ -89,7 +89,7 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
   }
 
   if (can(role, 'catalog.manage')) {
-    items.push({ to: '/catalogue', label: 'Prestations', icon: Tag })
+    items.push({ to: '/catalogue', label: 'Catalogue', icon: Tag })
   }
 
   if (can(role, 'subscription.view')) {

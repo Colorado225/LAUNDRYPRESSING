@@ -122,6 +122,8 @@ export interface LocalCatalogEntry {
   conditions: string | null
   requiresReview: boolean
   isActive: boolean
+  /** Références article et prestation actives au dernier rafraîchissement. */
+  referencesActive?: boolean
   sortOrder: number
 }
 

@@ -9,6 +9,7 @@ import {
   seedDefaultCatalog,
   updateCatalogEntry,
 } from '@/db/catalogRepository'
+import CatalogStructureManager from '@/components/CatalogStructureManager'
 import type { LocalCatalogEntry } from '@/db/localDb'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -252,7 +253,7 @@ export default function Catalogue() {
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold text-brand-navy sm:text-2xl">
             <Tag size={22} aria-hidden />
-            Prestations
+            Catalogue
           </h1>
           <p className="mt-1 text-sm text-slate-600">
             Les prix appliqués à une commande sont recopiés sur chaque ligne : modifier le
@@ -292,10 +293,12 @@ export default function Catalogue() {
         </div>
       </header>
 
+      {tenantId && <CatalogStructureManager tenantId={tenantId} onCatalogChanged={recharger} />}
+
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            {editingId ? 'Modifier une prestation' : 'Ajouter une prestation'}
+            {editingId ? 'Modifier un tarif' : 'Ajouter un tarif'}
           </h2>
           {editingId && (
             <button
@@ -480,7 +483,7 @@ export default function Catalogue() {
               ) : (
                 <Plus size={16} aria-hidden />
               )}
-              {editingId ? 'Enregistrer' : 'Ajouter'}
+              {editingId ? 'Enregistrer le tarif' : 'Ajouter le tarif'}
             </button>
           </div>
         </div>
@@ -531,6 +534,11 @@ export default function Catalogue() {
                     )}
                     {prestation.minimumCharge !== null && prestation.minimumCharge > 0 && (
                       <span className="text-xs text-slate-500">minimum {formatFcfa(prestation.minimumCharge)}</span>
+                    )}
+                    {prestation.referencesActive === false && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                        Article ou prestation archivé
+                      </span>
                     )}
                     {prestation.requiresReview && (
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
