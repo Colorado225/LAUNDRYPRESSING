@@ -339,9 +339,11 @@ Bouton **Quitter** en haut à droite → confirmation.
 
 ### 5.5 Tenir le catalogue
 
-Onglet **Prestations** (propriétaire uniquement) : créer les couples
-**article × prestation** avec leur tarif. Modifier un tarif ne change **jamais**
-une facture déjà émise : le prix est recopié sur la ligne au moment de la vente.
+Onglet **Prestations** (propriétaire uniquement) : créer ou modifier les couples
+**article × prestation** et leurs tarifs. Une entrée peut être désactivée sans
+supprimer son historique ; **Voir les archives** permet de la consulter puis de
+la réactiver. Modifier un tarif ne change **jamais** une facture déjà émise :
+le prix est recopié sur la ligne au moment de la vente.
 
 ### 5.6 Créer les articles de stock et les fournisseurs
 

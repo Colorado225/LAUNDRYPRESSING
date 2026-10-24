@@ -34,11 +34,20 @@ function toLocal(row: CatalogEntryRow): LocalCatalogEntry {
   }
 }
 
-/** Copie locale du catalogue, triée pour l'affichage. */
-export async function getCachedCatalog(tenantId: string): Promise<LocalCatalogEntry[]> {
+/**
+ * Copie locale du catalogue, triée pour l'affichage.
+ *
+ * Les écrans de commande ne voient que les tarifs actifs. La gestion du
+ * catalogue peut demander les archives afin de les réactiver sans recréer une
+ * entrée ni casser les références des anciennes commandes.
+ */
+export async function getCachedCatalog(
+  tenantId: string,
+  options: { includeInactive?: boolean } = {},
+): Promise<LocalCatalogEntry[]> {
   const entrees = await db.catalogEntries.where('tenantId').equals(tenantId).toArray()
   return entrees
-    .filter((entree) => entree.isActive)
+    .filter((entree) => options.includeInactive || entree.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.article.localeCompare(b.article, 'fr'))
 }
 
@@ -112,11 +121,12 @@ export async function createCatalogEntry(
 
 /** Modifie une prestation existante (propriétaire, en ligne). */
 export async function updateCatalogEntry(
+  tenantId: string,
   entryId: string,
   input: Partial<CatalogEntryInput> & { isActive?: boolean },
 ): Promise<void> {
   const supabase = getSupabaseClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('catalog_entries')
     .update({
       ...(input.article !== undefined ? { article: input.article.trim() } : {}),
@@ -124,14 +134,18 @@ export async function updateCatalogEntry(
       ...(input.price !== undefined ? { price: input.price } : {}),
       ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
     })
+    .eq('tenant_id', tenantId)
     .eq('id', entryId)
+    .select('id')
+    .maybeSingle()
 
   if (error) throw new Error(traduireErreurCatalogue(error.message, error.code))
+  if (!data) throw new Error('Tarif introuvable dans le catalogue de ce pressing.')
 }
 
 /** Désactive une prestation (historique préservé, elle n'est plus proposée). */
-export async function deactivateCatalogEntry(entryId: string): Promise<void> {
-  await updateCatalogEntry(entryId, { isActive: false })
+export async function deactivateCatalogEntry(tenantId: string, entryId: string): Promise<void> {
+  await updateCatalogEntry(tenantId, entryId, { isActive: false })
 }
 
 function traduireErreurCatalogue(message: string, code?: string): string {

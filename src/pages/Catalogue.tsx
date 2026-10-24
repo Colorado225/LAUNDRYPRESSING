@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CloudOff, Loader2, Lock, Plus, Sparkles, Tag } from 'lucide-react'
+import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Sparkles, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   createCatalogEntry,
@@ -7,6 +7,7 @@ import {
   getCachedCatalog,
   refreshCatalog,
   seedDefaultCatalog,
+  updateCatalogEntry,
 } from '@/db/catalogRepository'
 import type { LocalCatalogEntry } from '@/db/localDb'
 import { can } from '@/lib/permissions'
@@ -31,12 +32,14 @@ export default function Catalogue() {
   const [article, setArticle] = useState('')
   const [service, setService] = useState('')
   const [prix, setPrix] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [afficherArchives, setAfficherArchives] = useState(false)
   const [envoi, setEnvoi] = useState(false)
 
   const recharger = useMemo(
     () => async () => {
       if (!tenantId) return
-      const locales = await getCachedCatalog(tenantId)
+      const locales = await getCachedCatalog(tenantId, { includeInactive: true })
       setEntrees(locales)
       setChargement(false)
     },
@@ -53,15 +56,17 @@ export default function Catalogue() {
 
   const groupes = useMemo(() => {
     const map = new Map<string, LocalCatalogEntry[]>()
-    entrees.forEach((entree) => {
-      const liste = map.get(entree.article) ?? []
-      liste.push(entree)
-      map.set(entree.article, liste)
-    })
+    entrees
+      .filter((entree) => afficherArchives || entree.isActive)
+      .forEach((entree) => {
+        const liste = map.get(entree.article) ?? []
+        liste.push(entree)
+        map.set(entree.article, liste)
+      })
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fr'))
-  }, [entrees])
+  }, [entrees, afficherArchives])
 
-  const ajouter = async () => {
+  const enregistrer = async () => {
     if (!tenantId) return
     const montant = Number(prix.replace(/\s/g, ''))
 
@@ -76,34 +81,66 @@ export default function Catalogue() {
 
     setEnvoi(true)
     try {
-      await createCatalogEntry(tenantId, {
-        article: article.trim(),
-        service: service.trim(),
-        price: montant,
-      })
+      const tarif = { article: article.trim(), service: service.trim(), price: montant }
+      if (editingId) {
+        await updateCatalogEntry(tenantId, editingId, tarif)
+      } else {
+        await createCatalogEntry(tenantId, tarif)
+      }
       await refreshCatalog(tenantId)
       await recharger()
       setArticle('')
       setService('')
       setPrix('')
-      toast.success('Prestation ajoutée', { icon: '✅' })
+      setEditingId(null)
+      toast.success(editingId ? 'Tarif modifié' : 'Prestation ajoutée', { icon: '✅' })
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Ajout impossible')
+      toast.error(error instanceof Error ? error.message : 'Enregistrement impossible')
     } finally {
       setEnvoi(false)
     }
+  }
+
+  const modifier = (entree: LocalCatalogEntry) => {
+    setEditingId(entree.id)
+    setArticle(entree.article)
+    setService(entree.service)
+    setPrix(String(entree.price))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const annulerModification = () => {
+    setEditingId(null)
+    setArticle('')
+    setService('')
+    setPrix('')
   }
 
   const retirer = async (entree: LocalCatalogEntry) => {
     if (!tenantId) return
     setEnvoi(true)
     try {
-      await deactivateCatalogEntry(entree.id)
+      await deactivateCatalogEntry(tenantId, entree.id)
       await refreshCatalog(tenantId)
       await recharger()
       toast.success('Prestation retirée du catalogue')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Suppression impossible')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const reactiver = async (entree: LocalCatalogEntry) => {
+    if (!tenantId) return
+    setEnvoi(true)
+    try {
+      await updateCatalogEntry(tenantId, entree.id, { isActive: true })
+      await refreshCatalog(tenantId)
+      await recharger()
+      toast.success('Prestation réactivée')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Réactivation impossible')
     } finally {
       setEnvoi(false)
     }
@@ -125,6 +162,9 @@ export default function Catalogue() {
       setEnvoi(false)
     }
   }
+
+  const nombreActives = entrees.filter((entree) => entree.isActive).length
+  const nombreArchives = entrees.length - nombreActives
 
   if (!peutGerer) {
     return (
@@ -153,23 +193,47 @@ export default function Catalogue() {
           </p>
         </div>
 
-        {entrees.length === 0 && (
-          <button
-            type="button"
-            onClick={() => void installer()}
-            disabled={envoi}
-            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-bold text-white disabled:opacity-60"
-          >
-            <Sparkles size={16} aria-hidden />
-            Installer les prestations courantes
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {nombreArchives > 0 && (
+            <button
+              type="button"
+              onClick={() => setAfficherArchives((visible) => !visible)}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700"
+            >
+              <Archive size={16} aria-hidden />
+              {afficherArchives ? 'Masquer les archives' : `Voir les archives (${nombreArchives})`}
+            </button>
+          )}
+          {nombreActives === 0 && entrees.length === 0 && (
+            <button
+              type="button"
+              onClick={() => void installer()}
+              disabled={envoi}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-bold text-white disabled:opacity-60"
+            >
+              <Sparkles size={16} aria-hidden />
+              Installer les prestations courantes
+            </button>
+          )}
+        </div>
       </header>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-          Ajouter une prestation
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+            {editingId ? 'Modifier une prestation' : 'Ajouter une prestation'}
+          </h2>
+          {editingId && (
+            <button
+              type="button"
+              onClick={annulerModification}
+              disabled={envoi}
+              className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+            >
+              Annuler
+            </button>
+          )}
+        </div>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_140px_auto]">
           <label className="block">
@@ -209,12 +273,18 @@ export default function Catalogue() {
           <div className="flex items-end">
             <button
               type="button"
-              onClick={() => void ajouter()}
+              onClick={() => void enregistrer()}
               disabled={envoi}
               className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
             >
-              {envoi ? <Loader2 className="animate-spin" size={16} aria-hidden /> : <Plus size={16} aria-hidden />}
-              Ajouter
+              {envoi ? (
+                <Loader2 className="animate-spin" size={16} aria-hidden />
+              ) : editingId ? (
+                <Pencil size={16} aria-hidden />
+              ) : (
+                <Plus size={16} aria-hidden />
+              )}
+              {editingId ? 'Enregistrer' : 'Ajouter'}
             </button>
           </div>
         </div>
@@ -249,19 +319,47 @@ export default function Catalogue() {
                 {prestations.map((prestation) => (
                   <li
                     key={prestation.id}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 py-1.5 pl-3 pr-1.5 text-sm"
+                    className={`inline-flex items-center gap-2 rounded-xl border py-1.5 pl-3 pr-1.5 text-sm ${
+                      prestation.isActive
+                        ? 'border-slate-200 bg-slate-50'
+                        : 'border-amber-200 bg-amber-50 opacity-75'
+                    }`}
                   >
                     <span className="font-medium text-slate-700">{prestation.service}</span>
                     <span className="font-bold text-brand-navy">{formatFcfa(prestation.price)}</span>
+                    {!prestation.isActive && (
+                      <span className="text-xs font-semibold text-amber-800">Archivée</span>
+                    )}
                     <button
                       type="button"
-                      onClick={() => void retirer(prestation)}
+                      onClick={() => modifier(prestation)}
                       disabled={envoi}
-                      aria-label={`Retirer ${nomArticle} — ${prestation.service}`}
-                      className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                      aria-label={`Modifier ${nomArticle} — ${prestation.service}`}
+                      className="inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-brand-navy disabled:opacity-40"
                     >
-                      ×
+                      <Pencil size={14} aria-hidden />
                     </button>
+                    {prestation.isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => void retirer(prestation)}
+                        disabled={envoi}
+                        aria-label={`Désactiver ${nomArticle} — ${prestation.service}`}
+                        className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                      >
+                        ×
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void reactiver(prestation)}
+                        disabled={envoi}
+                        aria-label={`Réactiver ${nomArticle} — ${prestation.service}`}
+                        className="inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40"
+                      >
+                        <RotateCcw size={14} aria-hidden />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
