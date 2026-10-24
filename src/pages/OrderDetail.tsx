@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import PaymentButton from '@/components/PaymentButton'
 import QrCodeDisplay from '@/components/QrCodeDisplay'
 import OrderMeasurementEditor from '@/components/OrderMeasurementEditor'
+import OrderMeasurementHistory from '@/components/OrderMeasurementHistory'
 import { useLocalOrder, useUpdateOrderStatus } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
@@ -238,6 +239,13 @@ export default function OrderDetail() {
           </p>
         )}
       </section>
+
+      <OrderMeasurementHistory
+        tenantId={order.tenantId}
+        orderId={order.id}
+        items={items}
+        showAmounts={seeAmounts}
+      />
 
       {/* Prise en charge : attribution à un employé */}
       <AssignmentPanel order={order} />
