@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Sparkles, Tag } from 'lucide-react'
+import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
   createCatalogEntry,
   deactivateCatalogEntry,
   getCachedCatalog,
   refreshCatalog,
-  seedDefaultCatalog,
   updateCatalogEntry,
 } from '@/db/catalogRepository'
 import CatalogStructureManager from '@/components/CatalogStructureManager'
@@ -213,25 +212,7 @@ export default function Catalogue() {
     }
   }
 
-  const installer = async () => {
-    if (!tenantId) return
-    setEnvoi(true)
-    try {
-      const ajoutees = await seedDefaultCatalog(tenantId)
-      await refreshCatalog(tenantId)
-      await recharger()
-      toast.success(
-        ajoutees > 0 ? `${ajoutees} prestations installées` : 'Le catalogue était déjà complet',
-      )
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Installation impossible')
-    } finally {
-      setEnvoi(false)
-    }
-  }
-
-  const nombreActives = entrees.filter((entree) => entree.isActive).length
-  const nombreArchives = entrees.length - nombreActives
+  const nombreArchives = entrees.filter((entree) => !entree.isActive).length
   const nombreAConfirmer = entrees.filter((entree) => entree.requiresReview).length
 
   if (!peutGerer) {
@@ -279,21 +260,10 @@ export default function Catalogue() {
               {afficherArchives ? 'Masquer les archives' : `Voir les archives (${nombreArchives})`}
             </button>
           )}
-          {nombreActives === 0 && entrees.length === 0 && (
-            <button
-              type="button"
-              onClick={() => void installer()}
-              disabled={envoi}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-bold text-white disabled:opacity-60"
-            >
-              <Sparkles size={16} aria-hidden />
-              Installer les prestations courantes
-            </button>
-          )}
         </div>
       </header>
 
-      {tenantId && <CatalogStructureManager tenantId={tenantId} onCatalogChanged={recharger} />}
+      {tenantId && <CatalogStructureManager tenantId={tenantId} canManage={peutGerer} onCatalogChanged={recharger} />}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">

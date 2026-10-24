@@ -95,6 +95,7 @@ FICHIERS=(
   "supabase/migrations/016_laundry_models.sql"
   "supabase/migrations/017_laundry_model_order_lines.sql"
   "supabase/migrations/018_stock_consumption_costs.sql"
+  "supabase/migrations/019_catalogue_commercial_models.sql"
   "supabase/seed.sql"
   "supabase/tests/isolation.sql"
   "supabase/tests/palier1.sql"
@@ -115,6 +116,7 @@ FICHIERS=(
   "supabase/tests/catalogue_reference_lifecycle.sql"
   "supabase/tests/laundry_models.sql"
   "supabase/tests/stock_consumption_costs.sql"
+  "supabase/tests/catalogue_commercial_models.sql"
 )
 
 ECHECS=0

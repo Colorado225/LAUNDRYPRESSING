@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import {
   BarChart3,
   Boxes,
@@ -116,6 +117,8 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
 }
 
 export default function AppLayout({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  const prefersReducedMotion = useReducedMotion()
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const isPlatformAdmin = useTenantStore((state) => state.isPlatformAdmin)
@@ -142,23 +145,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }
 
   const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `inline-flex min-h-12 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors ${
+    `app-nav-link inline-flex min-h-12 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors ${
       isActive
         ? 'bg-brand-teal text-white'
         : 'text-slate-600 hover:bg-slate-100 hover:text-brand-navy'
     }`
 
   const sidebarLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors ${
+    `app-nav-link flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors ${
       isActive
         ? 'bg-brand-teal/10 text-brand-navy shadow-[inset_3px_0_0_0_var(--color-brand-teal)]'
         : 'text-slate-600 hover:bg-slate-100 hover:text-brand-navy'
     }`
 
   return (
-    <div className="min-h-screen bg-slate-50 lg:flex">
+    <div className="app-shell min-h-screen bg-slate-50 lg:flex">
       {/* ---------------------------- Barre latérale (bureau) ---------------- */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+      <aside className="app-sidebar sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
         <Link to="/" className="flex items-center gap-2.5 px-4 py-4">
           <span className="flex size-10 items-center justify-center rounded-xl bg-brand-navy text-brand-teal">
             <Shirt size={22} aria-hidden />
@@ -203,7 +206,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* ---------------------------- Contenu -------------------------------- */}
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <header className="app-topbar sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
             {/* Identité : masquée sur bureau, la barre latérale la porte déjà. */}
             <Link to="/" className="flex items-center gap-2.5 lg:hidden">
@@ -263,7 +266,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <SubscriptionBanner />
         </header>
 
-        <main className="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8">{children}</main>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.main
+            key={location.pathname}
+            className="app-main mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8"
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {children}
+          </motion.main>
+        </AnimatePresence>
       </div>
     </div>
   )

@@ -5,6 +5,7 @@ import type {
   LaundryModelAudience,
   LaundryModelServiceMode,
   LaundryModelType,
+  FamilyPackageSnapshot,
   OrderItemPriceStatus,
   OrderStatus,
   PaymentMethod,
@@ -114,6 +115,8 @@ export interface LocalOrderItem {
   laundryMinimumWeightKgSnapshot?: number | null
   laundryBillingIncrementKgSnapshot?: number | null
   laundryMinimumChargeSnapshot?: number | null
+  /** Composition locale, préservée jusqu’au RPC du forfait famille. */
+  familyPackageSnapshot?: FamilyPackageSnapshot | null
 }
 
 /**
@@ -164,6 +167,10 @@ export interface LocalLaundryModel {
   turnaroundDays: number | null
   isActive: boolean
   sortOrder: number
+  familyPackageArticles?: Array<{ articleId: string; articleName: string; familyId: string; familyName: string; careInstructions: string | null }>
+  includedPieces?: number | null
+  overagePricePerPiece?: number | null
+  familyPackageScope?: Array<{ familyId: string | null; articleId: string | null }>
   services: Array<{
     serviceId: string
     serviceName: string
@@ -460,6 +467,21 @@ export class PressingDatabase extends Dexie {
           if (item.laundryMinimumWeightKgSnapshot === undefined) item.laundryMinimumWeightKgSnapshot = null
           if (item.laundryBillingIncrementKgSnapshot === undefined) item.laundryBillingIncrementKgSnapshot = null
           if (item.laundryMinimumChargeSnapshot === undefined) item.laundryMinimumChargeSnapshot = null
+        })
+      })
+
+    // v10 : composition et tarif snapshot des forfaits famille conservés hors ligne.
+    this.version(10)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.familyPackageSnapshot === undefined) item.familyPackageSnapshot = null
+        })
+        await tx.table('laundryModels').toCollection().modify((model: LocalLaundryModel & Record<string, unknown>) => {
+          if (model.familyPackageArticles === undefined) model.familyPackageArticles = []
+          if (model.includedPieces === undefined) model.includedPieces = null
+          if (model.overagePricePerPiece === undefined) model.overagePricePerPiece = null
+          if (model.familyPackageScope === undefined) model.familyPackageScope = []
         })
       })
   }

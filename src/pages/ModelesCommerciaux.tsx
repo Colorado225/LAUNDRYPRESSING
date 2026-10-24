@@ -39,6 +39,9 @@ interface FormulaireModele {
   pricePerKg: string
   packagePrice: string
   includedWeightKg: string
+  includedPieces: string
+  overagePricePerPiece: string
+  packageScope: string[]
   overagePricePerKg: string
   minimumWeightKg: string
   billingIncrementKg: string
@@ -59,6 +62,9 @@ const FORMULAIRE_INITIAL: FormulaireModele = {
   pricePerKg: '',
   packagePrice: '',
   includedWeightKg: '',
+  includedPieces: '',
+  overagePricePerPiece: '',
+  packageScope: [],
   overagePricePerKg: '',
   minimumWeightKg: '',
   billingIncrementKg: '0.1',
@@ -95,6 +101,9 @@ function formDepuisModele(model: LocalLaundryModel): FormulaireModele {
     pricePerKg: model.pricePerKg === null ? '' : String(model.pricePerKg),
     packagePrice: model.packagePrice === null ? '' : String(model.packagePrice),
     includedWeightKg: model.includedWeightKg === null ? '' : String(model.includedWeightKg),
+    includedPieces: model.includedPieces == null ? '' : String(model.includedPieces),
+    overagePricePerPiece: model.overagePricePerPiece == null ? '' : String(model.overagePricePerPiece),
+    packageScope: (model.familyPackageScope ?? []).map((scope) => scope.familyId ? `family:${scope.familyId}` : `article:${scope.articleId}`),
     overagePricePerKg: model.overagePricePerKg === null ? '' : String(model.overagePricePerKg),
     minimumWeightKg: model.minimumWeightKg === null ? '' : String(model.minimumWeightKg),
     billingIncrementKg: model.billingIncrementKg === null ? '' : String(model.billingIncrementKg),
@@ -109,7 +118,9 @@ function formDepuisModele(model: LocalLaundryModel): FormulaireModele {
 }
 
 function typeLabel(modelType: LaundryModelType): string {
-  return modelType === 'PER_KG' ? 'Au kilo' : 'Forfait de poids'
+  if (modelType === 'PER_KG') return 'Au kilo'
+  if (modelType === 'FAMILY_PACKAGE') return 'Forfait famille'
+  return 'Forfait de poids'
 }
 
 function audienceLabel(audience: LaundryModelAudience): string {
@@ -134,7 +145,7 @@ function calculerDepuisForm(form: FormulaireModele, poids: number) {
       included_weight_kg: includedWeight,
       overage_price_per_kg: overagePrice,
       minimum_weight_kg: minimumWeight,
-      billing_increment_kg: increment,
+      billing_increment_kg: form.modelType === 'FAMILY_PACKAGE' ? null : increment,
       minimum_charge: minimumCharge,
     },
     poids,
@@ -245,6 +256,8 @@ export default function ModelesCommerciaux() {
     const pricePerKg = lireNombre(form.pricePerKg)
     const packagePrice = lireNombre(form.packagePrice)
     const includedWeight = lireNombre(form.includedWeightKg)
+    const includedPieces = lireNombre(form.includedPieces)
+    const overagePricePerPiece = lireNombre(form.overagePricePerPiece)
     const overagePrice = lireNombre(form.overagePricePerKg)
     const minimumWeight = lireNombre(form.minimumWeightKg)
     const increment = lireNombre(form.billingIncrementKg)
@@ -261,10 +274,22 @@ export default function ModelesCommerciaux() {
       if (packagePrice === null || !Number.isInteger(packagePrice) || packagePrice <= 0 || packagePrice > 10_000_000) {
         numberErrors.push('Le prix du forfait doit être un montant entier entre 1 et 10 000 000 FCFA.')
       }
-      const weightError = validerPoids(includedWeight, 'Le poids inclus', true)
-      if (weightError) numberErrors.push(weightError)
-      if (overagePrice !== null && (!Number.isInteger(overagePrice) || overagePrice < 0 || overagePrice > 10_000_000)) {
-        numberErrors.push('Le supplément au kilo doit être un montant entier compris entre 0 et 10 000 000 FCFA.')
+      if (form.modelType === 'WEIGHT_PACKAGE') {
+        const weightError = validerPoids(includedWeight, 'Le poids inclus', true)
+        if (weightError) numberErrors.push(weightError)
+        if (overagePrice !== null && (!Number.isInteger(overagePrice) || overagePrice < 0 || overagePrice > 10_000_000)) {
+          numberErrors.push('Le supplément au kilo doit être un montant entier compris entre 0 et 10 000 000 FCFA.')
+        }
+      } else {
+        if (includedPieces === null || !Number.isInteger(includedPieces) || includedPieces < 1 || includedPieces > 1000) {
+          numberErrors.push('Le nombre de pièces incluses doit être un entier entre 1 et 1 000.')
+        }
+        if (overagePricePerPiece !== null && (!Number.isInteger(overagePricePerPiece) || overagePricePerPiece < 0 || overagePricePerPiece > 10_000_000)) {
+          numberErrors.push('Le supplément par pièce doit être un montant entier entre 0 et 10 000 000 FCFA.')
+        }
+        if (form.packageScope.some((scope) => scope.startsWith('family:') && !structure?.families.some((family) => family.id === scope.slice(7) && family.is_active) || scope.startsWith('article:') && !structure?.articles.some((article) => article.id === scope.slice(8) && article.is_active))) {
+          numberErrors.push('Retirez les articles ou familles archivés du périmètre de ce forfait.')
+        }
       }
     }
     if (minimumCharge !== null && (!Number.isInteger(minimumCharge) || minimumCharge < 0 || minimumCharge > 10_000_000)) {
@@ -296,7 +321,12 @@ export default function ModelesCommerciaux() {
       model_type: form.modelType,
       audience: form.audience,
       price_per_kg: form.modelType === 'PER_KG' ? pricePerKg : null,
-      package_price: form.modelType === 'WEIGHT_PACKAGE' ? packagePrice : null,
+      package_price: form.modelType !== 'PER_KG' ? packagePrice : null,
+      included_pieces: form.modelType === 'FAMILY_PACKAGE' ? includedPieces : null,
+      overage_price_per_piece: form.modelType === 'FAMILY_PACKAGE' ? overagePricePerPiece : null,
+      scope: form.packageScope.map((scope) => scope.startsWith('family:')
+        ? { family_id: scope.slice(7), article_id: null }
+        : { family_id: null, article_id: scope.slice(8) }),
       included_weight_kg: form.modelType === 'WEIGHT_PACKAGE' ? includedWeight : null,
       overage_price_per_kg: form.modelType === 'WEIGHT_PACKAGE' ? overagePrice : null,
       minimum_weight_kg: form.modelType === 'PER_KG' ? minimumWeight : null,
@@ -338,6 +368,9 @@ export default function ModelesCommerciaux() {
       audience: model.audience,
       price_per_kg: model.pricePerKg,
       package_price: model.packagePrice,
+      included_pieces: model.includedPieces ?? null,
+      overage_price_per_piece: model.overagePricePerPiece ?? null,
+      scope: (model.familyPackageScope ?? []).map(({ familyId, articleId }) => ({ family_id: familyId, article_id: articleId })),
       included_weight_kg: model.includedWeightKg,
       overage_price_per_kg: model.overagePricePerKg,
       minimum_weight_kg: model.minimumWeightKg,
@@ -395,9 +428,9 @@ export default function ModelesCommerciaux() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-brand-teal">Offres commerciales</p>
-          <h1 className="mt-1 text-2xl font-bold text-brand-navy">Modèles au kilo et au forfait</h1>
+          <h1 className="mt-1 text-2xl font-bold text-brand-navy">Modèles au kilo et forfaits</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Définissez les règles de poids, les suppléments, les conditions et les prestations incluses pour les nouvelles ventes.
+            Définissez les forfaits au kilo ou à la pièce, leur périmètre d’articles, les suppléments et les prestations incluses.
           </p>
         </div>
         <div className="flex gap-2">
@@ -453,7 +486,7 @@ export default function ModelesCommerciaux() {
 
             <div>
               <p className="mb-2 text-sm font-semibold text-slate-700">Mode de facturation</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <button type="button" onClick={() => setChamp('modelType', 'PER_KG')} className={`rounded-xl border p-4 text-left transition ${form.modelType === 'PER_KG' ? 'border-brand-teal bg-teal-50 ring-1 ring-brand-teal' : 'border-slate-200 hover:border-slate-300'}`}>
                   <span className="flex items-center gap-2 font-bold text-brand-navy"><Scale size={18} aria-hidden /> Facturation au kilo</span>
                   <span className="mt-1 block text-sm text-slate-600">Tarif par kg, avec minimum et incrément configurables.</span>
@@ -462,48 +495,62 @@ export default function ModelesCommerciaux() {
                   <span className="flex items-center gap-2 font-bold text-brand-navy"><Package size={18} aria-hidden /> Forfait de poids</span>
                   <span className="mt-1 block text-sm text-slate-600">Prix fixe pour un poids inclus, puis supplément au kilo facultatif.</span>
                 </button>
+                <button type="button" onClick={() => setChamp('modelType', 'FAMILY_PACKAGE')} className={`rounded-xl border p-4 text-left transition ${form.modelType === 'FAMILY_PACKAGE' ? 'border-brand-teal bg-teal-50 ring-1 ring-brand-teal' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <span className="flex items-center gap-2 font-bold text-brand-navy"><Layers3 size={18} aria-hidden /> Forfait famille</span>
+                  <span className="mt-1 block text-sm text-slate-600">Prix global pour un nombre de pièces et un périmètre d’articles définis.</span>
+                </button>
               </div>
             </div>
 
             <div className="grid gap-4 rounded-xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
               {form.modelType === 'PER_KG' ? (
-                <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                  Tarif par kilo (FCFA)
-                  <input inputMode="numeric" value={form.pricePerKg} onChange={(event) => setChamp('pricePerKg', event.target.value)} className="field" placeholder="Ex. 1 000" />
-                </label>
+                <>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Tarif par kilo (FCFA)<input inputMode="numeric" value={form.pricePerKg} onChange={(event) => setChamp('pricePerKg', event.target.value)} className="field" placeholder="Ex. 1 000" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Poids minimum (kg)<input inputMode="decimal" value={form.minimumWeightKg} onChange={(event) => setChamp('minimumWeightKg', event.target.value)} className="field" placeholder="Facultatif" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Incrément facturé (kg)<input inputMode="decimal" value={form.billingIncrementKg} onChange={(event) => setChamp('billingIncrementKg', event.target.value)} className="field" placeholder="0,1 (facultatif)" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Minimum facturable (FCFA)<input inputMode="numeric" value={form.minimumCharge} onChange={(event) => setChamp('minimumCharge', event.target.value)} className="field" placeholder="Facultatif" /></label>
+                </>
+              ) : form.modelType === 'WEIGHT_PACKAGE' ? (
+                <>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Prix du forfait (FCFA)<input inputMode="numeric" value={form.packagePrice} onChange={(event) => setChamp('packagePrice', event.target.value)} className="field" placeholder="Ex. 5 000" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Poids inclus (kg)<input inputMode="decimal" value={form.includedWeightKg} onChange={(event) => setChamp('includedWeightKg', event.target.value)} className="field" placeholder="Ex. 5" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Supplément par kg (FCFA)<input inputMode="numeric" value={form.overagePricePerKg} onChange={(event) => setChamp('overagePricePerKg', event.target.value)} className="field" placeholder="Vide = validation manuelle" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Minimum facturable (FCFA)<input inputMode="numeric" value={form.minimumCharge} onChange={(event) => setChamp('minimumCharge', event.target.value)} className="field" placeholder="Facultatif" /></label>
+                </>
               ) : (
                 <>
-                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                    Prix du forfait (FCFA)
-                    <input inputMode="numeric" value={form.packagePrice} onChange={(event) => setChamp('packagePrice', event.target.value)} className="field" placeholder="Ex. 5 000" />
-                  </label>
-                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                    Poids inclus (kg)
-                    <input inputMode="decimal" value={form.includedWeightKg} onChange={(event) => setChamp('includedWeightKg', event.target.value)} className="field" placeholder="Ex. 5" />
-                  </label>
-                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                    Supplément par kg (FCFA)
-                    <input inputMode="numeric" value={form.overagePricePerKg} onChange={(event) => setChamp('overagePricePerKg', event.target.value)} className="field" placeholder="Vide = validation manuelle" />
-                  </label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Prix global du forfait (FCFA)<input inputMode="numeric" value={form.packagePrice} onChange={(event) => setChamp('packagePrice', event.target.value)} className="field" placeholder="Ex. 5 000" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Pièces incluses<input inputMode="numeric" value={form.includedPieces} onChange={(event) => setChamp('includedPieces', event.target.value)} className="field" placeholder="Ex. 5" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Supplément par pièce (FCFA)<input inputMode="numeric" value={form.overagePricePerPiece} onChange={(event) => setChamp('overagePricePerPiece', event.target.value)} className="field" placeholder="Vide = validation manuelle" /></label>
+                  <label className="space-y-1.5 text-sm font-semibold text-slate-700">Minimum facturable (FCFA)<input inputMode="numeric" value={form.minimumCharge} onChange={(event) => setChamp('minimumCharge', event.target.value)} className="field" placeholder="Facultatif" /></label>
                 </>
               )}
-              {form.modelType === 'PER_KG' && (
-                <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                  Poids minimum (kg)
-                  <input inputMode="decimal" value={form.minimumWeightKg} onChange={(event) => setChamp('minimumWeightKg', event.target.value)} className="field" placeholder="Facultatif" />
-                </label>
-              )}
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                Incrément facturé (kg)
-                <input inputMode="decimal" value={form.billingIncrementKg} onChange={(event) => setChamp('billingIncrementKg', event.target.value)} className="field" placeholder="0,1 (facultatif)" />
-              </label>
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
-                Minimum facturable (FCFA)
-                <input inputMode="numeric" value={form.minimumCharge} onChange={(event) => setChamp('minimumCharge', event.target.value)} className="field" placeholder="Facultatif" />
-              </label>
             </div>
 
-            <section className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
+            {form.modelType === 'FAMILY_PACKAGE' && (
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h3 className="font-bold text-brand-navy">Articles admissibles</h3>
+                <p className="mt-1 text-xs text-slate-600">Sans sélection, tous les articles actifs sont admissibles. Vous pouvez limiter le forfait à des familles ou articles spécifiques.</p>
+                {!structure ? <p className="mt-3 text-sm text-amber-700">Connectez-vous pour charger le catalogue.</p> : (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {structure.families.filter((family) => family.is_active).map((family) => (
+                      <label key={`family:${family.id}`} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2 text-sm">
+                        <input type="checkbox" checked={form.packageScope.includes(`family:${family.id}`)} onChange={(event) => setChamp('packageScope', event.target.checked ? [...form.packageScope, `family:${family.id}`] : form.packageScope.filter((scope) => scope !== `family:${family.id}`))} />
+                        <span><strong>{family.name}</strong><span className="block text-xs text-slate-500">Famille entière</span></span>
+                      </label>
+                    ))}
+                    {structure.articles.filter((article) => article.is_active).map((article) => (
+                      <label key={`article:${article.id}`} className="flex items-start gap-2 rounded-lg bg-slate-50 p-2 text-sm">
+                        <input type="checkbox" checked={form.packageScope.includes(`article:${article.id}`)} onChange={(event) => setChamp('packageScope', event.target.checked ? [...form.packageScope, `article:${article.id}`] : form.packageScope.filter((scope) => scope !== `article:${article.id}`))} />
+                        <span>{article.name}<span className="block text-xs text-slate-500">{structure.families.find((family) => family.id === article.family_id)?.name ?? 'Famille'}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {form.modelType !== 'FAMILY_PACKAGE' && <section className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
               <div className="flex items-center gap-2 font-bold text-brand-navy"><Calculator size={18} aria-hidden /> Simulateur de prix</div>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
@@ -517,7 +564,7 @@ export default function ModelesCommerciaux() {
                     : <span className="text-slate-500">{erreurSimulation ?? 'Saisissez un poids et les tarifs pour voir le calcul.'}</span>}
                 </div>
               </div>
-            </section>
+            </section>}
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-1.5 text-sm font-semibold text-slate-700">
@@ -637,7 +684,9 @@ export default function ModelesCommerciaux() {
 function CarteModele({ model, onEdit, onToggle }: { model: LocalLaundryModel; onEdit: () => void; onToggle: () => void }) {
   const priceText = model.modelType === 'PER_KG'
     ? `${formatFcfa(model.pricePerKg ?? 0)} / kg`
-    : `${formatFcfa(model.packagePrice ?? 0)} jusqu’à ${model.includedWeightKg ?? 0} kg`
+    : model.modelType === 'FAMILY_PACKAGE'
+      ? `${formatFcfa(model.packagePrice ?? 0)} jusqu’à ${model.includedPieces ?? 0} pièces`
+      : `${formatFcfa(model.packagePrice ?? 0)} jusqu’à ${model.includedWeightKg ?? 0} kg`
   const servicesInclus = model.services.filter((service) => service.inclusionMode === 'INCLUDED')
   const servicesExtra = model.services.filter((service) => service.inclusionMode === 'EXTRA')
   return (
@@ -657,8 +706,11 @@ function CarteModele({ model, onEdit, onToggle }: { model: LocalLaundryModel; on
 
       <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3">
         <p className="text-xl font-extrabold text-brand-navy">{priceText}</p>
+        {model.modelType === 'FAMILY_PACKAGE' && model.overagePricePerPiece != null && <p className="mt-1 text-sm text-slate-600">Puis {formatFcfa(model.overagePricePerPiece)} / pièce supplémentaire</p>}
+        {model.modelType === 'FAMILY_PACKAGE' && model.overagePricePerPiece == null && <p className="mt-1 text-sm text-amber-700">Au-delà : prix à valider manuellement</p>}
         {model.modelType === 'WEIGHT_PACKAGE' && model.overagePricePerKg !== null && <p className="mt-1 text-sm text-slate-600">Puis {formatFcfa(model.overagePricePerKg)} / kg supplémentaire</p>}
         {model.modelType === 'WEIGHT_PACKAGE' && model.overagePricePerKg === null && <p className="mt-1 text-sm text-amber-700">Au-delà : prix à valider manuellement</p>}
+        {model.modelType === 'FAMILY_PACKAGE' && <p className="mt-1 text-sm text-slate-600">{(model.familyPackageScope ?? []).length === 0 ? 'Tous les articles actifs' : `${(model.familyPackageArticles ?? []).length} article(s) admissible(s)`}</p>}
         {model.modelType === 'PER_KG' && model.minimumWeightKg !== null && <p className="mt-1 text-sm text-slate-600">Minimum {model.minimumWeightKg} kg</p>}
         {model.minimumCharge !== null && <p className="mt-1 text-sm text-slate-600">Minimum facturable : {formatFcfa(model.minimumCharge)}</p>}
       </div>

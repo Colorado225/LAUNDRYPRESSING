@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -48,6 +49,7 @@ import type { StockItemRow } from '@/types/database'
  * quand la lecture échoue, plutôt que d'afficher un zéro trompeur.
  */
 export default function TableauDeBord() {
+  const prefersReducedMotion = useReducedMotion()
   const tenantId = useTenantStore((state) => state.tenantId)
   const role = useTenantStore((state) => state.role)
   const autorise = can(role, 'dashboard.view')
@@ -298,7 +300,7 @@ export default function TableauDeBord() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="chart-surface rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
             Chiffre d’affaires
           </h2>
@@ -341,11 +343,18 @@ export default function TableauDeBord() {
           </dl>
 
           <div className="mt-4 flex h-28 items-end gap-1.5" role="img" aria-label="Espèces encaissées sur sept jours">
-            {snapshot.series.map((point) => (
+            {snapshot.series.map((point, index) => (
               <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div
-                  className="w-full rounded-t bg-brand-teal/80"
-                  style={{ height: `${Math.max(4, (point.cash / maximumSerie) * 80)}px` }}
+                <motion.div
+                  initial={prefersReducedMotion ? false : { height: 0, opacity: 0.45 }}
+                  animate={{ height: `${Math.max(4, (point.cash / maximumSerie) * 80)}px`, opacity: 1 }}
+                  transition={{
+                    duration: prefersReducedMotion ? 0 : 0.55,
+                    delay: prefersReducedMotion ? 0 : index * 0.045,
+                    ease: [0.22, 1, 0.36, 1],
+                  }}
+                  whileHover={prefersReducedMotion ? undefined : { scaleX: 1.08, backgroundColor: '#f59e0b' }}
+                  className="chart-bar w-full rounded-t bg-brand-teal/80"
                   title={`${shortDayLabel(point.date)} : ${formatFcfa(point.cash)}`}
                 />
                 <span className="truncate text-[10px] text-slate-500">{point.label}</span>
@@ -460,6 +469,7 @@ function Carte({
   icone: React.ReactNode
   ton?: 'neutre' | 'positif' | 'alerte'
 }) {
+  const prefersReducedMotion = useReducedMotion()
   const couleurs =
     ton === 'positif'
       ? 'text-brand-teal'
@@ -468,13 +478,20 @@ function Carte({
         : 'text-brand-navy'
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <motion.div
+      className="metric-card rounded-2xl border border-slate-200 bg-white p-4"
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      whileHover={prefersReducedMotion ? undefined : { y: -5, scale: 1.025, rotateX: 1, rotateY: -0.8 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }}
+      style={{ transformPerspective: 900 }}
+    >
       <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
         {icone}
         {libelle}
       </p>
       <p className={`mt-2 text-xl font-bold ${couleurs}`}>{valeur}</p>
       <p className="text-xs text-slate-500">{detail}</p>
-    </div>
+    </motion.div>
   )
 }

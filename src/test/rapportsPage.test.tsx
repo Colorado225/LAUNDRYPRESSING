@@ -82,6 +82,8 @@ describe('page Rapports', () => {
     expect(texte.replace(/\s/g, ' ')).toContain('6 000 FCFA')
     expect(texte).toContain('7 jours')
     expect(texte).toContain('Exporter en CSV')
+    expect(texte).toContain('Charge et activité par membre')
+    expect(texte).toContain('Sans attribution')
     // Le graphique est un SVG accessible, pas une image opaque.
     expect(hote.querySelector('svg[role="img"]')).not.toBeNull()
 

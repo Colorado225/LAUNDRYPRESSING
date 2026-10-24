@@ -49,6 +49,8 @@ const remote = vi.hoisted(() => ({
   /** État serveur lu pendant l'arbitrage d'un conflit. */
   serverOrder: null as unknown,
   serverItems: [] as unknown[],
+  serverFamilyPackages: [] as unknown[],
+  serverFamilyContents: [] as unknown[],
   /** Encaissements transmis par `record_cash_payment`. */
   rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
   /** Erreur à renvoyer par l'appel RPC d'encaissement. */
@@ -126,7 +128,7 @@ vi.mock('@/lib/supabaseClient', () => {
         },
         select: () => {
           // Lecture descendante, relecture d'idempotence et arbitrage des conflits.
-          const readRows = table === 'order_items' ? remote.serverItems : remote.pullRows
+          const readRows = table === 'order_items' ? remote.serverItems : table === 'order_item_family_packages' ? remote.serverFamilyPackages : table === 'order_item_family_package_contents' ? remote.serverFamilyContents : remote.pullRows
           const readOrder = remote.serverOrder ?? { version: 7 }
           const builder = {
             eq: () => builder,
@@ -218,6 +220,8 @@ beforeEach(async () => {
   remote.pullRows = []
   remote.serverOrder = null
   remote.serverItems = []
+  remote.serverFamilyPackages = []
+  remote.serverFamilyContents = []
   remote.rpcCalls = []
   remote.cashError = null
   remote.cashRemaining = 0
@@ -230,6 +234,118 @@ beforeEach(async () => {
 
 afterEach(() => {
   setOnline(true)
+})
+
+describe('syncPendingOrders — forfait famille', () => {
+  it('transmet la composition par RPC idempotent, jamais par upsert générique', async () => {
+    const modelId = '44444444-4444-4444-8444-444444444444'
+    const articleId = '55555555-5555-4555-8555-555555555555'
+    const { order, items } = await createOrderLocal(TENANT, {
+      customerName: 'Awa Koné',
+      customerPhone: '+2250700000001',
+      items: [{
+        label: 'Forfait famille 2 pièces',
+        price: 5000,
+        unitPrice: 5000,
+        quantity: 1,
+        billedQuantity: 1,
+        billingUnit: 'FLAT',
+        pricingMode: 'FIXED',
+        priceStatus: 'CONFIRMED',
+        priceReason: 'Forfait famille : tarif confirmé',
+        laundryModelId: modelId,
+        laundryModelNameSnapshot: 'Forfait famille 2 pièces',
+        laundryModelTypeSnapshot: 'FAMILY_PACKAGE',
+        laundryWeightKg: null,
+        laundryPackagePriceSnapshot: 5000,
+        familyPackageSnapshot: {
+          modelId,
+          modelName: 'Forfait famille 2 pièces',
+          packagePrice: 5000,
+          includedPieces: 2,
+          overagePricePerPiece: null,
+          minimumCharge: null,
+          pieceCount: 2,
+          manualTotalPrice: null,
+          contents: [{ articleId, articleName: 'Chemise', familyName: 'Hauts', quantity: 2, careInstructions: null }],
+        },
+      }],
+    })
+
+    const result = await syncPendingOrders()
+
+    expect(result).toMatchObject({ succeeded: 1, failed: 0 })
+    expect(items[0]?.familyPackageSnapshot?.pieceCount).toBe(2)
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual(['orders:insert'])
+    expect(remote.rpcCalls).toHaveLength(1)
+    expect(remote.rpcCalls[0]).toMatchObject({
+      fn: 'create_family_package_order_item',
+      args: {
+        p_order_id: order.id,
+        p_laundry_model_id: modelId,
+        p_contents: [{ article_id: articleId, quantity: 2 }],
+        p_total_price: 5000,
+        p_order_item_id: items[0]?.id,
+      },
+    })
+  })
+})
+
+describe('forfait famille — arbitrage serveur', () => {
+  it('reconstitue le snapshot de composition lorsqu’on adopte la version serveur', async () => {
+    const modelId = '44444444-4444-4444-8444-444444444444'
+    const articleId = '55555555-5555-4555-8555-555555555555'
+    const { order, items } = await createOrderLocal(TENANT, {
+      customerName: 'Awa Koné', customerPhone: '+2250700000001', items: [{
+        label: 'Forfait famille', price: 5000, unitPrice: 5000, quantity: 1, billedQuantity: 1, billingUnit: 'FLAT',
+        pricingMode: 'FIXED', priceStatus: 'CONFIRMED',
+        priceReason: 'Forfait famille confirmé', laundryModelId: modelId,
+        laundryModelNameSnapshot: 'Forfait famille', laundryModelTypeSnapshot: 'FAMILY_PACKAGE',
+        familyPackageSnapshot: {
+          modelId, modelName: 'Forfait famille', packagePrice: 5000, includedPieces: 2,
+          overagePricePerPiece: null, minimumCharge: null, pieceCount: 2, manualTotalPrice: null,
+          contents: [{ articleId, articleName: 'Chemise', familyName: 'Hauts', quantity: 2, careInstructions: 'Laver à froid' }],
+        },
+      }],
+    })
+    const item = items[0]!
+    remote.serverOrder = { ...toSupabaseOrder(order), version: 2 }
+    remote.serverItems = [{
+      id: item.id, order_id: order.id, tenant_id: TENANT, label: item.label,
+      fabric_type: null, special_instructions: null, price: 5000, quantity: 1,
+      billed_quantity: 1, billing_unit: 'FLAT', unit_price: 5000, pricing_mode: 'FIXED',
+      price_status: 'CONFIRMED', catalog_entry_id: null, article_name: null, service_name: null,
+      family_name_snapshot: null, catalog_unit_price_snapshot: null, minimum_quantity_snapshot: null,
+      billing_increment_snapshot: null, minimum_charge_snapshot: null, conditions_snapshot: null,
+      price_reason: 'Forfait famille confirmé', laundry_model_id: null, laundry_model_name_snapshot: null,
+      laundry_model_type_snapshot: null, laundry_weight_kg: null, laundry_price_breakdown_snapshot: null,
+      laundry_services_snapshot: null, laundry_price_per_kg_snapshot: null, laundry_package_price_snapshot: null,
+      laundry_included_weight_kg_snapshot: null, laundry_overage_price_per_kg_snapshot: null,
+      laundry_minimum_weight_kg_snapshot: null, laundry_billing_increment_kg_snapshot: null,
+      laundry_minimum_charge_snapshot: null,
+    }]
+    remote.serverFamilyPackages = [{
+      tenant_id: TENANT, order_id: order.id, order_item_id: item.id, laundry_model_id: modelId,
+      model_name_snapshot: 'Forfait famille', package_price_snapshot: 5000, included_pieces_snapshot: 2,
+      overage_price_per_piece_snapshot: null, minimum_charge_snapshot: null, piece_count: 2,
+      scope_snapshot: [], price_breakdown_snapshot: {},
+    }]
+    remote.serverFamilyContents = [{
+      tenant_id: TENANT, order_id: order.id, order_item_id: item.id, article_id: articleId,
+      article_name_snapshot: 'Chemise', family_name_snapshot: 'Hauts', quantity: 2,
+      care_instructions_snapshot: 'Laver à froid', service_operations_snapshot: [],
+    }]
+
+    await takeServerVersion(order)
+
+    expect(await db.orderItems.get(item.id)).toMatchObject({
+      laundryModelTypeSnapshot: 'FAMILY_PACKAGE',
+      familyPackageSnapshot: {
+        modelId, pieceCount: 2,
+        contents: [{ articleId, articleName: 'Chemise', familyName: 'Hauts', quantity: 2, careInstructions: 'Laver à froid' }],
+      },
+    })
+  })
 })
 
 describe('syncPendingOrders — cas où rien ne doit partir', () => {

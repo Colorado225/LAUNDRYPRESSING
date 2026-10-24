@@ -90,6 +90,7 @@ const EMPTY_ITEM: OrderItemDraft = {
   laundryMinimumWeightKgSnapshot: null,
   laundryBillingIncrementKgSnapshot: null,
   laundryMinimumChargeSnapshot: null,
+  familyPackageSnapshot: null,
 }
 
 interface OrderItemDraft extends OrderItemInput {
@@ -217,6 +218,44 @@ export default function OrderForm() {
         if (i !== index) return item
         const next = { ...item, ...patch }
 
+        if (next.laundryModelId && next.laundryModelTypeSnapshot === 'FAMILY_PACKAGE') {
+          const snapshot = next.familyPackageSnapshot
+          if (!snapshot) return next
+          const pieceCount = snapshot.contents.reduce((sum, content) => sum + content.quantity, 0)
+          const overage = Math.max(0, pieceCount - snapshot.includedPieces)
+          const derivedPrice = overage === 0
+            ? Math.max(snapshot.packagePrice, snapshot.minimumCharge ?? 0)
+            : snapshot.overagePricePerPiece !== null
+              ? Math.max(snapshot.packagePrice + overage * snapshot.overagePricePerPiece, snapshot.minimumCharge ?? 0)
+              : snapshot.manualTotalPrice ?? 0
+          const requiresQuote = overage > 0 && snapshot.overagePricePerPiece === null
+          const compositionChanged = patch.familyPackageSnapshot != null &&
+            JSON.stringify(patch.familyPackageSnapshot.contents) !== JSON.stringify(snapshot.contents)
+          const manualTotalPrice = patch.unitPrice !== undefined
+            ? patch.unitPrice
+            : compositionChanged
+              ? null
+              : snapshot.manualTotalPrice
+          const updatedSnapshot = { ...snapshot, pieceCount, manualTotalPrice: requiresQuote ? manualTotalPrice : null }
+          const amount = requiresQuote ? updatedSnapshot.manualTotalPrice ?? 0 : derivedPrice
+          const breakdown = `${pieceCount} pièce(s) · ${snapshot.includedPieces} incluse(s)${overage > 0 ? ` · ${overage} supplémentaire(s)` : ''}`
+          return {
+            ...next,
+            label: snapshot.modelName,
+            familyPackageSnapshot: updatedSnapshot,
+            quantity: 1,
+            billedQuantity: 1,
+            billingUnit: 'FLAT',
+            unitPrice: amount,
+            price: amount,
+            pricingMode: requiresQuote ? 'QUOTE' : 'FIXED',
+            priceStatus: amount > 0 && amount >= snapshot.packagePrice ? 'CONFIRMED' : 'ESTIMATED',
+            laundryWeightKg: null,
+            laundryPackagePriceSnapshot: snapshot.packagePrice,
+            laundryPriceBreakdownSnapshot: breakdown,
+          }
+        }
+
         if (next.laundryModelId && next.laundryModelTypeSnapshot) {
           if (next.laundryModelTypeSnapshot === 'PER_KG') {
             if (patch.quantity !== undefined) next.laundryWeightKg = next.quantity
@@ -343,6 +382,7 @@ export default function OrderForm() {
       laundryMinimumWeightKgSnapshot: null,
       laundryBillingIncrementKgSnapshot: null,
       laundryMinimumChargeSnapshot: null,
+      familyPackageSnapshot: null,
       label: `${entree.article} — ${entree.service}`,
     })
   }
@@ -358,6 +398,61 @@ export default function OrderForm() {
   }
 
   const appliquerModeleCommercial = (index: number, model: LocalLaundryModel, poids = 1) => {
+    if (model.modelType === 'FAMILY_PACKAGE') {
+      if (!model.packagePrice || !model.includedPieces) {
+        toast.error('Ce forfait famille n’a pas de prix ou de nombre de pièces configuré.')
+        return
+      }
+      const snapshot = {
+        modelId: model.id,
+        modelName: model.name,
+        packagePrice: model.packagePrice,
+        includedPieces: model.includedPieces,
+        overagePricePerPiece: model.overagePricePerPiece ?? null,
+        minimumCharge: model.minimumCharge,
+        pieceCount: 0,
+        manualTotalPrice: null,
+        contents: [],
+      }
+      updateItem(index, {
+        mode: 'laundry',
+        label: model.name,
+        fabricType: '',
+        specialInstructions: '',
+        price: 0,
+        quantity: 1,
+        billedQuantity: 1,
+        billingUnit: 'FLAT',
+        unitPrice: 0,
+        pricingMode: 'FIXED',
+        priceStatus: 'ESTIMATED',
+        catalogEntryId: undefined,
+        articleName: undefined,
+        serviceName: 'Forfait famille',
+        familyNameSnapshot: null,
+        catalogUnitPriceSnapshot: null,
+        minimumQuantitySnapshot: null,
+        billingIncrementSnapshot: null,
+        minimumChargeSnapshot: null,
+        conditionsSnapshot: model.conditions,
+        priceReason: `Forfait famille : ${model.name}`,
+        laundryModelId: model.id,
+        laundryModelNameSnapshot: model.name,
+        laundryModelTypeSnapshot: model.modelType,
+        laundryWeightKg: null,
+        laundryPriceBreakdownSnapshot: 'Sélectionnez les articles et leurs quantités.',
+        laundryServicesSnapshot: model.services.length === 0 ? null : model.services.map((service) => service.serviceName).join(', '),
+        laundryPricePerKgSnapshot: null,
+        laundryPackagePriceSnapshot: model.packagePrice,
+        laundryIncludedWeightKgSnapshot: null,
+        laundryOveragePricePerKgSnapshot: null,
+        laundryMinimumWeightKgSnapshot: null,
+        laundryBillingIncrementKgSnapshot: null,
+        laundryMinimumChargeSnapshot: model.minimumCharge,
+        familyPackageSnapshot: snapshot,
+      })
+      return
+    }
     const result = calculateLaundryModelPrice({
       model_type: model.modelType,
       price_per_kg: model.pricePerKg,
@@ -409,6 +504,7 @@ export default function OrderForm() {
       laundryMinimumWeightKgSnapshot: model.minimumWeightKg,
       laundryBillingIncrementKgSnapshot: model.billingIncrementKg,
       laundryMinimumChargeSnapshot: model.minimumCharge,
+      familyPackageSnapshot: null,
     })
   }
 
@@ -458,6 +554,7 @@ export default function OrderForm() {
         laundryMinimumWeightKgSnapshot: null,
         laundryBillingIncrementKgSnapshot: null,
         laundryMinimumChargeSnapshot: null,
+        familyPackageSnapshot: null,
       })
       return
     }
@@ -708,7 +805,7 @@ export default function OrderForm() {
                     {commercialModels.some((model) => model.isActive) && <ModeButton
                       actif={item.mode === 'laundry'}
                       onClick={() => basculerMode(index, 'laundry')}
-                      icon={item.laundryModelTypeSnapshot === 'WEIGHT_PACKAGE' ? <Package size={14} aria-hidden /> : <Scale size={14} aria-hidden />}
+                      icon={item.laundryModelTypeSnapshot === 'PER_KG' ? <Scale size={14} aria-hidden /> : <Package size={14} aria-hidden />}
                       label="Au kilo / forfait"
                     />}
                   </div>
@@ -725,28 +822,66 @@ export default function OrderForm() {
                           >
                             {commercialModels.filter((model) => model.isActive).map((model) => (
                               <option key={model.id} value={model.id}>
-                                {model.name} — {model.modelType === 'PER_KG' ? `${formatFcfa(model.pricePerKg ?? 0)} / kg` : `${formatFcfa(model.packagePrice ?? 0)} / forfait`}
+                                {model.name} — {model.modelType === 'PER_KG' ? `${formatFcfa(model.pricePerKg ?? 0)} / kg` : model.modelType === 'FAMILY_PACKAGE' ? `${formatFcfa(model.packagePrice ?? 0)} / forfait · ${model.includedPieces ?? 0} pièces incluses` : `${formatFcfa(model.packagePrice ?? 0)} / forfait`}
                               </option>
                             ))}
                           </select>
                         </Field>
-                        <Field
-                          label="Poids mesuré (kg)"
-                          htmlFor={`item-laundry-weight-${index}`}
-                          hint={item.laundryPriceBreakdownSnapshot ?? 'Le tarif est calculé selon le modèle sélectionné.'}
-                        >
-                          <input
-                            id={`item-laundry-weight-${index}`}
-                            type="number"
-                            min={0.001}
-                            max={10000}
-                            step={0.001}
-                            inputMode="decimal"
-                            value={item.laundryWeightKg ?? ''}
-                            onChange={(event) => updateItem(index, { laundryWeightKg: event.target.value === '' ? 0 : Number(event.target.value) })}
-                            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
-                          />
-                        </Field>
+                        {item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE' ? (
+                          <div className="space-y-3 sm:col-span-2">
+                            <div>
+                              <h3 className="text-sm font-bold text-brand-navy">Composition détaillée du forfait</h3>
+                              <p className="mt-1 text-xs text-slate-600">Saisissez le nombre de pièces de chaque article. Prix global : {formatFcfa(item.familyPackageSnapshot?.packagePrice ?? 0)} pour {item.familyPackageSnapshot?.includedPieces ?? 0} pièce(s).</p>
+                            </div>
+                            {(commercialModels.find((model) => model.id === item.laundryModelId)?.familyPackageArticles ?? []).length === 0 ? (
+                              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Aucun article actif dans le périmètre de ce forfait. Actualisez le catalogue ou modifiez son périmètre.</p>
+                            ) : (
+                              <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                                {(commercialModels.find((model) => model.id === item.laundryModelId)?.familyPackageArticles ?? []).map((article) => {
+                                  const snapshot = item.familyPackageSnapshot
+                                  const selected = snapshot?.contents.find((content) => content.articleId === article.articleId)
+                                  return (
+                                    <div key={article.articleId} className="grid grid-cols-[1fr_92px] items-center gap-3 p-3">
+                                      <div>
+                                        <p className="text-sm font-semibold text-slate-800">{article.articleName} <span className="font-normal text-slate-500">· {article.familyName}</span></p>
+                                        {article.careInstructions && <p className="mt-0.5 text-xs text-slate-500">{article.careInstructions}</p>}
+                                      </div>
+                                      <label className="text-xs font-semibold text-slate-600">
+                                        Quantité
+                                        <input id={`item-family-article-${index}-${article.articleId}`} type="number" min={0} max={1000} step={1} value={selected?.quantity ?? 0} onChange={(event) => {
+                                          const quantity = event.target.value === '' ? 0 : Number(event.target.value)
+                                          const contents = (snapshot?.contents ?? []).filter((content) => content.articleId !== article.articleId)
+                                          if (quantity > 0) contents.push({ articleId: article.articleId, articleName: article.articleName, familyName: article.familyName, quantity, careInstructions: article.careInstructions })
+                                          updateItem(index, { familyPackageSnapshot: snapshot ? { ...snapshot, contents } : null })
+                                        }} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-base" />
+                                      </label>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            <p className="rounded-lg bg-teal-50 px-3 py-2 text-sm font-semibold text-brand-navy">{item.familyPackageSnapshot?.pieceCount ?? 0} pièce(s) · Total du forfait : {formatFcfa(item.price)}</p>
+                            {item.familyPackageSnapshot && item.familyPackageSnapshot.pieceCount > item.familyPackageSnapshot.includedPieces && item.familyPackageSnapshot.overagePricePerPiece === null && <p className="text-xs text-amber-800">Les pièces supplémentaires n’ont pas de tarif configuré. Saisissez le prix global confirmé avec le client ci-dessous.</p>}
+                          </div>
+                        ) : (
+                          <Field
+                            label="Poids mesuré (kg)"
+                            htmlFor={`item-laundry-weight-${index}`}
+                            hint={item.laundryPriceBreakdownSnapshot ?? 'Le tarif est calculé selon le modèle sélectionné.'}
+                          >
+                            <input
+                              id={`item-laundry-weight-${index}`}
+                              type="number"
+                              min={0.001}
+                              max={10000}
+                              step={0.001}
+                              inputMode="decimal"
+                              value={item.laundryWeightKg ?? ''}
+                              onChange={(event) => updateItem(index, { laundryWeightKg: event.target.value === '' ? 0 : Number(event.target.value) })}
+                              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                            />
+                          </Field>
+                        )}
                         {item.laundryServicesSnapshot && (
                           <p className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600 sm:col-span-2">Prestations : {item.laundryServicesSnapshot}</p>
                         )}
@@ -869,7 +1004,9 @@ export default function OrderForm() {
                             ? item.laundryModelTypeSnapshot === 'PER_KG'
                               ? item.laundryPriceBreakdownSnapshot ?? 'Tarif pris dans le modèle commercial.'
                               : item.pricingMode === 'QUOTE'
-                                ? 'Le forfait dépasse le poids inclus : confirmez le prix avec le client.'
+                                ? item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE'
+                                  ? 'Saisissez le montant global confirmé avec le client pour les pièces supplémentaires.'
+                                  : 'Le forfait dépasse le poids inclus : confirmez le prix avec le client.'
                                 : item.laundryPriceBreakdownSnapshot ?? 'Montant calculé selon le modèle commercial.'
                             : item.pricingMode === 'QUOTE'
                               ? 'Le devis doit être confirmé avant l’enregistrement.'
@@ -885,7 +1022,8 @@ export default function OrderForm() {
                           step={1}
                           inputMode="numeric"
                           value={item.unitPrice === 0 ? '' : item.unitPrice}
-                          disabled={item.mode === 'laundry' && (item.laundryModelTypeSnapshot === 'PER_KG' || item.pricingMode !== 'QUOTE')}
+                          disabled={item.mode === 'laundry' && (item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE' ? item.pricingMode !== 'QUOTE' : item.laundryModelTypeSnapshot === 'PER_KG' || item.pricingMode !== 'QUOTE')}
+                          aria-label={item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE' ? 'Prix global confirmé du forfait famille' : undefined}
                           onChange={(event) =>
                             updateItem(index, {
                               unitPrice: event.target.value === '' ? 0 : Number(event.target.value),
@@ -923,7 +1061,7 @@ export default function OrderForm() {
                       </label>
                     )}
 
-                    {item.pricingMode === 'QUOTE' && (
+                    {item.pricingMode === 'QUOTE' && item.laundryModelTypeSnapshot !== 'FAMILY_PACKAGE' && (
                       <label className="flex items-center gap-2 rounded-xl border border-brand-teal/30 bg-brand-teal/5 px-3 py-2 text-sm text-brand-navy sm:col-span-2">
                         <input
                           type="checkbox"
@@ -943,7 +1081,7 @@ export default function OrderForm() {
                     {item.price > 0 && (
                       <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700 sm:col-span-2">
                         {item.laundryModelId
-                          ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'calcul selon modèle'}`
+                          ? item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE' ? `${item.familyPackageSnapshot?.pieceCount ?? 0} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}` : `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'calcul selon modèle'}`
                           : item.billingUnit === 'FLAT'
                             ? 'Forfait × 1'
                             : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré${item.priceStatus === 'ESTIMATED' ? ' (estimé)' : ''} · ${item.billedQuantity} ${libelleUnite(item.billingUnit)} facturé${item.billingUnit === 'PIECE' ? 'e' : 's'}`}
@@ -1021,7 +1159,9 @@ export default function OrderForm() {
                       </span>
                       <span className="block text-xs text-slate-500">
                         {item.laundryModelId
-                          ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}${item.priceStatus === 'ESTIMATED' ? ' · À confirmer' : ''}`
+                          ? item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE'
+                            ? `${item.familyPackageSnapshot?.pieceCount ?? 0} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}${item.priceStatus === 'ESTIMATED' ? ' · À confirmer' : ''}`
+                            : `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}${item.priceStatus === 'ESTIMATED' ? ' · À confirmer' : ''}`
                           : item.billingUnit === 'FLAT'
                             ? `Forfait · ${formatFcfa(item.unitPrice)}`
                             : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)} / ${libelleUnite(item.billingUnit)}`}

@@ -4,8 +4,8 @@
 > Application **strictement en français**, pensée pour des **tablettes Android d'entrée de gamme**
 > et **résiliente aux coupures internet**.
 
-**État actuel : paliers 0 à 4 terminés ; lot 2 validé et commité, lot 3 implémenté en attente de validation** :
-modèles au kilo/forfait, coûts de consommables imputés, rapports comparatifs et export CSV détaillé.
+**État actuel : paliers 0 à 4 terminés ; lots 2 et 3 validés automatiquement, rapport de charge équipe intégré** :
+modèles au kilo/forfait, forfaits famille, coûts de consommables imputés, rapports comparatifs, charge et activité actuelle par membre et export CSV détaillé. La recette métier avec de vraies sorties de stock reste à effectuer.
 Les phases 1 à 6 et les paliers 0 à 4 de `MAJ.md` sont livrés ; ces lots complètent le périmètre ERP demandé. La correspondance avec
 les douze écrans de la maquette est tenue dans
 [`docs/CONFORMITE-MVP.md`](docs/CONFORMITE-MVP.md).
@@ -31,7 +31,7 @@ Le MVP couvre **quatre modules**, et rien d'autre :
 | 11 | **Multi-boutiques** (sélecteur de boutique, rôle par boutique, en-tête validé) | ✅ palier 4 |
 | 12 | **Supervision et support** (console éditeur, demandes des pressings) | ✅ palier 4 |
 | 13 | **Modèles commerciaux** (tarifs au kilo ou au forfait, prestations incluses, poids et reçus historisés) | ✅ lot 2 |
-| 14 | **Rentabilité et rapports** (coût des consommables imputés, comparaison de périodes, export CSV détaillé) | 🧪 lot 3 — à valider |
+| 14 | **Rentabilité et rapports** (coût des consommables imputés, comparaison de périodes, charge actuelle et activité par employé, export CSV) | ✅ lot 3 — vérifié automatiquement ; recette métier réelle à effectuer |
 
 Hors périmètre, volontairement reportés en V2 : livraison, fidélité, notifications WhatsApp,
 statistiques avancées, gestion du personnel, facturation PDF, suivi client public,

@@ -475,12 +475,29 @@ async function runSync(): Promise<SyncResult> {
       await updateOrderServerVersion(order.id, pushed.version)
 
       const items = await getOrderItems(order.id)
-      if (items.length > 0) {
+      const familyPackages = items.filter((item) => item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE')
+      const ordinaryItems = items.filter((item) => item.laundryModelTypeSnapshot !== 'FAMILY_PACKAGE')
+      if (ordinaryItems.length > 0) {
         const { error: itemsError } = await supabase
           .from('order_items')
-          .upsert(items.map(toSupabaseOrderItem), { onConflict: 'id' })
-
+          .upsert(ordinaryItems.map(toSupabaseOrderItem), { onConflict: 'id' })
         if (itemsError) throw new Error(itemsError.message)
+      }
+      for (const item of familyPackages) {
+        const snapshot = item.familyPackageSnapshot
+        if (!snapshot) throw new Error('La composition locale du forfait famille est manquante.')
+        const { error: familyError } = await supabase.rpc('create_family_package_order_item', {
+          p_order_id: order.id,
+          p_laundry_model_id: snapshot.modelId,
+          p_contents: snapshot.contents.map((content) => ({ article_id: content.articleId, quantity: content.quantity })),
+          p_total_price: item.price,
+          p_price_reason: item.priceReason ?? `Forfait famille : ${snapshot.modelName}`,
+          p_label: item.label,
+          p_fabric_type: item.fabricType,
+          p_special_instructions: item.specialInstructions,
+          p_order_item_id: item.id,
+        })
+        if (familyError) throw new Error(familyError.message)
       }
 
       await markOrderSynced(order.id, pushed.version)

@@ -9,6 +9,7 @@ const depot = vi.hoisted(() => ({
     services: Array<{ id: string; tenant_id: string; name: string; service_type: 'treatment' | 'option' | 'logistics' | 'other'; application_scope: 'article' | 'order'; description: string | null; is_active: boolean; sort_order: number; created_by: string | null; created_at: string; updated_at: string }>
   },
   loadCatalogStructure: vi.fn(),
+  initializeCatalogModelTemplates: vi.fn(),
   createCatalogFamily: vi.fn(),
   updateCatalogFamily: vi.fn(),
   deleteCatalogFamily: vi.fn(),
@@ -25,6 +26,7 @@ const depot = vi.hoisted(() => ({
 
 vi.mock('@/db/catalogStructureRepository', () => ({
   loadCatalogStructure: depot.loadCatalogStructure,
+  initializeCatalogModelTemplates: depot.initializeCatalogModelTemplates,
   createCatalogFamily: depot.createCatalogFamily,
   updateCatalogFamily: depot.updateCatalogFamily,
   deleteCatalogFamily: depot.deleteCatalogFamily,
@@ -50,12 +52,12 @@ const FAMILY = {
 let racine: Root
 let hote: HTMLDivElement
 
-async function monter() {
+async function monter(canManage = false) {
   hote = document.createElement('div')
   document.body.appendChild(hote)
   racine = createRoot(hote)
   await act(async () => {
-    racine.render(<CatalogStructureManager tenantId={TENANT} onCatalogChanged={async () => {}} />)
+    racine.render(<CatalogStructureManager tenantId={TENANT} canManage={canManage} onCatalogChanged={async () => {}} />)
   })
   await act(async () => new Promise((resoudre) => setTimeout(resoudre, 0)))
 }
@@ -94,6 +96,13 @@ afterEach(() => {
 })
 
 describe('gestion de la structure du catalogue', () => {
+  it('initialise les modèles sans prix au premier accès du propriétaire', async () => {
+    await monter(true)
+
+    expect(depot.initializeCatalogModelTemplates).toHaveBeenCalledTimes(1)
+    demonter()
+  })
+
   it('ajoute une catégorie avec sa description et son ordre', async () => {
     await monter()
     const nom = hote.querySelector<HTMLInputElement>('input[required]')

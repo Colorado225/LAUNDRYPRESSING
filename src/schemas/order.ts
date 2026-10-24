@@ -71,7 +71,7 @@ export const orderItemInputSchema = z.object({
     .optional(),
   laundryModelId: z.string().uuid('Modèle commercial invalide').nullable().optional(),
   laundryModelNameSnapshot: z.string().trim().min(2).max(80).nullable().optional(),
-  laundryModelTypeSnapshot: z.enum(['PER_KG', 'WEIGHT_PACKAGE']).nullable().optional(),
+  laundryModelTypeSnapshot: z.enum(['PER_KG', 'WEIGHT_PACKAGE', 'FAMILY_PACKAGE']).nullable().optional(),
   laundryWeightKg: z.number().positive().max(10_000).refine((value) => Number(value.toFixed(3)) === value).nullable().optional(),
   laundryPriceBreakdownSnapshot: z.string().trim().max(500).nullable().optional(),
   laundryServicesSnapshot: z.string().trim().max(1000).nullable().optional(),
@@ -82,6 +82,23 @@ export const orderItemInputSchema = z.object({
   laundryMinimumWeightKgSnapshot: z.number().positive().nullable().optional(),
   laundryBillingIncrementKgSnapshot: z.number().positive().nullable().optional(),
   laundryMinimumChargeSnapshot: z.number().int().nonnegative().nullable().optional(),
+  familyPackageSnapshot: z.object({
+    modelId: z.string().uuid(),
+    modelName: z.string().trim().min(2).max(80),
+    packagePrice: z.number().int().positive(),
+    includedPieces: z.number().int().min(1).max(1000),
+    overagePricePerPiece: z.number().int().nonnegative().nullable(),
+    minimumCharge: z.number().int().nonnegative().nullable(),
+    pieceCount: z.number().int().min(0).max(10000),
+    manualTotalPrice: z.number().int().positive().nullable(),
+    contents: z.array(z.object({
+      articleId: z.string().uuid(),
+      articleName: z.string().trim().min(1).max(80),
+      familyName: z.string().trim().max(80).nullable(),
+      quantity: z.number().int().min(1).max(1000),
+      careInstructions: z.string().max(1000).nullable(),
+    })).max(500),
+  }).nullable().optional(),
 }).superRefine((item, context) => {
   const unite = item.billingUnit ?? 'PIECE'
   const quantite = item.quantity ?? 1
@@ -89,8 +106,36 @@ export const orderItemInputSchema = z.object({
     if (item.catalogEntryId) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['catalogEntryId'], message: 'Une ligne modèle ne peut pas dépendre d’un tarif à la pièce.' })
     }
-    if (!item.laundryModelNameSnapshot || !item.laundryModelTypeSnapshot || item.laundryWeightKg == null) {
+    const forfaitFamille = item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE'
+    if (!item.laundryModelNameSnapshot || !item.laundryModelTypeSnapshot || (!forfaitFamille && item.laundryWeightKg == null)) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'Actualisez les informations du modèle commercial avant de valider.' })
+    }
+    if (forfaitFamille) {
+      const snapshot = item.familyPackageSnapshot
+      if (!snapshot || snapshot.modelId !== item.laundryModelId || snapshot.modelName !== item.laundryModelNameSnapshot) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['familyPackageSnapshot'], message: 'La composition du forfait famille est manquante ou ne correspond pas au modèle.' })
+      } else {
+        const count = snapshot.contents.reduce((sum, content) => sum + content.quantity, 0)
+        if (snapshot.contents.length === 0 || snapshot.pieceCount !== count) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['familyPackageSnapshot'], message: 'Ajoutez les articles et vérifiez leurs quantités.' })
+        }
+        const expected = count <= snapshot.includedPieces
+          ? Math.max(snapshot.packagePrice, snapshot.minimumCharge ?? 0)
+          : snapshot.overagePricePerPiece !== null
+            ? Math.max(snapshot.packagePrice + (count - snapshot.includedPieces) * snapshot.overagePricePerPiece, snapshot.minimumCharge ?? 0)
+            : null
+        if (expected !== null && item.price !== expected) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['price'], message: `Le total du forfait doit être de ${expected} FCFA.` })
+        }
+        if (expected === null && (snapshot.manualTotalPrice !== item.price || item.price < snapshot.packagePrice)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['price'], message: 'Confirmez un prix global au moins égal au prix du forfait.' })
+        }
+      }
+      if (unite !== 'FLAT' || quantite !== 1 || item.unitPrice !== item.price || item.priceStatus !== 'CONFIRMED') {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['billingUnit'], message: 'Un forfait famille doit être une ligne forfaitaire globale à prix confirmé.' })
+      }
+    } else if (item.familyPackageSnapshot != null) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['familyPackageSnapshot'], message: 'La composition famille ne peut être utilisée qu’avec un modèle famille.' })
     }
     if (item.laundryModelTypeSnapshot === 'PER_KG' && unite !== 'KG') {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['billingUnit'], message: 'Un modèle au kilo doit être facturé en kg.' })
@@ -99,7 +144,7 @@ export const orderItemInputSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['billingUnit'], message: 'Un forfait de poids doit rester une ligne forfaitaire.' })
     }
   } else if (
-    item.laundryModelNameSnapshot != null || item.laundryModelTypeSnapshot != null || item.laundryWeightKg != null
+    item.laundryModelNameSnapshot != null || item.laundryModelTypeSnapshot != null || item.laundryWeightKg != null || item.familyPackageSnapshot != null
   ) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'La référence du modèle commercial est manquante.' })
   }

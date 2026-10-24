@@ -9,6 +9,7 @@ import {
   deleteCatalogFamily,
   deleteCatalogService,
   loadCatalogStructure,
+  initializeCatalogModelTemplates,
   setCatalogArticleActive,
   setCatalogServiceActive,
   updateCatalogArticle,
@@ -60,6 +61,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof FolderTree }> = [
 
 interface Props {
   tenantId: string
+  canManage?: boolean
   onCatalogChanged: () => Promise<void>
 }
 
@@ -68,7 +70,7 @@ function texteErreur(error: unknown): string {
 }
 
 /** Administration des référentiels normalisés déjà présents en base. */
-export default function CatalogStructureManager({ tenantId, onCatalogChanged }: Props) {
+export default function CatalogStructureManager({ tenantId, canManage = false, onCatalogChanged }: Props) {
   const [tab, setTab] = useState<Tab>('families')
   const [structure, setStructure] = useState<CatalogStructure>({ families: [], articles: [], services: [] })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
@@ -80,13 +82,14 @@ export default function CatalogStructureManager({ tenantId, onCatalogChanged }: 
     setChargement(true)
     setErreur(null)
     try {
+      if (canManage) await initializeCatalogModelTemplates()
       setStructure(await loadCatalogStructure(tenantId))
     } catch (cause) {
       setErreur(texteErreur(cause))
     } finally {
       setChargement(false)
     }
-  }, [tenantId])
+  }, [tenantId, canManage])
 
   useEffect(() => {
     void recharger()

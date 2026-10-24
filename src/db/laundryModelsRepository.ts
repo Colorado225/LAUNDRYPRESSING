@@ -23,8 +23,19 @@ export interface LaundryModelServiceReference extends LaundryModelServiceInput {
   service_active: boolean
 }
 
+export interface LaundryModelPackageArticle {
+  modelId?: string
+  articleId: string
+  articleName: string
+  familyId: string
+  familyName: string
+  careInstructions: string | null
+}
+
 export interface LaundryModelRecord extends LaundryModelRow {
   services: LaundryModelServiceReference[]
+  familyPackageArticles: LaundryModelPackageArticle[]
+  familyPackageScope: Array<{ familyId: string | null; articleId: string | null }>
 }
 
 export type LaundryModelDraft = {
@@ -46,6 +57,9 @@ export type LaundryModelDraft = {
   turnaround_days: number | null
   is_active: boolean
   sort_order: number
+  included_pieces?: number | null
+  overage_price_per_piece?: number | null
+  scope?: Array<{ family_id: string | null; article_id: string | null }>
 }
 
 function mapLocal(model: LaundryModelRecord, tenantId: string): LocalLaundryModel {
@@ -60,6 +74,10 @@ function mapLocal(model: LaundryModelRecord, tenantId: string): LocalLaundryMode
     packagePrice: model.package_price,
     includedWeightKg: model.included_weight_kg,
     overagePricePerKg: model.overage_price_per_kg,
+    includedPieces: model.included_pieces,
+    overagePricePerPiece: model.overage_price_per_piece,
+    familyPackageScope: model.familyPackageScope,
+    familyPackageArticles: model.familyPackageArticles.map(({ modelId: _modelId, ...article }) => article),
     minimumWeightKg: model.minimum_weight_kg,
     billingIncrementKg: model.billing_increment_kg,
     minimumCharge: model.minimum_charge,
@@ -101,7 +119,8 @@ export async function loadLaundryModels(tenantId: string): Promise<LaundryModelR
     .order('name')
   if (modelsError) throw errorMessage(modelsError)
 
-  const ids = (models ?? []).map((model) => model.id)
+  const allModels = models ?? []
+  const ids = allModels.map((model) => model.id)
   if (ids.length === 0) return []
 
   const { data: links, error: linksError } = await supabase
@@ -121,12 +140,52 @@ export async function loadLaundryModels(tenantId: string): Promise<LaundryModelR
       .eq('tenant_id', tenantId)
       .in('id', serviceIds)
     if (servicesError) throw errorMessage(servicesError)
-    for (const service of services ?? []) {
-      serviceNames.set(service.id, { name: service.name, active: service.is_active })
-    }
+    for (const service of services ?? []) serviceNames.set(service.id, { name: service.name, active: service.is_active })
   }
 
-  return (models ?? []).map((model) => ({
+  const familyModelIds = allModels.filter((model) => model.model_type === 'FAMILY_PACKAGE').map((model) => model.id)
+  let packageArticles: LaundryModelPackageArticle[] = []
+  let scopeRows: Array<{ model_id: string; family_id: string | null; article_id: string | null }> = []
+  if (familyModelIds.length > 0) {
+    const { data: scope, error: scopeError } = await supabase
+      .from('laundry_model_catalog_scope')
+      .select('model_id, family_id, article_id')
+      .eq('tenant_id', tenantId)
+      .in('model_id', familyModelIds)
+    if (scopeError) throw errorMessage(scopeError)
+    scopeRows = scope ?? []
+    const { data: articles, error: articlesError } = await supabase
+      .from('catalog_articles')
+      .select('id, family_id, name, care_instructions, is_active')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+      .order('sort_order')
+      .order('name')
+    if (articlesError) throw errorMessage(articlesError)
+    const { data: families, error: familiesError } = await supabase
+      .from('catalog_families')
+      .select('id, name, is_active')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+    if (familiesError) throw errorMessage(familiesError)
+    const familyNames = new Map((families ?? []).map((family) => [family.id, family.name]))
+    packageArticles = familyModelIds.flatMap((modelId) => {
+      const modelScope = (scope ?? []).filter((row) => row.model_id === modelId)
+      return (articles ?? [])
+        .filter((article) => familyNames.has(article.family_id))
+        .filter((article) => modelScope.length === 0 || modelScope.some((row) => row.article_id === article.id || row.family_id === article.family_id))
+        .map((article) => ({
+          modelId,
+          articleId: article.id,
+          articleName: article.name,
+          familyId: article.family_id,
+          familyName: familyNames.get(article.family_id)!,
+          careInstructions: article.care_instructions,
+        }))
+    })
+  }
+
+  return allModels.map((model) => ({
     ...model,
     services: (links ?? [])
       .filter((link) => link.model_id === model.id)
@@ -140,6 +199,8 @@ export async function loadLaundryModels(tenantId: string): Promise<LaundryModelR
           service_active: reference?.active ?? false,
         }
       }),
+    familyPackageArticles: packageArticles.filter((article) => article.modelId === model.id).map(({ modelId: _modelId, ...article }) => article),
+    familyPackageScope: scopeRows.filter((row) => row.model_id === model.id).map(({ family_id, article_id }) => ({ familyId: family_id, articleId: article_id })),
   }))
 }
 
@@ -167,10 +228,13 @@ export async function saveLaundryModel(
     description: draft.description,
     model_type: draft.model_type,
     audience: draft.audience,
+    pricing_basis: draft.model_type === 'FAMILY_PACKAGE' ? 'PIECE' : 'KG',
     price_per_kg: draft.price_per_kg,
     package_price: draft.package_price,
     included_weight_kg: draft.included_weight_kg,
     overage_price_per_kg: draft.overage_price_per_kg,
+    included_pieces: draft.included_pieces ?? null,
+    overage_price_per_piece: draft.overage_price_per_piece ?? null,
     minimum_weight_kg: draft.minimum_weight_kg,
     billing_increment_kg: draft.billing_increment_kg,
     minimum_charge: draft.minimum_charge,
@@ -189,6 +253,7 @@ export async function saveLaundryModel(
   const { data, error } = await getSupabaseClient().rpc('save_laundry_model', {
     p_model: model as unknown as import('@/types/database').Json,
     p_services: payloadServices as unknown as import('@/types/database').Json,
+    p_scope: (draft.scope ?? []) as unknown as import('@/types/database').Json,
   })
   if (error) throw errorMessage(error)
   if (!data) throw new Error('Le modèle commercial n’a pas pu être enregistré.')
