@@ -9,7 +9,13 @@ import {
   ordreDependances,
   resoudre,
 } from '../scripts/lib/bundle.mjs'
-import { FONCTIONS, avertissementsDeploiement } from '../scripts/deploy-fonctions.mjs'
+import {
+  FONCTIONS,
+  avertissementsDeploiement,
+  erreursPrerequisPaiement,
+  lireSecrets,
+  optionsDepuisArguments,
+} from '../scripts/deploy-fonctions.mjs'
 
 /**
  * Assembleur des Edge Functions.
@@ -180,5 +186,110 @@ describe('avertissementsDeploiement', () => {
 
     expect(alertes).toHaveLength(1)
     expect(alertes[0]).toMatch(/fictifs/)
+  })
+})
+
+describe('erreursPrerequisPaiement', () => {
+  it('autorise le déploiement de démonstration sans identifiants CinetPay', () => {
+    expect(erreursPrerequisPaiement({})).toEqual([])
+  })
+
+  it('refuse un jeu partiel d’identifiants avant tout envoi au serveur', () => {
+    expect(erreursPrerequisPaiement({ CINETPAY_API_KEY: 'cle-test' })).toEqual([
+      'CINETPAY_SITE_ID manque : les identifiants requis sont incomplets.',
+      'CINETPAY_SECRET_KEY manque : les identifiants requis sont incomplets.',
+      'APP_URL manque : indiquez l’adresse publique de l’application.',
+    ])
+  })
+
+  it('exige une adresse publique HTTPS pour le mode production', () => {
+    const valeurs = {
+      CINETPAY_API_KEY: 'cle-test',
+      CINETPAY_SITE_ID: 'site-test',
+      CINETPAY_SECRET_KEY: 'secret-test',
+      APP_URL: 'http://localhost:5173',
+      CINETPAY_MODE: 'production',
+    }
+
+    expect(erreursPrerequisPaiement(valeurs)).toEqual([
+      'APP_URL doit être une adresse HTTPS publique en mode production.',
+    ])
+  })
+
+  it('accepte les identifiants complets et l’adresse publique', () => {
+    expect(
+      erreursPrerequisPaiement({
+        CINETPAY_API_KEY: 'cle-test',
+        CINETPAY_SITE_ID: 'site-test',
+        CINETPAY_SECRET_KEY: 'secret-test',
+        APP_URL: 'https://pressing.example.ci',
+        CINETPAY_MODE: 'production',
+      }),
+    ).toEqual([])
+  })
+
+  it('autorise localhost et une clé secrète absente pour un essai en mode test', () => {
+    expect(
+      erreursPrerequisPaiement({
+        CINETPAY_API_KEY: 'cle-test',
+        CINETPAY_SITE_ID: 'site-test',
+        APP_URL: 'http://localhost:5173',
+        CINETPAY_MODE: 'test',
+      }),
+    ).toEqual([])
+  })
+})
+
+describe('lireSecrets', () => {
+  it('transmet les valeurs lues dans .env sans les exposer dans la sortie', () => {
+    expect(
+      lireSecrets({
+        CINETPAY_API_KEY: 'cle-factice-pour-test',
+        CINETPAY_SITE_ID: 'site-factice-pour-test',
+        CINETPAY_SECRET_KEY: 'secret-factice-pour-test',
+        CINETPAY_MODE: 'production',
+        VARIABLE_SANS_RAPPORT: 'ignoree',
+      }),
+    ).toEqual([
+      { name: 'CINETPAY_API_KEY', value: 'cle-factice-pour-test' },
+      { name: 'CINETPAY_SITE_ID', value: 'site-factice-pour-test' },
+      { name: 'CINETPAY_SECRET_KEY', value: 'secret-factice-pour-test' },
+      { name: 'CINETPAY_MODE', value: 'production' },
+    ])
+  })
+
+  it('ignore les secrets absents et vides sans écraser la configuration distante', () => {
+    expect(lireSecrets({ CINETPAY_API_KEY: '', APP_ENV: 'production' })).toEqual([
+      { name: 'APP_ENV', value: 'production' },
+    ])
+  })
+})
+
+describe('optionsDepuisArguments', () => {
+  it('pousse les secrets par défaut', () => {
+    // Coller une clé CinetPay dans `.env` puis lancer la commande doit suffire :
+    // déployer une fonction sans ses clés ne se verrait qu'au premier paiement.
+    expect(optionsDepuisArguments([])).toEqual({
+      verifierSeulement: false,
+      pousserSecrets: true,
+      secretsSeulement: false,
+    })
+  })
+
+  it('permet de déployer les fonctions seules', () => {
+    expect(optionsDepuisArguments(['--sans-secrets']).pousserSecrets).toBe(false)
+  })
+
+  it('accepte --verifier et --dry-run comme synonymes, et --secrets pour forcer', () => {
+    expect(optionsDepuisArguments(['--verifier']).verifierSeulement).toBe(true)
+    expect(optionsDepuisArguments(['--dry-run']).verifierSeulement).toBe(true)
+    expect(optionsDepuisArguments(['--sans-secrets', '--secrets']).pousserSecrets).toBe(true)
+  })
+
+  it('déduit que --secrets-seulement pousse aussi les secrets', () => {
+    const options = optionsDepuisArguments(['--secrets-seulement'])
+
+    expect(options.secretsSeulement).toBe(true)
+    expect(options.pousserSecrets).toBe(true)
   })
 })

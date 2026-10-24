@@ -104,9 +104,11 @@ SEED_OWNER_PASSWORD=<mot de passe ≥ 6 car.>
 SEED_TENANT_NAME=Pressing Cocody
 ```
 
-Facultatives : `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`
-(sans elles l'application fonctionne, mais le bouton « Payer par Mobile Money »
-reste inopérant).
+Sans `CINETPAY_API_KEY`, `CINETPAY_SITE_ID` et `CINETPAY_SECRET_KEY`, le
+bouton « Payer par Mobile Money » affiche un toast de **simulation** : le
+parcours est validé, mais la commande reste à régler et aucun argent n'est encaissé.
+Renseignez ces identifiants pour la production, puis lancez
+`npm run deploy:fonctions` (le jeton Supabase est requis).
 
 > ⚠️ **Toute variable préfixée `VITE_` est embarquée dans le bundle et donc publique.**
 > Les autres — y compris `SUPABASE_SERVICE_ROLE_KEY` et `CINETPAY_SECRET_KEY` —
@@ -211,11 +213,11 @@ Ouvrir <http://localhost:5173>.
 | `npm run preview` | Sert le build de production (`0.0.0.0:4173`) |
 | `npm run lint` | ESLint (`.ts`, `.tsx`, `.js`) |
 | `npm run typecheck` | `tsc --noEmit` seul |
-| `npm test` | Suite Vitest complète (518 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
+| `npm test` | Suite Vitest complète (546 tests : synchronisation, rôles, caisse, clients, stock, tableau de bord, rapports, abonnement, pagination, langue, isolation, installation, base gérée, simulateur CinetPay, assemblage des fonctions, notifications client) |
 | `npm run recette` | Recette **lecture seule** d'un projet déployé (7 contrôles : API, RLS, schéma, formules, webhook) |
 | `npm run setup` | Installation complète depuis `.env` (schéma, fonctions, secrets, compte) |
 | `npm run simulateur` | Faux CinetPay local (`0.0.0.0:54321`) pour tester le paiement en mode `test` |
-| `npm run deploy:fonctions` | Assemble et déploie les Edge Functions par l'API Supabase (`--verifier`, `--secrets`) |
+| `npm run deploy:fonctions` | Assemble et déploie les Edge Functions par l'API Supabase (`--verifier`, secrets poussés par défaut ; `--sans-secrets` pour les omettre) |
 | `npm run setup:check` | Valide le `.env` puis s'arrête |
 | `npm run setup:dry` | Affiche les actions d'installation sans les exécuter |
 | `npm run sql:verify` | Rejoue migrations et tests SQL sur un PostgreSQL jetable (**aucun** Supabase requis) |
@@ -633,9 +635,20 @@ supabase functions deploy cinetpay-webhook --no-verify-jwt
 
 ```bash
 npm run deploy:fonctions -- --verifier    # assemble, inspecte, ne déploie rien
-npm run deploy:fonctions                  # crée ou met à jour les deux fonctions
-npm run deploy:fonctions -- --secrets     # pousse les secrets puis déploie
+npm run deploy:fonctions                  # pousse les secrets puis déploie
+npm run deploy:fonctions -- --sans-secrets  # fonctions seules
 ```
+
+**Mise en service :** renseignez `CINETPAY_API_KEY`, `CINETPAY_SITE_ID`,
+`CINETPAY_SECRET_KEY` et votre `APP_URL` public dans `.env`, gardez
+`CINETPAY_MODE=production`, puis lancez `npm run deploy:fonctions` (le jeton
+`SUPABASE_ACCESS_TOKEN` doit aussi être configuré). La commande lit `.env`,
+pousse les secrets et déploie les fonctions : aucun changement du script ni
+réglage manuel dans le Dashboard.
+
+**Tant qu'aucune clé n'est installée**, le bouton « Payer par Mobile Money »
+n'affiche pas d'erreur : le paiement est **simulé** (référence `SIM-…`), le
+message le dit, et la commande reste à régler.
 
 Les fonctions sont assemblées en **un fichier unique** (imports `_shared`
 résolus), l'API d'administration Supabase n'acceptant qu'un seul corps de

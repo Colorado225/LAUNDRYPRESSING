@@ -196,8 +196,15 @@ export interface LocalPendingPayment {
   amount: number
   /** Opérateur choisi sur le guichet CinetPay : inconnu au moment de l'initiation. */
   method: PaymentMethod | null
-  /** `pending` = guichet ouvert, en attente de la confirmation serveur. */
-  status: 'pending' | 'sending' | 'error'
+  /**
+   * `pending` = guichet ouvert, en attente de la confirmation serveur.
+   *
+   * `simulated` = aucun guichet : CinetPay n'est pas encore installé, et le
+   * paiement a été **simulé** pour éprouver le parcours. Cette ligne ne change
+   * jamais le statut de la commande : rien n'a été encaissé, et le serveur
+   * interdit de toute façon au client de modifier `payment_status`.
+   */
+  status: 'pending' | 'sending' | 'error' | 'simulated'
   /** Identifiant de transaction CinetPay (`transaction_id`). */
   reference: string | null
   createdAt: string

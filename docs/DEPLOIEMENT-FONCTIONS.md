@@ -59,10 +59,11 @@ VITE_SUPABASE_URL=https://<ref>.supabase.co   # suffit à déduire le <ref>
 # ou SUPABASE_PROJECT_REF=<ref>
 ```
 
-Les secrets CinetPay poussés par `--secrets` : `CINETPAY_API_KEY`,
-`CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`, `CINETPAY_BASE_URL`,
-`CINETPAY_MODE`, `CINETPAY_NOTIFY_URL`, `APP_ENV`, `APP_URL`. Les valeurs ne
-sont **jamais** affichées dans le journal : un log de déploiement fuite vite.
+Les secrets CinetPay lus dans `.env` et poussés automatiquement :
+`CINETPAY_API_KEY`, `CINETPAY_SITE_ID`, `CINETPAY_SECRET_KEY`,
+`CINETPAY_BASE_URL`, `CINETPAY_MODE`, `CINETPAY_NOTIFY_URL`, `APP_ENV`,
+`APP_URL`. Les valeurs ne sont **jamais** affichées dans le journal : un log
+de déploiement fuite vite.
 
 ---
 
@@ -71,9 +72,21 @@ sont **jamais** affichées dans le journal : un log de déploiement fuite vite.
 ```bash
 npm run deploy:fonctions -- --verifier   # assemble, écrit supabase/functions/.build/, aucun appel réseau
 npm run deploy:fonctions                 # crée ou met à jour les deux fonctions
-npm run deploy:fonctions -- --secrets    # pousse les secrets PUIS déploie
+npm run deploy:fonctions -- --sans-secrets   # déploie sans toucher aux secrets
 npm run deploy:fonctions -- --secrets-seulement
 ```
+
+**Les secrets sont poussés par défaut.** Après avoir renseigné dans `.env`
+les identifiants CinetPay requis (`CINETPAY_API_KEY`, `CINETPAY_SITE_ID`,
+`CINETPAY_SECRET_KEY`) et l'adresse publique de l'application (`APP_URL`),
+lancez cette seule commande : elle lit `.env`, transmet les secrets à Supabase
+et déploie ou met à jour les deux fonctions. Aucun changement au script ni
+copier-coller dans le Dashboard n'est nécessaire.
+
+Le jeton `SUPABASE_ACCESS_TOKEN` doit aussi être présent dans `.env` pour
+autoriser l'opération. **Coller une valeur dans `.env` ne peut pas, à lui seul,
+modifier le serveur Supabase** : il faut exécuter la commande de déploiement une
+fois, afin que les fonctions hébergées reçoivent les secrets et le nouveau code.
 
 `--dry-run` est un synonyme de `--verifier`. Le dossier `.build/` est ignoré par
 Git : c'est un artefact d'inspection, pas la source.
@@ -187,10 +200,31 @@ Supabase, pas la vôtre : le simulateur y est injoignable. Deux options :
 
 ---
 
+### Tant que CinetPay n'est pas installé : le paiement simulé
+
+Le bouton « Payer par Mobile Money » reste actif, mais l'Edge Function répond
+503 (`provider_not_configured`) — ou 404 si elle n'est pas déployée. L'application
+ne montre alors **pas** d'erreur technique : elle enregistre un paiement
+**simulé** (`pendingPayments.status = 'simulated'`, référence `SIM-…`) et affiche
+un toast qui dit exactement ce qui s'est passé — rien n'a été encaissé, la
+commande reste à régler. La simulation valide uniquement le parcours de l'écran,
+pas le paiement réel.
+
+Ce que la simulation ne fait **jamais** :
+
+- modifier `orders.payment_status` : le serveur l'interdit au client
+  (`guard_order_update`, migration 003) et une recette fictive fausserait le
+  reste à encaisser ;
+- partir vers Supabase : ce n'est pas une synchronisation.
+
+Un vrai refus (droits, montant, réseau tombé) reste une erreur visible : seule
+l'absence de CinetPay déclenche la simulation.
+
 ## 7. Ce qui reste hors de portée sans identifiants marchands
 
 - Aucune fonction n'a encore été déployée sur le projet Supabase : le
-  déploiement réel se fait au premier `npm run deploy:fonctions`.
+  déploiement réel se fait au premier `npm run deploy:fonctions`, une fois
+  `SUPABASE_ACCESS_TOKEN` présent dans `.env`.
 - Le paiement CinetPay réel (vrai guichet, vrai HMAC de CinetPay, vrai
   encaissement) ne peut pas être exercé : il faut `CINETPAY_API_KEY`,
   `CINETPAY_SITE_ID` et `CINETPAY_SECRET_KEY` de production.
@@ -199,6 +233,6 @@ Supabase, pas la vôtre : le simulateur y est injoignable. Deux options :
   `https://<ref>.supabase.co/functions/v1/cinetpay-webhook`.
 
 Le jour où les identifiants arrivent : passer `CINETPAY_MODE=production`,
-renseigner les trois clés, `npm run deploy:fonctions -- --secrets`, puis rejouer
+renseigner les trois identifiants, l’URL publique, puis `npm run deploy:fonctions` ; rejouer
 un paiement réel de petit montant. Le garde-fou refusera la bascule si une clé
 d'essai traîne encore.

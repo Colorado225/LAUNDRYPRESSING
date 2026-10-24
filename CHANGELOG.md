@@ -6,6 +6,34 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.14.0] — 2026-10-24
+
+Préparer le paiement productif CinetPay ; la simulation locale sécurisée valide le parcours sans encaisser.
+
+### Ajouté
+
+- **Paiement simulé** avant l'installation des clés : le bouton « Payer par
+  Mobile Money » n'affiche plus une erreur technique mais enregistre une trace
+  locale (`status: 'simulated'`, référence `SIM-…`) et un toast qui précise que
+  rien n'a été encaissé. Il ne touche **pas** au statut de paiement de la
+  commande — le serveur l'interdit au client et une recette fictive fausserait
+  le reste à encaisser.
+- Seuls le 503 explicite « CinetPay non configuré » et le 404 « fonction non
+  déployée » déclenchent la simulation ; un refus, une panne réseau ou une
+  erreur imprévue restent visibles et ne valident rien.
+
+### Modifié
+
+- **`npm run deploy:fonctions` lit les secrets dans `.env` et les pousse par défaut**
+  (`--sans-secrets` pour s'en passer). Le script vérifie qu'un jeu de clés
+  partiel ou une adresse locale ne puisse pas passer pour une configuration
+  de production ; renseigner les identifiants et relancer la commande suffit,
+  sans modifier le script.
+
+### Vérifié
+
+- 546 tests sur 37 fichiers, **174 contrôles SQL**, `tsc`, ESLint, build.
+
 ## [0.13.0] — 2026-10-23
 
 Prévenir le client : WhatsApp ou appel, sans fournisseur ni compte à créer.

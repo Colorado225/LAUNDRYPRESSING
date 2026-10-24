@@ -174,8 +174,18 @@ Deno.serve(async (request: Request): Promise<Response> => {
   try {
     config = readConfig()
   } catch (configError) {
+    // La simulation est réservée à l'absence totale d'identifiants. Une clé
+    // d'essai en mode production ou des identifiants partiels sont une vraie
+    // erreur de configuration : les transformer en toast « simulation réussie »
+    // masquerait une mise en production ratée.
+    const identifiantsPresents = [
+      Deno.env.get('CINETPAY_API_KEY'),
+      Deno.env.get('CINETPAY_SITE_ID'),
+      Deno.env.get('CINETPAY_SECRET_KEY'),
+    ].some((valeur) => Boolean(valeur?.trim()))
+
     return apiError(
-      'provider_not_configured',
+      identifiantsPresents ? 'provider_config_invalid' : 'provider_not_configured',
       configError instanceof Error ? configError.message : 'CinetPay non configuré.',
       503,
       origin,

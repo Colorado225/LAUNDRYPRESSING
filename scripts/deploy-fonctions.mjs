@@ -13,8 +13,8 @@
  * -----------------------------------------------------------------------------
  *  1. assemble chaque fonction en un fichier unique (`_shared` inclus) ;
  *  2. affiche ce qu'il va envoyer (`--verifier`, aucun appel réseau) ;
- *  3. crée ou met à jour la fonction selon qu'elle existe déjà ;
- *  4. `--secrets` pousse les variables CinetPay comme secrets du projet.
+ *  3. pousse les variables CinetPay comme secrets du projet ;
+ *  4. crée ou met à jour chaque fonction selon qu'elle existe déjà.
  *
  * ⚠ `cinetpay-webhook` est déployé avec `verify_jwt = false` : CinetPay ne
  *   peut pas fournir de JWT Supabase. Sa sécurité vient du HMAC (x-token) et de
@@ -22,9 +22,14 @@
  *
  * Usage
  *   node scripts/deploy-fonctions.mjs --verifier     # assemble, ne déploie rien
- *   node scripts/deploy-fonctions.mjs                # déploie les deux fonctions
- *   node scripts/deploy-fonctions.mjs --secrets      # secrets CinetPay + déploiement
+ *   node scripts/deploy-fonctions.mjs                # secrets + les deux fonctions
+ *   node scripts/deploy-fonctions.mjs --sans-secrets # fonctions seules
  *   node scripts/deploy-fonctions.mjs --secrets-seulement
+ *
+ * Les secrets sont poussés **par défaut** : c'est le geste attendu quand on
+ * colle une clé CinetPay dans `.env`. Exiger un drapeau supplémentaire ferait
+ * déployer une fonction sans ses clés, et l'erreur n'apparaîtrait qu'au premier
+ * paiement réel — au comptoir, devant un client.
  */
 
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
@@ -42,7 +47,7 @@ const FONCTIONS = [
   { slug: 'cinetpay-webhook', verifyJwt: false },
 ]
 
-/** Variables poussées par `--secrets`. `null` = ignorée si absente du `.env`. */
+/** Secrets CinetPay transmis si renseignés dans `.env`; aucun secret n'est affiché. */
 const SECRETS = [
   'CINETPAY_API_KEY',
   'CINETPAY_SITE_ID',
@@ -56,10 +61,24 @@ const SECRETS = [
 
 const API = 'https://api.supabase.com/v1'
 
-const args = new Set(process.argv.slice(2))
-const verifierSeulement = args.has('--verifier') || args.has('--dry-run')
-const pousserSecrets = args.has('--secrets') || args.has('--secrets-seulement')
-const secretsSeulement = args.has('--secrets-seulement')
+/**
+ * Options de ligne de commande, isolées pour être testables sans lancer un
+ * déploiement : la règle « secrets par défaut » mérite un test, pas une
+ * relecture attentive.
+ */
+export function optionsDepuisArguments(argv = []) {
+  const args = new Set(argv)
+
+  return {
+    verifierSeulement: args.has('--verifier') || args.has('--dry-run'),
+    pousserSecrets: !args.has('--sans-secrets') || args.has('--secrets'),
+    secretsSeulement: args.has('--secrets-seulement'),
+  }
+}
+
+const { verifierSeulement, pousserSecrets, secretsSeulement } = optionsDepuisArguments(
+  process.argv.slice(2),
+)
 
 function echec(message) {
   console.error(`✗ ${message}`)
@@ -103,16 +122,16 @@ function assemblerFonctions() {
 /* 2. Secrets                                                                 */
 /* -------------------------------------------------------------------------- */
 
-function lireSecrets() {
-  const valeurs = []
+export function lireSecrets(source = lireValeursEnv()) {
+  const secrets = []
 
   for (const nom of SECRETS) {
-    const valeur = process.env[nom]
+    const valeur = source[nom]
     if (valeur === undefined || valeur === '') continue
-    valeurs.push({ name: nom, value: valeur })
+    secrets.push({ name: nom, value: valeur })
   }
 
-  return valeurs
+  return secrets
 }
 
 async function pousserLesSecrets(config, secrets) {
@@ -199,7 +218,7 @@ async function deploiement(config, fonction, existe) {
  * garder un `.env` de recette versionné à la main tout en surchargeant
  * localement avec le simulateur.
  */
-export function lireConfig() {
+function lireValeursEnv() {
   const valeurs = {}
 
   for (const nom of ['.env', '.env.local']) {
@@ -212,7 +231,11 @@ export function lireConfig() {
     if (typeof valeur === 'string') valeurs[cle] = valeur
   }
 
-  return buildConfig(valeurs)
+  return valeurs
+}
+
+export function lireConfig() {
+  return buildConfig(lireValeursEnv())
 }
 
 /**
@@ -224,6 +247,46 @@ export function lireConfig() {
  * « Payer » renverrait alors une erreur réseau au lieu d'être simplement inactif.
  * Mieux vaut le dire avant d'envoyer le code que le découvrir chez un client.
  */
+export function erreursPrerequisPaiement(valeurs) {
+  const mode = (valeurs.CINETPAY_MODE ?? 'production').trim().toLowerCase()
+  const identifiants = [
+    ['CINETPAY_API_KEY', valeurs.CINETPAY_API_KEY],
+    ['CINETPAY_SITE_ID', valeurs.CINETPAY_SITE_ID],
+    ...(mode === 'test' ? [] : [['CINETPAY_SECRET_KEY', valeurs.CINETPAY_SECRET_KEY]]),
+  ]
+  const toutesLesCles = [
+    valeurs.CINETPAY_API_KEY,
+    valeurs.CINETPAY_SITE_ID,
+    valeurs.CINETPAY_SECRET_KEY,
+  ]
+  const enCours = toutesLesCles.some((valeur) => Boolean(valeur?.trim()))
+  if (!enCours) return []
+
+  const erreurs = identifiants
+    .filter(([, valeur]) => !valeur?.trim())
+    .map(([nom]) => `${nom} manque : les identifiants requis sont incomplets.`)
+
+  const appUrl = (valeurs.APP_URL ?? '').trim()
+
+  if (!appUrl) {
+    erreurs.push('APP_URL manque : indiquez l’adresse publique de l’application.')
+  } else if (mode !== 'test') {
+    try {
+      const adresse = new URL(appUrl)
+      if (
+        adresse.protocol !== 'https:' ||
+        ['localhost', '127.0.0.1', '[::1]'].includes(adresse.hostname.toLowerCase())
+      ) {
+        erreurs.push('APP_URL doit être une adresse HTTPS publique en mode production.')
+      }
+    } catch {
+      erreurs.push('APP_URL doit être une adresse HTTPS valide en mode production.')
+    }
+  }
+
+  return erreurs
+}
+
 export function avertissementsDeploiement(config) {
   const alertes = []
   const { mode = 'production', baseUrl } = config.cinetpay ?? {}
@@ -272,7 +335,11 @@ async function principal() {
   if (!config.projectRef) echec('SUPABASE_PROJECT_REF (ou VITE_SUPABASE_URL) absent du fichier .env.')
 
   if (pousserSecrets) {
-    await pousserLesSecrets(config, lireSecrets())
+    const erreursPaiement = erreursPrerequisPaiement(config.raw)
+    if (erreursPaiement.length > 0) {
+      echec(`Configuration CinetPay incomplète :\n  • ${erreursPaiement.join('\n  • ')}`)
+    }
+    await pousserLesSecrets(config, lireSecrets(config.raw))
   }
 
   if (secretsSeulement) return
@@ -291,6 +358,17 @@ async function principal() {
     `\nAdresses :\n  ${config.supabaseUrl}/functions/v1/cinetpay-init\n  ${config.supabaseUrl}/functions/v1/cinetpay-webhook`,
   )
   console.log('\nRappel : le webhook doit être joignable publiquement pour CinetPay.')
+
+  // Sans clés, les fonctions existent mais répondent 503 : l'application
+  // bascule alors sur un paiement simulé. Autant le dire ici plutôt que de
+  // laisser le comptoir le découvrir devant un client.
+  if (!process.env.CINETPAY_API_KEY && !lireSecrets().some((s) => s.name === 'CINETPAY_API_KEY')) {
+    console.log(
+      '\n• Aucune clé CinetPay installée : le bouton « Payer » simulera le paiement.\n' +
+        '  Collez CINETPAY_API_KEY, CINETPAY_SITE_ID et CINETPAY_SECRET_KEY dans .env,\n' +
+        '  puis relancez cette commande : rien d’autre à modifier.',
+    )
+  }
 }
 
 /**
@@ -307,4 +385,4 @@ if (lanceDirectement) {
   principal().catch((erreur) => echec(erreur instanceof Error ? erreur.message : String(erreur)))
 }
 
-export { FONCTIONS, SECRETS, lireSecrets, assemblerFonctions }
+export { FONCTIONS, SECRETS, assemblerFonctions }

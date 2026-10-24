@@ -134,6 +134,12 @@ tout le reste du circuit.
 **Le paiement nécessite internet.** Le bouton est désactivé hors ligne, avec un
 message explicite : la commande reste enregistrée, le règlement se fera plus tard.
 
+**Sans clés CinetPay**, un toast de simulation valide le parcours de l'écran ; il
+précise que rien n'a été encaissé. La commande reste à régler. Pour passer en
+production, renseigner les identifiants marchands dans `.env`, avec l'URL publique
+de l'application, puis exécuter `npm run deploy:fonctions` : cette commande pousse
+les secrets et met à jour les fonctions sans modification du script.
+
 > **Arrondi.** CinetPay impose un montant multiple de 5 FCFA. Une commande de
 > 8 503 FCFA est débitée **8 505 FCFA** ; le montant exact est rappelé au moment
 > du paiement. L'écart ne dépasse jamais 4 FCFA.

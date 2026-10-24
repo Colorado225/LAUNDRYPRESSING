@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Banknote, Loader2, Smartphone, WifiOff } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Banknote, FlaskConical, Loader2, Smartphone, WifiOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { LocalOrder } from '@/db/localDb'
 import {
@@ -10,6 +10,11 @@ import {
   redirectToPayment,
 } from '@/services/paymentService'
 import { formatFcfa } from '@/lib/formatters'
+import {
+  cinetpayIndisponible,
+  simulationExistante,
+  simulerPaiement,
+} from '@/services/paymentSimulation'
 import { useCashPayments } from '@/db/hooks'
 import { computeBalance } from '@/services/cashService'
 import { can } from '@/lib/permissions'
@@ -32,6 +37,8 @@ const OPERATORS = [
 export default function PaymentButton({ order }: { order: LocalOrder }) {
   const role = useTenantStore((state) => state.role)
   const [submitting, setSubmitting] = useState(false)
+  /** Renseignée quand un paiement a été simulé (CinetPay pas encore installé). */
+  const [simulation, setSimulation] = useState<string | null>(null)
   // Défense en profondeur : l'écran parent masque déjà le bouton, mais un
   // composant monté directement ne doit pas contourner la matrice.
   const allowed = can(role, 'payments.initiate')
@@ -44,6 +51,20 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
   const isRounded = charged !== solde.remaining
   const alreadyPaid = order.paymentStatus === 'paid' || solde.remaining <= 0
   const blocked = alreadyPaid || order.status === 'cancelled' || !guard.ok
+
+  // Une simulation précédente reste visible après rechargement : le comptoir
+  // doit pouvoir expliquer pourquoi la commande n'est pas réglée.
+  // (Ce hook précède le retour anticipé : l'ordre des hooks ne doit pas
+  // dépendre du rôle de l'utilisateur.)
+  useEffect(() => {
+    let actif = true
+    void simulationExistante(order.id).then((resultat) => {
+      if (actif && resultat) setSimulation(resultat.reference)
+    })
+    return () => {
+      actif = false
+    }
+  }, [order.id])
 
   if (!allowed) return null
 
@@ -65,6 +86,23 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
       // Redirection vers le guichet hébergé : le paiement se poursuit chez CinetPay.
       redirectToPayment(result.paymentUrl)
     } catch (error) {
+      // Avant l'installation de la clé marchande, l'échec est attendu : plutôt
+      // qu'une erreur technique au comptoir, on simule le paiement et on le dit.
+      if (cinetpayIndisponible(error)) {
+        try {
+          const resultat = await simulerPaiement(order)
+          setSimulation(resultat.reference)
+          toast.success(
+            'Paiement simulé — parcours validé. Aucune clé CinetPay installée : rien n’a été encaissé, la commande reste à régler.',
+            { icon: '🧪', duration: 8000 },
+          )
+        } catch {
+          toast.error('Simulation impossible sur cet appareil.', { duration: 6000 })
+        }
+        setSubmitting(false)
+        return
+      }
+
       const message =
         error instanceof PaymentError
           ? error.message
@@ -135,6 +173,17 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
         <p className="mt-3 flex items-start gap-2 rounded-xl bg-slate-100 p-3 text-sm text-slate-700">
           <WifiOff size={16} className="mt-0.5 shrink-0" aria-hidden />
           Cette commande est annulée : aucun paiement ne peut être initié.
+        </p>
+      )}
+
+      {simulation && !alreadyPaid && (
+        <p className="mt-3 flex items-start gap-2 rounded-xl bg-violet-50 p-3 text-sm text-violet-900">
+          <FlaskConical size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span>
+            Paiement <strong>simulé</strong> ({simulation}). Aucun argent n’a été encaissé : la
+            commande reste à régler. Renseignez <code>CINETPAY_API_KEY</code> dans <code>.env</code>,
+            puis <code>npm run deploy:fonctions</code> pour encaisser réellement.
+          </span>
         </p>
       )}
 
