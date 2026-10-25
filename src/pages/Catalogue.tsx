@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Tooltip from '@/components/Tooltip'
+import CatalogGuide from '@/components/CatalogGuide'
 import {
   createCatalogEntry,
   deactivateCatalogEntry,
@@ -53,6 +54,24 @@ export default function Catalogue() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [afficherArchives, setAfficherArchives] = useState(false)
   const [envoi, setEnvoi] = useState(false)
+
+  /** Guide contextuel : visible si le catalogue est vide et n'a pas été terminé. */
+  const guideTermine = localStorage.getItem('catalogue-guide-termine') === '1'
+  const [guideVisible, setGuideVisible] = useState(
+    entrees.length === 0 && !guideTermine,
+  )
+
+  useEffect(() => {
+    // Si des entrées apparaissent (chargement ou création), on ferme le guide.
+    if (entrees.length > 0 && guideVisible) {
+      setGuideVisible(false)
+      try {
+        localStorage.setItem('catalogue-guide-termine', '1')
+      } catch {
+        // localStorage indisponible : on ignore silencieusement
+      }
+    }
+  }, [entrees, guideVisible])
 
   const recharger = useMemo(
     () => async () => {
@@ -571,6 +590,19 @@ export default function Catalogue() {
             </section>
           ))}
         </div>
+      )}
+
+      {guideVisible && (
+        <CatalogGuide
+          onPremiereCreation={() => {
+            setGuideVisible(false)
+            try {
+              localStorage.setItem('catalogue-guide-termine', '1')
+            } catch {
+              // localStorage indisponible : on ignore silencieusement
+            }
+          }}
+        />
       )}
     </div>
   )
