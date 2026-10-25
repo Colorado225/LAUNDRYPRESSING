@@ -4,6 +4,7 @@ import type {
   CatalogPricingMode,
 } from '@/types/database'
 import { getSupabaseClient } from '@/lib/supabaseClient'
+import { isSupabaseConfigured } from '@/lib/env'
 import { newId } from '@/lib/ids'
 import { db, type LocalCatalogEntry } from './localDb'
 
@@ -206,6 +207,31 @@ export async function createCatalogEntry(
   tenantId: string,
   input: CatalogEntryInput,
 ): Promise<LocalCatalogEntry> {
+  if (!isSupabaseConfigured) {
+    // Mode démonstration : aucun projet Supabase, le tarif est enregistré
+    // directement dans le cache local — comme la grille de départ. Il reste
+    // « à vérifier » : la décision tarifaire appartient au propriétaire, et
+    // la confirmer (« Modifier » puis « Enregistrer ») levera le signal.
+    const entree: LocalCatalogEntry = {
+      id: newId(),
+      tenantId,
+      article: input.article.trim(),
+      service: input.service.trim(),
+      price: input.price,
+      pricingMode: input.pricingMode ?? 'FIXED',
+      billingUnit: input.billingUnit ?? 'PIECE',
+      familyName: null,
+      minimumQuantity: input.minimumQuantity ?? null,
+      billingIncrement: input.billingIncrement ?? null,
+      minimumCharge: input.minimumCharge ?? null,
+      conditions: input.conditions?.trim() || null,
+      requiresReview: true,
+      isActive: true,
+      sortOrder: 0,
+    }
+    await db.catalogEntries.put(entree)
+    return entree
+  }
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('catalog_entries')
@@ -226,7 +252,13 @@ export async function createCatalogEntry(
     .single()
 
   if (error) throw new Error(traduireErreurCatalogue(error.message, error.code))
-  return toLocal(data as CatalogEntryRow)
+  const entree = toLocal(data as CatalogEntryRow)
+  // Mise à jour immédiate du cache local : si le rafraîchissement complet
+  // `refreshCatalog` échoue sur une micro-coupure réseau juste après la
+  // création, l'entrée reste visible et utilisable — le succès serveur est
+  // déjà acquis, le cache doit le refléter.
+  await db.catalogEntries.put(entree)
+  return entree
 }
 
 /** Modifie une prestation existante (propriétaire, en ligne). */
@@ -235,6 +267,28 @@ export async function updateCatalogEntry(
   entryId: string,
   input: Partial<CatalogEntryInput> & { isActive?: boolean; requiresReview?: boolean },
 ): Promise<void> {
+  if (!isSupabaseConfigured) {
+    // Mode démonstration : mise à jour directe du cache local.
+    const entree = await db.catalogEntries.get(entryId)
+    if (!entree || entree.tenantId !== tenantId) {
+      throw new Error('Tarif introuvable dans le catalogue de ce pressing.')
+    }
+    const misesAJour = await db.catalogEntries.update(entryId, {
+      ...(input.article !== undefined ? { article: input.article.trim() } : {}),
+      ...(input.service !== undefined ? { service: input.service.trim() } : {}),
+      ...(input.price !== undefined ? { price: input.price } : {}),
+      ...(input.pricingMode !== undefined ? { pricingMode: input.pricingMode } : {}),
+      ...(input.billingUnit !== undefined ? { billingUnit: input.billingUnit } : {}),
+      ...(input.minimumQuantity !== undefined ? { minimumQuantity: input.minimumQuantity } : {}),
+      ...(input.billingIncrement !== undefined ? { billingIncrement: input.billingIncrement } : {}),
+      ...(input.minimumCharge !== undefined ? { minimumCharge: input.minimumCharge } : {}),
+      ...(input.conditions !== undefined ? { conditions: input.conditions?.trim() || null } : {}),
+      ...(input.requiresReview !== undefined ? { requiresReview: input.requiresReview } : {}),
+      ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+    })
+    if (!misesAJour) throw new Error('Tarif introuvable dans le catalogue de ce pressing.')
+    return
+  }
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('catalog_entries') // tenant_id est aussi vérifié en filtre après la mise à jour.
@@ -253,11 +307,14 @@ export async function updateCatalogEntry(
     })
     .eq('tenant_id', tenantId)
     .eq('id', entryId)
-    .select('id')
+    .select('*')
     .maybeSingle()
 
   if (error) throw new Error(traduireErreurCatalogue(error.message, error.code))
   if (!data) throw new Error('Tarif introuvable dans le catalogue de ce pressing.')
+  // Même principe que `createCatalogEntry` : le cache local suit la modification
+  // même si le `refreshCatalog` qui suit échoue sur une coupure réseau.
+  await db.catalogEntries.put(toLocal(data as CatalogEntryRow))
 }
 
 /** Désactive une prestation (historique préservé, elle n'est plus proposée). */
@@ -331,9 +388,14 @@ export function defaultCatalog(): Array<CatalogEntryInput & { sortOrder: number 
  *
  * `on conflict do nothing` côté PostgREST : relancer l'opération n'ajoute que
  * les prestations manquantes.
+ *
+ * Mode démonstration (pas de projet Supabase) : la grille est installée
+ * directement dans le cache local, comme le reste du catalogue en démo. Elle
+ * reste marquée « à vérifier » — la décision tarifaire appartient au
+ * propriétaire, même hors réseau. Elle sera remplacée par le référentiel
+ * serveur au premier `refreshCatalog` réussi.
  */
 export async function seedDefaultCatalog(tenantId: string): Promise<number> {
-  const supabase = getSupabaseClient()
   const lignes = defaultCatalog().map((entree) => ({
     id: newId(),
     tenant_id: tenantId,
@@ -346,6 +408,33 @@ export async function seedDefaultCatalog(tenantId: string): Promise<number> {
     sort_order: entree.sortOrder,
   }))
 
+  if (!isSupabaseConfigured) {
+    await db.transaction('rw', db.catalogEntries, async () => {
+      await db.catalogEntries.bulkPut(
+        lignes.map((ligne) => ({
+          id: ligne.id,
+          tenantId: ligne.tenant_id,
+          article: ligne.article,
+          service: ligne.service,
+          price: ligne.price,
+          pricingMode: ligne.pricing_mode,
+          billingUnit: ligne.billing_unit,
+          familyName: null,
+          minimumQuantity: null,
+          billingIncrement: null,
+          minimumCharge: null,
+          conditions: null,
+          requiresReview: ligne.requires_review,
+          isActive: true,
+          referencesActive: true,
+          sortOrder: ligne.sort_order,
+        })),
+      )
+    })
+    return lignes.length
+  }
+
+  const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('catalog_entries')
     .upsert(lignes, { onConflict: 'tenant_id,article,service', ignoreDuplicates: true })

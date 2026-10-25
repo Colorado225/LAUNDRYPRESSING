@@ -72,6 +72,10 @@ export function CatalogGuide({ onPremiereCreation }: Props) {
     setEtape((e) => (e === 'categorie' ? 'article' : 'prestation'))
   }
 
+  const precedent = () => {
+    setEtape((e) => (e === 'prestation' ? 'article' : 'categorie'))
+  }
+
   const terminer = () => {
     try {
       localStorage.setItem('catalogue-guide-termine', '1')
@@ -85,12 +89,12 @@ export function CatalogGuide({ onPremiereCreation }: Props) {
 
   return (
     <section
-      className="fixed top-4 right-4 z-50 w-[380px] rounded-2xl border border-slate-200 bg-white shadow-xl p-0 sm:p-0"
+      className="fixed bottom-4 right-4 z-50 w-[380px] max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl p-0 sm:p-0"
       role="region"
       aria-label="Guide de création du catalogue"
     >
       {/* En-tête du guide */}
-      <div className="rounded-2xl-t bg-brand-navy p-4 flex items-center gap-3 text-white">
+      <div className="rounded-t-2xl bg-brand-navy p-4 flex items-center gap-3 text-white">
         <courant.icone className="size-5 shrink-0" aria-hidden />
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-300">
@@ -129,9 +133,7 @@ export function CatalogGuide({ onPremiereCreation }: Props) {
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
-            onClick={() =>
-              setEtape((e) => (e === 'article' ? 'categorie' : 'prestation'))
-            }
+            onClick={precedent}
             disabled={etape === 'categorie'}
             className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none"
           >
@@ -161,11 +163,11 @@ export function CatalogGuide({ onPremiereCreation }: Props) {
       <button
         type="button"
         onClick={terminer}
-        className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+        className="absolute top-2 right-2 inline-flex size-9 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-100 hover:text-slate-700 transition-colors"
         aria-label="Fermer le guide"
       >
         <span className="sr-only">Fermer le guide</span>
-        <ChevronRight size={16} className="rotate-45" aria-hidden />
+        <ChevronRight size={18} className="rotate-45" aria-hidden />
       </button>
     </section>
   )

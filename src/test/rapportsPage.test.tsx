@@ -1,9 +1,23 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Rapports from '@/pages/Rapports'
 import { db } from '@/db/localDb'
 import { useTenantStore } from '@/lib/tenantContext'
+
+/**
+ * Mode démonstration forcé : avec un `.env` réel, la section « équipe »
+ * chargerait ses membres depuis Supabase (inaccessible en test) et resterait
+ * bloquée sur « Chargement de l’équipe… ». Les tests de rendu reposent sur
+ * les données locales.
+ */
+vi.mock('@/lib/env', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/lib/env')>()
+  return {
+    ...original,
+    isSupabaseConfigured: false,
+  }
+})
 
 /**
  * Vérification de montage de l'écran 11.

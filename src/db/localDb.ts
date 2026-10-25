@@ -1,7 +1,9 @@
 import Dexie, { type Table } from 'dexie'
 import type {
+  CatalogApplicationScope,
   CatalogBillingUnit,
   CatalogPricingMode,
+  CatalogServiceType,
   LaundryModelAudience,
   LaundryModelServiceMode,
   LaundryModelType,
@@ -144,6 +146,35 @@ export interface LocalCatalogEntry {
   /** Références article et prestation actives au dernier rafraîchissement. */
   referencesActive?: boolean
   sortOrder: number
+}
+
+/**
+ * Structure locale du catalogue (palier 2).
+ *
+ * En production, les catégories, articles et prestations vivent dans trois
+ * tables serveur distinctes (`catalog_families`, `catalog_articles`,
+ * `catalog_services`). En mode démonstration — où aucun projet Supabase n'est
+ * configuré — la structure est administrée hors ligne dans cette table Dexie
+ * unique, discriminante par `kind`, qui reproduit les trois schémas serveur.
+ * Les opérations réécrivent la ligne locale ET l'envoi serveur : à la
+ * synchronisation, le serveur reste l'autorité.
+ */
+export interface LocalCatalogStructureRow {
+  id: string
+  tenantId: string
+  /** Discriminateur : une ligne est une catégorie, un article ou une prestation. */
+  kind: 'family' | 'article' | 'service'
+  name: string
+  description: string | null
+  /** Catégorie parente pour les articles. */
+  familyId: string | null
+  careInstructions: string | null
+  defaultUnit: CatalogBillingUnit | null
+  serviceType: CatalogServiceType | null
+  applicationScope: CatalogApplicationScope | null
+  isActive: boolean
+  sortOrder: number
+  updatedAt: string
 }
 
 /** Cache hors ligne des paramètres commerciaux, avec libellés de prestations figés. */
@@ -295,6 +326,7 @@ export class PressingDatabase extends Dexie {
   orderItems!: Table<LocalOrderItem, string>
   pendingPayments!: Table<LocalPendingPayment, string>
   catalogEntries!: Table<LocalCatalogEntry, string>
+  catalogStructure!: Table<LocalCatalogStructureRow, string>
   laundryModels!: Table<LocalLaundryModel, string>
   cashPayments!: Table<LocalCashPayment, string>
   orderIssues!: Table<LocalOrderIssue, string>
@@ -484,6 +516,13 @@ export class PressingDatabase extends Dexie {
           if (model.familyPackageScope === undefined) model.familyPackageScope = []
         })
       })
+
+    // v11 : table unique pour la structure locale du catalogue (mode démonstration
+    // sans Supabase). Discriminante par `kind`, indexée par tenant + type pour
+    // recharger chaque référentiel séparément comme les trois tables serveur.
+    this.version(11).stores({
+      catalogStructure: 'id, tenantId, kind, isActive, [tenantId+kind], [tenantId+isActive]',
+    })
   }
 }
 
@@ -500,6 +539,7 @@ export async function clearLocalData(): Promise<void> {
       db.orderItems,
       db.pendingPayments,
       db.catalogEntries,
+      db.catalogStructure,
       db.laundryModels,
       db.cashPayments,
       db.orderIssues,
@@ -512,6 +552,7 @@ export async function clearLocalData(): Promise<void> {
         db.orderItems.clear(),
         db.pendingPayments.clear(),
         db.catalogEntries.clear(),
+        db.catalogStructure.clear(),
         db.laundryModels.clear(),
         db.cashPayments.clear(),
         db.orderIssues.clear(),
