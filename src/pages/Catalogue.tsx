@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Tooltip from '@/components/Tooltip'
 import {
   createCatalogEntry,
   deactivateCatalogEntry,
@@ -482,19 +483,23 @@ export default function Catalogue() {
       ) : (
         <div className="space-y-3">
           {groupes.map(([nomArticle, prestations]) => (
-            <section key={nomArticle} className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h2 className="font-bold text-brand-navy">{nomArticle}</h2>
+            <section key={nomArticle} className="group rounded-2xl border border-slate-200 bg-white p-4">
+              <h2 className="font-bold text-brand-navy">
+                <Tooltip contenu={`${prestations.length} prestation${prestations.length > 1 ? 's' : ''} dans cette catégorie`}>{nomArticle}</Tooltip>
+              </h2>
               <ul className="mt-2 flex flex-wrap gap-2">
                 {prestations.map((prestation) => (
                   <li
                     key={prestation.id}
-                    className={`inline-flex items-center gap-2 rounded-xl border py-1.5 pl-3 pr-1.5 text-sm ${
+                    className={`group inline-flex items-center gap-2 rounded-xl border py-1.5 pl-3 pr-1.5 text-sm ${
                       prestation.isActive
                         ? 'border-slate-200 bg-slate-50'
                         : 'border-amber-200 bg-amber-50 opacity-75'
                     }`}
                   >
-                    <span className="font-medium text-slate-700">{prestation.service}</span>
+                    <Tooltip contenu={afficherTarif(prestation) + (prestation.conditions ? ` — ${prestation.conditions}` : '')}>
+                      <span className="font-medium text-slate-700">{prestation.service}</span>
+                    </Tooltip>
                     <span className="font-bold text-brand-navy">{afficherTarif(prestation)}</span>
                     {prestation.minimumQuantity != null && (
                       <span className="text-xs text-slate-500">min. {prestation.minimumQuantity} {libelleUnite(prestation.billingUnit)}</span>

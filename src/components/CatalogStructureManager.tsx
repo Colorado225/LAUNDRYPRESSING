@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Archive, BookOpen, FolderTree, Loader2, Pencil, Plus, RotateCcw, Scissors, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import Tooltip from '@/components/Tooltip'
 import {
   createCatalogArticle,
   createCatalogFamily,
@@ -403,10 +404,14 @@ export default function CatalogStructureManager({ tenantId, canManage = false, o
               : tab === 'services'
                 ? `${libelleType((item as CatalogServiceRow).service_type)} · ${libellePortee((item as CatalogServiceRow).application_scope)}`
                 : `${structure.articles.filter((article) => article.family_id === item.id).length} article(s)`
+            const contenuTooltip = (item as { description?: string }).description ?? detail
             return (
-              <article key={item.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${item.is_active ? 'border-slate-200' : 'border-amber-200 bg-amber-50/60'}`}>
+              <article key={item.id} className={`group flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${item.is_active ? 'border-slate-200' : 'border-amber-200 bg-amber-50/60'}`}>
                 <div className="min-w-0">
-                  <h4 className="font-semibold text-slate-800">{item.name}{!item.is_active && <span className="ml-2 text-xs font-semibold text-amber-800">Archivé</span>}</h4>
+                  <h4 className="font-semibold text-slate-800">
+                    <Tooltip contenu={contenuTooltip}>{item.name}</Tooltip>
+                    {!item.is_active && <span className="ml-2 text-xs font-semibold text-amber-800">Archivé</span>}
+                  </h4>
                   <p className="text-xs text-slate-500">{detail} · ordre {item.sort_order}</p>
                   {item.description && <p className="mt-1 text-xs text-slate-600">{item.description}</p>}
                   {tab === 'articles' && (item as CatalogArticleRow).care_instructions && <p className="mt-1 text-xs text-slate-600">Entretien : {(item as CatalogArticleRow).care_instructions}</p>}
