@@ -322,6 +322,28 @@ export async function deactivateCatalogEntry(tenantId: string, entryId: string):
   await updateCatalogEntry(tenantId, entryId, { isActive: false })
 }
 
+/** Supprime définitivement une prestation du catalogue (en ligne ou en cache local). */
+export async function deleteCatalogEntry(tenantId: string, entryId: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    const entree = await db.catalogEntries.get(entryId)
+    if (!entree || entree.tenantId !== tenantId) {
+      throw new Error('Tarif introuvable dans le catalogue de ce pressing.')
+    }
+    await db.catalogEntries.delete(entryId)
+    return
+  }
+
+  const supabase = getSupabaseClient()
+  const { error } = await supabase
+    .from('catalog_entries')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('id', entryId)
+
+  if (error) throw new Error(traduireErreurCatalogue(error.message, error.code))
+  await db.catalogEntries.delete(entryId)
+}
+
 function traduireErreurCatalogue(message: string, code?: string): string {
   if (code === '23505') return 'Cette prestation existe déjà pour cet article.'
   if (code === '42501' || /row-level security/i.test(message)) {

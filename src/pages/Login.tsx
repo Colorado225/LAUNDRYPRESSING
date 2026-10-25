@@ -991,8 +991,8 @@ function ConfigWarning() {
 function DemoAccess({ onAuthenticated }: { onAuthenticated: () => void }) {
   const setMembership = useTenantStore((state) => state.setMembership)
 
-  const [value, setValue] = useState(DEMO_TENANT_ID ?? '')
-  const [name, setName] = useState('')
+  const [value, setValue] = useState(DEMO_TENANT_ID || '11111111-1111-4111-8111-111111111111')
+  const [name, setName] = useState('Pressing Cocody')
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = (event: FormEvent) => {

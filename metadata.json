@@ -1,0 +1,6 @@
+{
+  "name": "Pressing Pro — Gestion de pressing",
+  "description": "Pressing Pro — gestion de commandes, étiquettes QR, atelier hors ligne et paiement Mobile Money pour les pressings d'Abidjan.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

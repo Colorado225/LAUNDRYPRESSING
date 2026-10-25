@@ -285,6 +285,262 @@ function erreurCatalogue(error: { message: string; code?: string }): Error {
   return new Error(error.message)
 }
 
+/** Initialise une structure par défaut (catégories, articles et prestations) en mode démonstration. */
+export async function seedDefaultCatalogStructure(tenantId: string): Promise<void> {
+  const familyVetementsId = 'fam-vetements-' + tenantId.slice(0, 8)
+  const familyLingeId = 'fam-linge-' + tenantId.slice(0, 8)
+  const familyMaisonId = 'fam-maison-' + tenantId.slice(0, 8)
+  const now = new Date().toISOString()
+
+  const defaultLines: LocalCatalogStructureRow[] = [
+    // 1. Familles
+    {
+      id: familyVetementsId,
+      tenantId,
+      kind: 'family',
+      name: 'Vêtements du quotidien',
+      description: 'Chemises, pantalons, robes, jupes et t-shirts.',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 10,
+      updatedAt: now,
+    },
+    {
+      id: familyLingeId,
+      tenantId,
+      kind: 'family',
+      name: 'Costumes & Cérémonie',
+      description: 'Costumes, vestes, robes de soirée et tenues traditionnelles.',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 20,
+      updatedAt: now,
+    },
+    {
+      id: familyMaisonId,
+      tenantId,
+      kind: 'family',
+      name: 'Linge de maison & Ameublement',
+      description: 'Draps, couettes, rideaux, nappes et couvertures.',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 30,
+      updatedAt: now,
+    },
+    // 2. Articles
+    {
+      id: 'art-chemise-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Chemise',
+      description: 'Chemise ville ou décontractée',
+      familyId: familyVetementsId,
+      careInstructions: 'Repassage soigné sur cintre',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 10,
+      updatedAt: now,
+    },
+    {
+      id: 'art-pantalon-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Pantalon',
+      description: 'Pantalon tissu ou jean',
+      familyId: familyVetementsId,
+      careInstructions: 'Pli marqué',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 20,
+      updatedAt: now,
+    },
+    {
+      id: 'art-robe-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Robe',
+      description: 'Robe simple ou tailleur',
+      familyId: familyVetementsId,
+      careInstructions: 'Température modérée',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 30,
+      updatedAt: now,
+    },
+    {
+      id: 'art-costume-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Costume 3 pièces',
+      description: 'Veste, gilet et pantalon assortis',
+      familyId: familyLingeId,
+      careInstructions: 'Nettoyage à sec uniquement',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 10,
+      updatedAt: now,
+    },
+    {
+      id: 'art-boubou-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Boubou',
+      description: 'Bazin ou wax traditionnel',
+      familyId: familyLingeId,
+      careInstructions: 'Amidonnage soigné',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 20,
+      updatedAt: now,
+    },
+    {
+      id: 'art-drap-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Drap 2 places',
+      description: 'Drap plat ou housse grand lit',
+      familyId: familyMaisonId,
+      careInstructions: 'Lavage à chaud et calandrage',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 10,
+      updatedAt: now,
+    },
+    {
+      id: 'art-couette-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Couette',
+      description: 'Couette synthétique ou plumes',
+      familyId: familyMaisonId,
+      careInstructions: 'Séchage complet en grand tambour',
+      defaultUnit: 'PIECE',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 20,
+      updatedAt: now,
+    },
+    {
+      id: 'art-rideau-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'article',
+      name: 'Rideau',
+      description: 'Voilage ou tenture occultante',
+      familyId: familyMaisonId,
+      careInstructions: 'Facturation au mètre carré',
+      defaultUnit: 'M2',
+      serviceType: null,
+      applicationScope: null,
+      isActive: true,
+      sortOrder: 30,
+      updatedAt: now,
+    },
+    // 3. Prestations
+    {
+      id: 'srv-lavage-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'service',
+      name: 'Lavage',
+      description: 'Lavage à l’eau et séchage',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: 'treatment',
+      applicationScope: 'article',
+      isActive: true,
+      sortOrder: 10,
+      updatedAt: now,
+    },
+    {
+      id: 'srv-pressing-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'service',
+      name: 'Nettoyage à sec',
+      description: 'Nettoyage à sec professionnel pour textiles délicats',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: 'treatment',
+      applicationScope: 'article',
+      isActive: true,
+      sortOrder: 20,
+      updatedAt: now,
+    },
+    {
+      id: 'srv-repassage-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'service',
+      name: 'Repassage seul',
+      description: 'Mise sur cintre ou pliage selon demande',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: 'treatment',
+      applicationScope: 'article',
+      isActive: true,
+      sortOrder: 30,
+      updatedAt: now,
+    },
+    {
+      id: 'srv-amidonnage-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'service',
+      name: 'Amidonnage',
+      description: 'Finition amidonnée spéciale bazin ou lin',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: 'option',
+      applicationScope: 'article',
+      isActive: true,
+      sortOrder: 40,
+      updatedAt: now,
+    },
+    {
+      id: 'srv-delicat-' + tenantId.slice(0, 8),
+      tenantId,
+      kind: 'service',
+      name: 'Traitement délicat',
+      description: 'Soin manuel spécial soies, broderies et perles',
+      familyId: null,
+      careInstructions: null,
+      defaultUnit: null,
+      serviceType: 'treatment',
+      applicationScope: 'article',
+      isActive: true,
+      sortOrder: 50,
+      updatedAt: now,
+    },
+  ]
+
+  await db.catalogStructure.bulkPut(defaultLines)
+}
+
 /** Charge les trois référentiels du tenant ; la RLS reste l'autorité finale. */
 export async function loadCatalogStructure(tenantId: string): Promise<CatalogStructure> {
   if (!isSupabaseConfigured) {
@@ -481,15 +737,41 @@ export async function updateCatalogFamily(
   })
 }
 
-export async function deleteCatalogFamily(tenantId: string, id: string): Promise<void> {
+export async function deleteCatalogFamily(tenantId: string, id: string, force = false): Promise<void> {
   if (!isSupabaseConfigured) {
     const count = await compterArticlesDansFamilleLocal(tenantId, id)
-    if (count > 0) throw new Error('Cette catégorie contient encore des articles : archivez-la ou déplacez-les avant suppression.')
+    if (count > 0) {
+      if (!force) {
+        throw new Error('Cette catégorie contient encore des articles : archivez-la ou déplacez-les avant suppression.')
+      }
+      const articles = await db.catalogStructure
+        .where('tenantId')
+        .equals(tenantId)
+        .filter((ligne) => ligne.kind === 'article' && ligne.familyId === id)
+        .toArray()
+      for (const article of articles) {
+        await deleteCatalogArticle(tenantId, article.id, true)
+      }
+    }
     await supprimerReferenceLocale(tenantId, id)
     return
   }
   const count = await compterDependances('catalog_articles', tenantId, 'family_id', id)
-  if (count > 0) throw new Error('Cette catégorie contient encore des articles : archivez-la ou déplacez-les avant suppression.')
+  if (count > 0) {
+    if (!force) {
+      throw new Error('Cette catégorie contient encore des articles : archivez-la ou déplacez-les avant suppression.')
+    }
+    const { data: articles } = await getSupabaseClient()
+      .from('catalog_articles')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('family_id', id)
+    if (articles) {
+      for (const art of articles) {
+        await deleteCatalogArticle(tenantId, (art as { id: string }).id, true)
+      }
+    }
+  }
   await supprimerReference('catalog_families', tenantId, id)
 }
 
@@ -564,15 +846,33 @@ export async function setCatalogArticleActive(tenantId: string, id: string, isAc
   await modifierReference('catalog_articles', tenantId, id, { is_active: isActive })
 }
 
-export async function deleteCatalogArticle(tenantId: string, id: string): Promise<void> {
+export async function deleteCatalogArticle(tenantId: string, id: string, force = false): Promise<void> {
   if (!isSupabaseConfigured) {
     const count = await compterTarifsDependantsLocal(tenantId, 'article', id, false)
-    if (count > 0) throw new Error('Cet article est référencé par des tarifs : archivez-le pour préserver l’historique.')
+    if (count > 0) {
+      if (!force) {
+        throw new Error('Cet article est référencé par des tarifs : archivez-le pour préserver l’historique.')
+      }
+      const ligne = await db.catalogStructure.get(id)
+      if (ligne) {
+        const tarifs = await db.catalogEntries
+          .where('tenantId')
+          .equals(tenantId)
+          .filter((entree) => entree.article === ligne.name)
+          .toArray()
+        await Promise.all(tarifs.map((t) => db.catalogEntries.delete(t.id)))
+      }
+    }
     await supprimerReferenceLocale(tenantId, id)
     return
   }
   const count = await compterTarifsDependants(tenantId, 'article_id', id, false)
-  if (count > 0) throw new Error('Cet article est référencé par des tarifs : archivez-le pour préserver l’historique.')
+  if (count > 0) {
+    if (!force) {
+      throw new Error('Cet article est référencé par des tarifs : archivez-le pour préserver l’historique.')
+    }
+    await getSupabaseClient().from('catalog_entries').delete().eq('tenant_id', tenantId).eq('article_id', id)
+  }
   await supprimerReference('catalog_articles', tenantId, id)
 }
 
@@ -644,14 +944,74 @@ export async function setCatalogServiceActive(tenantId: string, id: string, isAc
   await modifierReference('catalog_services', tenantId, id, { is_active: isActive })
 }
 
-export async function deleteCatalogService(tenantId: string, id: string): Promise<void> {
+export async function deleteCatalogService(tenantId: string, id: string, force = false): Promise<void> {
   if (!isSupabaseConfigured) {
     const count = await compterTarifsDependantsLocal(tenantId, 'service', id, false)
-    if (count > 0) throw new Error('Cette prestation est référencée par des tarifs : archivez-la pour préserver l’historique.')
+    if (count > 0) {
+      if (!force) {
+        throw new Error('Cette prestation est référencée par des tarifs : archivez-la pour préserver l’historique.')
+      }
+      const ligne = await db.catalogStructure.get(id)
+      if (ligne) {
+        const tarifs = await db.catalogEntries
+          .where('tenantId')
+          .equals(tenantId)
+          .filter((entree) => entree.service === ligne.name)
+          .toArray()
+        await Promise.all(tarifs.map((t) => db.catalogEntries.delete(t.id)))
+      }
+    }
     await supprimerReferenceLocale(tenantId, id)
     return
   }
   const count = await compterTarifsDependants(tenantId, 'service_id', id, false)
-  if (count > 0) throw new Error('Cette prestation est référencée par des tarifs : archivez-la pour préserver l’historique.')
+  if (count > 0) {
+    if (!force) {
+      throw new Error('Cette prestation est référencée par des tarifs : archivez-le pour préserver l’historique.')
+    }
+    await getSupabaseClient().from('catalog_entries').delete().eq('tenant_id', tenantId).eq('service_id', id)
+  }
   await supprimerReference('catalog_services', tenantId, id)
 }
+
+/** Informations de dépendances pour alerter l'utilisateur avant suppression */
+export async function getCatalogFamilyDependencies(
+  tenantId: string,
+  familyId: string,
+): Promise<{ articleCount: number }> {
+  if (!isSupabaseConfigured) {
+    const articleCount = await compterArticlesDansFamilleLocal(tenantId, familyId)
+    return { articleCount }
+  }
+  const articleCount = await compterDependances('catalog_articles', tenantId, 'family_id', familyId)
+  return { articleCount }
+}
+
+export async function getCatalogArticleDependencies(
+  tenantId: string,
+  articleId: string,
+): Promise<{ tarifCount: number; activeTarifCount: number }> {
+  if (!isSupabaseConfigured) {
+    const tarifCount = await compterTarifsDependantsLocal(tenantId, 'article', articleId, false)
+    const activeTarifCount = await compterTarifsDependantsLocal(tenantId, 'article', articleId, true)
+    return { tarifCount, activeTarifCount }
+  }
+  const tarifCount = await compterTarifsDependants(tenantId, 'article_id', articleId, false)
+  const activeTarifCount = await compterTarifsDependants(tenantId, 'article_id', articleId, true)
+  return { tarifCount, activeTarifCount }
+}
+
+export async function getCatalogServiceDependencies(
+  tenantId: string,
+  serviceId: string,
+): Promise<{ tarifCount: number; activeTarifCount: number }> {
+  if (!isSupabaseConfigured) {
+    const tarifCount = await compterTarifsDependantsLocal(tenantId, 'service', serviceId, false)
+    const activeTarifCount = await compterTarifsDependantsLocal(tenantId, 'service', serviceId, true)
+    return { tarifCount, activeTarifCount }
+  }
+  const tarifCount = await compterTarifsDependants(tenantId, 'service_id', serviceId, false)
+  const activeTarifCount = await compterTarifsDependants(tenantId, 'service_id', serviceId, true)
+  return { tarifCount, activeTarifCount }
+}
+

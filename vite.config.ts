@@ -87,14 +87,14 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: 3000,
     strictPort: true,
     // Autorise l'accès via l'URL de prévisualisation (proxy) et le réseau local du pressing.
     allowedHosts: true,
   },
   preview: {
     host: '0.0.0.0',
-    port: 4173,
+    port: 3000,
     allowedHosts: true,
   },
 })

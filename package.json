@@ -5,7 +5,7 @@
   "description": "SaaS multi-tenant de gestion de pressing (Côte d'Ivoire) — MVP offline-first",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0 --port 3000",
     "setup": "node scripts/setup.mjs",
     "setup:check": "node scripts/setup.mjs --check",
     "setup:dry": "node scripts/setup.mjs --dry-run",
@@ -14,7 +14,7 @@
     "db:push": "node scripts/db.mjs push",
     "db:verifier": "node scripts/db.mjs verifier",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

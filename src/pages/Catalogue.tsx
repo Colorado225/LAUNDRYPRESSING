@@ -1,17 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Tag, Zap } from 'lucide-react'
+import {
+  AlertTriangle,
+  Archive,
+  BookOpen,
+  CloudOff,
+  FolderTree,
+  Layers,
+  Loader2,
+  Lock,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Scissors,
+  Search,
+  Tag,
+  Trash2,
+  X,
+  Zap,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import Tooltip from '@/components/Tooltip'
 import CatalogGuide from '@/components/CatalogGuide'
 import {
   createCatalogEntry,
   deactivateCatalogEntry,
+  deleteCatalogEntry,
   getCachedCatalog,
   refreshCatalog,
   seedDefaultCatalog,
   updateCatalogEntry,
 } from '@/db/catalogRepository'
-import CatalogStructureManager from '@/components/CatalogStructureManager'
+import CatalogStructureManager, { type CatalogStructureTab } from '@/components/CatalogStructureManager'
+import type { CatalogStructure } from '@/db/catalogStructureRepository'
 import { Button, Field, FieldLabel, Input, Select, SelectItem } from '@/components/ui'
 import type { LocalCatalogEntry } from '@/db/localDb'
 import { can } from '@/lib/permissions'
@@ -19,6 +39,7 @@ import { useTenantStore } from '@/lib/tenantContext'
 import { formatFcfa } from '@/lib/formatters'
 import { libelleUnite } from '@/lib/catalogPricing'
 import type { CatalogBillingUnit, CatalogPricingMode } from '@/types/database'
+import { getCategoryColor, getServiceColor } from '@/lib/catalogColor'
 
 function afficherTarif(entree: LocalCatalogEntry): string {
   if (entree.pricingMode === 'QUOTE') return 'Sur devis'
@@ -55,6 +76,9 @@ export default function Catalogue() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [afficherArchives, setAfficherArchives] = useState(false)
   const [envoi, setEnvoi] = useState(false)
+  const [structureData, setStructureData] = useState<CatalogStructure | null>(null)
+  const [vue, setVue] = useState<'tout' | 'tarifs' | 'families' | 'articles' | 'services'>('tout')
+  const [modalSuppressionTarif, setModalSuppressionTarif] = useState<LocalCatalogEntry | null>(null)
 
   /** Guide contextuel : visible si le catalogue est vide et n'a pas été terminé. */
   const [guideTermine, setGuideTermine] = useState(() => {
@@ -66,6 +90,7 @@ export default function Catalogue() {
     }
   })
   const [recherche, setRecherche] = useState('')
+  const [filtreCategorie, setFiltreCategorie] = useState('')
 
   // Le guide ne s'affiche qu'après le premier chargement : sinon, `entrees`
   // étant encore vide pendant `chargement`, il apparaîtrait en flash à chaque
@@ -109,9 +134,15 @@ export default function Catalogue() {
       .filter((entree) => afficherArchives || entree.isActive)
       .filter(
         (entree) =>
+          !filtreCategorie ||
+          (entree.familyName && entree.familyName.toLowerCase() === filtreCategorie.toLowerCase()),
+      )
+      .filter(
+        (entree) =>
           critere === '' ||
           entree.article.toLowerCase().includes(critere) ||
-          entree.service.toLowerCase().includes(critere),
+          entree.service.toLowerCase().includes(critere) ||
+          (entree.familyName && entree.familyName.toLowerCase().includes(critere)),
       )
       .forEach((entree) => {
         const liste = map.get(entree.article) ?? []
@@ -119,7 +150,24 @@ export default function Catalogue() {
         map.set(entree.article, liste)
       })
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fr'))
-  }, [entrees, afficherArchives, recherche])
+  }, [entrees, afficherArchives, recherche, filtreCategorie])
+
+  const totalPrestationsFiltrees = useMemo(() => {
+    return groupes.reduce((acc, [, items]) => acc + items.length, 0)
+  }, [groupes])
+
+  const categoriesDisponibles = useMemo(() => {
+    const set = new Set<string>()
+    for (const entree of entrees) {
+      if (entree.familyName) set.add(entree.familyName)
+    }
+    if (structureData?.families) {
+      for (const fam of structureData.families) {
+        if (fam.is_active) set.add(fam.name)
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'fr'))
+  }, [entrees, structureData])
 
   const remettreFormulaire = () => {
     setEditingId(null)
@@ -251,6 +299,40 @@ export default function Catalogue() {
     }
   }
 
+  const executerSuppressionTarif = async (entree: LocalCatalogEntry) => {
+    if (!tenantId) return
+    setEnvoi(true)
+    try {
+      await deleteCatalogEntry(tenantId, entree.id)
+      await refreshCatalog(tenantId)
+      await recharger()
+      setModalSuppressionTarif(null)
+      toast.success(`Tarif « ${entree.article} — ${entree.service} » supprimé du catalogue.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Suppression impossible')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const supprimerTarif = async (entree: LocalCatalogEntry) => {
+    let confirmationTest = false
+    try {
+      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        confirmationTest = window.confirm(`Supprimer définitivement le tarif « ${entree.article} — ${entree.service} » ?`)
+      }
+    } catch {
+      confirmationTest = false
+    }
+
+    if (confirmationTest) {
+      await executerSuppressionTarif(entree)
+      return
+    }
+
+    setModalSuppressionTarif(entree)
+  }
+
   const installerGrille = async () => {
     if (!tenantId) return
     setEnvoi(true)
@@ -325,19 +407,214 @@ export default function Catalogue() {
         </div>
       </header>
 
+      {/* Barre de recherche instantanée en haut de la page */}
       {entrees.length > 0 && (
-        <div className="flex justify-center">
-          <Input
-            value={recherche}
-            onChange={(event) => setRecherche(event.target.value)}
-            placeholder="Rechercher un article ou une prestation…"
-            aria-label="Rechercher dans le catalogue"
-            className="max-w-md"
-          />
-        </div>
+        <section
+          aria-label="Recherche et filtres du catalogue"
+          className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs sm:p-4"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {/* Champ de recherche instantanée */}
+            <div className="relative flex-1">
+              <Search
+                size={18}
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                aria-hidden
+              />
+              <Input
+                value={recherche}
+                onChange={(event) => setRecherche(event.target.value)}
+                placeholder="Rechercher par article, prestation ou catégorie (ex: Chemise, Lavage, Linge)…"
+                aria-label="Rechercher dans le catalogue"
+                className="w-full pl-10 pr-9 text-sm"
+              />
+              {recherche && (
+                <button
+                  type="button"
+                  onClick={() => setRecherche('')}
+                  aria-label="Effacer la recherche"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            {/* Compteur de résultats & bouton réinitialiser */}
+            <div className="flex items-center justify-between gap-3 text-xs text-slate-500 sm:justify-end">
+              <span>
+                {recherche || filtreCategorie ? (
+                  <>
+                    <strong className="font-semibold text-brand-navy">{totalPrestationsFiltrees}</strong> prestation{totalPrestationsFiltrees > 1 ? 's' : ''} trouvée{totalPrestationsFiltrees > 1 ? 's' : ''}
+                    {recherche && <span className="text-slate-500"> pour «&nbsp;{recherche}&nbsp;»</span>}
+                  </>
+                ) : (
+                  <>
+                    <strong className="font-semibold text-slate-700">{entrees.length}</strong> prestation{entrees.length > 1 ? 's' : ''} au catalogue
+                  </>
+                )}
+              </span>
+
+              {(recherche || filtreCategorie) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecherche('')
+                    setFiltreCategorie('')
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                >
+                  <X size={13} aria-hidden /> Réinitialiser
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filtres par catégorie avec pastilles de couleur */}
+          {categoriesDisponibles.length > 0 && (
+            <div
+              className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3"
+              role="group"
+              aria-label="Filtrer par catégorie"
+            >
+              <span className="mr-1 text-xs font-semibold text-slate-500">Catégories :</span>
+              <button
+                type="button"
+                onClick={() => setFiltreCategorie('')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                  !filtreCategorie
+                    ? 'bg-brand-navy text-white shadow-xs'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                Toutes ({entrees.length})
+              </button>
+              {categoriesDisponibles.map((nomCat) => {
+                const catColor = getCategoryColor(nomCat)
+                const estActif = filtreCategorie.toLowerCase() === nomCat.toLowerCase()
+                return (
+                  <button
+                    key={nomCat}
+                    type="button"
+                    onClick={() => setFiltreCategorie(estActif ? '' : nomCat)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                      estActif
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className={`inline-block size-2 rounded-full shrink-0 ${catColor.dot}`} aria-hidden />
+                    <span>{nomCat}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Repères visuels des types de prestations */}
+          <div
+            className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600"
+            aria-label="Légende des types de prestations"
+          >
+            <span className="font-semibold text-slate-500">Repères :</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-blue-500" aria-hidden /> Lavage
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-emerald-500" aria-hidden /> Repassage
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-purple-500" aria-hidden /> Nettoyage à sec
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-amber-500" aria-hidden /> Détachage
+            </span>
+          </div>
+        </section>
       )}
 
-      {tenantId && <CatalogStructureManager tenantId={tenantId} canManage={peutGerer} onCatalogChanged={recharger} />}
+      {/* Navigation entre les vues du catalogue */}
+      <div
+        className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-100/90 p-1.5 ring-1 ring-slate-200/70"
+        role="tablist"
+        aria-label="Navigation du catalogue"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vue === 'tout'}
+          onClick={() => setVue('tout')}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition ${
+            vue === 'tout'
+              ? 'bg-white text-brand-navy shadow-sm ring-1 ring-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Layers size={15} aria-hidden /> Vue d’ensemble
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vue === 'tarifs'}
+          onClick={() => setVue('tarifs')}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition ${
+            vue === 'tarifs'
+              ? 'bg-white text-brand-navy shadow-sm ring-1 ring-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Tag size={15} aria-hidden /> Grille des tarifs ({entrees.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vue === 'families'}
+          onClick={() => setVue('families')}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition ${
+            vue === 'families'
+              ? 'bg-white text-brand-navy shadow-sm ring-1 ring-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <FolderTree size={15} aria-hidden /> Catégories ({structureData?.families.length ?? 0})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vue === 'articles'}
+          onClick={() => setVue('articles')}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition ${
+            vue === 'articles'
+              ? 'bg-white text-brand-navy shadow-sm ring-1 ring-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <BookOpen size={15} aria-hidden /> Articles ({structureData?.articles.length ?? 0})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vue === 'services'}
+          onClick={() => setVue('services')}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition ${
+            vue === 'services'
+              ? 'bg-white text-brand-navy shadow-sm ring-1 ring-slate-200/60'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Scissors size={15} aria-hidden /> Prestations ({structureData?.services.length ?? 0})
+        </button>
+      </div>
+
+      {tenantId && (vue === 'tout' || vue === 'families' || vue === 'articles' || vue === 'services') && (
+        <CatalogStructureManager
+          tenantId={tenantId}
+          canManage={peutGerer}
+          onCatalogChanged={recharger}
+          initialTab={vue === 'tout' ? 'families' : (vue as CatalogStructureTab)}
+          onStructureLoaded={setStructureData}
+        />
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
@@ -372,7 +649,13 @@ export default function Catalogue() {
               maxLength={60}
               onChange={(event) => setArticle(event.target.value)}
               placeholder="Chemise"
+              list="articles-disponibles"
             />
+            <datalist id="articles-disponibles">
+              {structureData?.articles.map((art) => (
+                <option key={art.id} value={art.name} />
+              ))}
+            </datalist>
           </Field>
 
           <Field>
@@ -383,7 +666,13 @@ export default function Catalogue() {
               maxLength={60}
               onChange={(event) => setService(event.target.value)}
               placeholder="Lavage"
+              list="prestations-disponibles"
             />
+            <datalist id="prestations-disponibles">
+              {structureData?.services.map((srv) => (
+                <option key={srv.id} value={srv.name} />
+              ))}
+            </datalist>
           </Field>
 
           <Field>
@@ -548,12 +837,28 @@ export default function Catalogue() {
           Chargement du catalogue…
         </p>
       ) : groupes.length === 0 ? (
-        recherche.trim() ? (
+        recherche.trim() || filtreCategorie ? (
           <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white py-12 text-center">
             <p className="font-semibold text-slate-700">Aucune prestation trouvée</p>
             <p className="mt-1 text-sm text-slate-500">
-              « {recherche.trim()} » ne correspond à aucun article ou prestation du catalogue.
+              {recherche.trim() && filtreCategorie ? (
+                <>« {recherche.trim()} » dans la catégorie « {filtreCategorie} » ne correspond à aucun élément.</>
+              ) : recherche.trim() ? (
+                <>« {recherche.trim()} » ne correspond à aucun article, prestation ou catégorie.</>
+              ) : (
+                <>Aucune prestation active dans la catégorie « {filtreCategorie} ».</>
+              )}
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                setRecherche('')
+                setFiltreCategorie('')
+              }}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <RotateCcw size={13} aria-hidden /> Réinitialiser les filtres
+            </button>
           </div>
         ) : (
           <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white py-12 text-center">
@@ -580,12 +885,20 @@ export default function Catalogue() {
         <div className="space-y-3">
           {groupes.map(([nomArticle, prestations]) => (
             <section key={nomArticle} className="group rounded-2xl border border-slate-200 bg-white p-4">
-              <h2 className="font-bold text-brand-navy">
-                <Tooltip contenu={`${prestations.length} prestation${prestations.length > 1 ? 's' : ''} dans cette catégorie`}>{nomArticle}</Tooltip>
-              </h2>
-              {prestations[0]?.familyName && (
-                <p className="text-xs text-slate-500">{prestations[0].familyName}</p>
-              )}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-bold text-brand-navy">
+                  <Tooltip contenu={`${prestations.length} prestation${prestations.length > 1 ? 's' : ''} dans cette catégorie`}>{nomArticle}</Tooltip>
+                </h2>
+                {prestations[0]?.familyName && (() => {
+                  const catColor = getCategoryColor(prestations[0].familyName)
+                  return (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                      <span className={`inline-block size-2 rounded-full shrink-0 ${catColor.dot}`} aria-hidden />
+                      <span>{prestations[0].familyName}</span>
+                    </span>
+                  )
+                })()}
+              </div>
               <ul className="mt-2 flex flex-wrap gap-2">
                 {prestations.map((prestation) => (
                   <li
@@ -596,9 +909,21 @@ export default function Catalogue() {
                         : 'border-amber-200 bg-amber-50 opacity-75'
                     }`}
                   >
-                    <Tooltip contenu={afficherTarif(prestation) + (prestation.conditions ? ` — ${prestation.conditions}` : '')}>
-                      <span className="font-medium text-slate-700">{prestation.service}</span>
-                    </Tooltip>
+                    {(() => {
+                      const srvColor = getServiceColor(prestation.service)
+                      return (
+                        <Tooltip contenu={afficherTarif(prestation) + (prestation.conditions ? ` — ${prestation.conditions}` : '')}>
+                          <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
+                            <span
+                              className={`inline-block size-2.5 rounded-full shrink-0 ${srvColor.dot}`}
+                              title={`Type : ${srvColor.name}`}
+                              aria-hidden
+                            />
+                            <span>{prestation.service}</span>
+                          </span>
+                        </Tooltip>
+                      )
+                    })()}
                     <span className="font-bold text-brand-navy">{afficherTarif(prestation)}</span>
                     {prestation.minimumQuantity != null && (
                       <span className="text-xs text-slate-500">min. {prestation.minimumQuantity} {libelleUnite(prestation.billingUnit)}</span>
@@ -652,11 +977,74 @@ export default function Catalogue() {
                         <RotateCcw size={14} aria-hidden />
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => void supprimerTarif(prestation)}
+                      disabled={envoi}
+                      aria-label={`Supprimer ${nomArticle} — ${prestation.service}`}
+                      className="inline-flex size-12 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+                      title="Supprimer définitivement ce tarif"
+                    >
+                      <Trash2 size={14} aria-hidden />
+                    </button>
                   </li>
                 ))}
               </ul>
             </section>
           ))}
+        </div>
+      )}
+
+      {modalSuppressionTarif && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="titre-modal-suppression-tarif"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-900/10">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <AlertTriangle size={20} aria-hidden />
+              </span>
+              <div>
+                <h3 id="titre-modal-suppression-tarif" className="text-base font-bold text-slate-900">
+                  Supprimer ce tarif ?
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Voulez-vous retirer définitivement «{' '}
+                  <strong className="text-slate-800">
+                    {modalSuppressionTarif.article} — {modalSuppressionTarif.service}
+                  </strong>{' '}
+                  » du catalogue ?
+                </p>
+                <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                  Cette action est immédiate et synchronisée. Les commandes déjà enregistrées conservent leur tarif historique.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalSuppressionTarif(null)}
+                disabled={envoi}
+                className="min-h-12 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Annuler
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void executerSuppressionTarif(modalSuppressionTarif)}
+                disabled={envoi}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white shadow-sm hover:bg-rose-700 active:bg-rose-800 disabled:opacity-50"
+              >
+                {envoi ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Trash2 size={16} aria-hidden />}
+                Supprimer le tarif
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

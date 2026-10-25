@@ -12,6 +12,7 @@ const depot = vi.hoisted(() => ({
     price: number
     pricingMode: 'FIXED' | 'FROM' | 'QUOTE' | 'UNCONFIGURED'
     billingUnit: 'PIECE' | 'PAIR' | 'SET' | 'KG' | 'M2' | 'METER' | 'PACKAGE' | 'FLAT'
+    familyName?: string | null
     requiresReview: boolean
     isActive: boolean
     sortOrder: number
@@ -73,6 +74,7 @@ beforeEach(() => {
       price: 1000,
       pricingMode: 'FIXED',
       billingUnit: 'PIECE',
+      familyName: 'Vêtements',
       requiresReview: false,
       isActive: true,
       sortOrder: 1,
@@ -85,6 +87,7 @@ beforeEach(() => {
       price: 500,
       pricingMode: 'FIXED',
       billingUnit: 'PIECE',
+      familyName: 'Vêtements',
       requiresReview: false,
       isActive: false,
       sortOrder: 2,
@@ -324,4 +327,96 @@ describe('Catalogue — administration des tarifs existants', () => {
     expect(depot.refreshCatalog).toHaveBeenCalledWith(TENANT)
     demonter()
   })
+
+  it('filtre instantanément les prestations et articles via la barre de recherche en haut de page (par article, prestation et catégorie)', async () => {
+    depot.entries = [
+      ...depot.entries,
+      {
+        id: 'tarif-drap',
+        tenantId: TENANT,
+        article: 'Drap plat',
+        service: 'Lavage au kilo',
+        price: 1500,
+        pricingMode: 'FIXED',
+        billingUnit: 'PIECE',
+        familyName: 'Linge de maison',
+        requiresReview: false,
+        isActive: true,
+        sortOrder: 3,
+      },
+      {
+        id: 'tarif-costume',
+        tenantId: TENANT,
+        article: 'Costume 2 pièces',
+        service: 'Nettoyage à sec',
+        price: 3500,
+        pricingMode: 'FIXED',
+        billingUnit: 'PIECE',
+        familyName: 'Tenues habillées',
+        requiresReview: false,
+        isActive: true,
+        sortOrder: 4,
+      },
+    ]
+
+    await monter()
+
+    const searchInput = hote.querySelector<HTMLInputElement>(
+      'input[aria-label="Rechercher dans le catalogue"]',
+    )
+    expect(searchInput).not.toBeNull()
+
+    const saisirRecherche = async (valeur: string) => {
+      await act(async () => {
+        if (searchInput) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+          setter?.call(searchInput, valeur)
+          searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+          searchInput.dispatchEvent(new Event('change', { bubbles: true }))
+        }
+      })
+    }
+
+    // Tous les articles actifs sont affichés au départ
+    expect(hote.textContent).toContain('Chemise')
+    expect(hote.textContent).toContain('Drap plat')
+    expect(hote.textContent).toContain('Costume 2 pièces')
+
+    // 1. Filtrage par nom d'article ("Drap")
+    await saisirRecherche('Drap')
+    expect(hote.textContent).toContain('Drap plat')
+    expect(hote.textContent).not.toContain('Chemise')
+    expect(hote.textContent).not.toContain('Costume 2 pièces')
+
+    // 2. Filtrage par nom de prestation ("Nettoyage")
+    await saisirRecherche('Nettoyage')
+    expect(hote.textContent).toContain('Costume 2 pièces')
+    expect(hote.textContent).toContain('Nettoyage à sec')
+    expect(hote.textContent).not.toContain('Chemise')
+    expect(hote.textContent).not.toContain('Drap plat')
+
+    // 3. Filtrage par nom de catégorie ("Linge de maison")
+    await saisirRecherche('Linge')
+    expect(hote.textContent).toContain('Drap plat')
+    expect(hote.textContent).not.toContain('Chemise')
+    expect(hote.textContent).not.toContain('Costume 2 pièces')
+
+    // 4. Recherche sans résultat
+    await saisirRecherche('IntrouvableXYZ')
+    expect(hote.textContent).toContain('Aucune prestation trouvée')
+    expect(hote.textContent).toContain('ne correspond à aucun article, prestation ou catégorie')
+
+    // 5. Effacement de la recherche
+    const boutonEffacer = hote.querySelector<HTMLButtonElement>(
+      'button[aria-label="Effacer la recherche"]',
+    )
+    expect(boutonEffacer).not.toBeNull()
+    await act(async () => boutonEffacer?.click())
+    expect(hote.textContent).toContain('Chemise')
+    expect(hote.textContent).toContain('Drap plat')
+    expect(hote.textContent).toContain('Costume 2 pièces')
+
+    demonter()
+  })
 })
+
