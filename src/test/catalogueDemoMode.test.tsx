@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Catalogue from '@/pages/Catalogue'
 import { CatalogGuide } from '@/components/CatalogGuide'
+import { createCatalogFamily, loadCatalogStructure } from '@/db/catalogStructureRepository'
 import { db } from '@/db/localDb'
 import { useTenantStore } from '@/lib/tenantContext'
 
@@ -226,5 +227,16 @@ describe('Catalogue — mode démonstration (pas de Supabase)', () => {
     // Convention démo : le tarif est « à vérifier » jusqu'à confirmation.
     expect(entrees[0]?.requiresReview).toBe(true)
     expect(hote.textContent).toContain('Chemise')
+  })
+
+  it('trie les catégories par ordre d’affichage, comme le serveur', async () => {
+    await db.catalogStructure.clear()
+    await db.catalogEntries.clear()
+    await createCatalogFamily(TENANT, { name: 'Ordre 5', sort_order: 5 })
+    await createCatalogFamily(TENANT, { name: 'Ordre 1', sort_order: 1 })
+    await createCatalogFamily(TENANT, { name: 'Ordre 5b', sort_order: 5 })
+
+    const structure = await loadCatalogStructure(TENANT)
+    expect(structure.families.map((famille) => famille.name)).toEqual(['Ordre 1', 'Ordre 5', 'Ordre 5b'])
   })
 })

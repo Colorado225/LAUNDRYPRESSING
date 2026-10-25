@@ -49,6 +49,7 @@ const FAMILY = {
   id: 'family-1', tenant_id: TENANT, name: 'Linge courant', description: null,
   is_active: true, sort_order: 0, created_by: null, created_at: '', updated_at: '',
 }
+const onCatalogChanged = vi.fn(async () => {})
 let racine: Root
 let hote: HTMLDivElement
 
@@ -57,7 +58,7 @@ async function monter(canManage = false) {
   document.body.appendChild(hote)
   racine = createRoot(hote)
   await act(async () => {
-    racine.render(<CatalogStructureManager tenantId={TENANT} canManage={canManage} onCatalogChanged={async () => {}} />)
+    racine.render(<CatalogStructureManager tenantId={TENANT} canManage={canManage} onCatalogChanged={onCatalogChanged} />)
   })
   await act(async () => new Promise((resoudre) => setTimeout(resoudre, 0)))
 }
@@ -87,6 +88,7 @@ beforeEach(() => {
     depot.createCatalogService, depot.updateCatalogService, depot.setCatalogServiceActive, depot.deleteCatalogService,
   ]) action.mockResolvedValue(undefined)
   depot.refreshCatalog.mockResolvedValue(true)
+  onCatalogChanged.mockClear()
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
@@ -169,6 +171,37 @@ describe('gestion de la structure du catalogue', () => {
     expect(depot.createCatalogService).toHaveBeenCalledWith(TENANT, expect.objectContaining({
       name: 'Collecte à domicile', service_type: 'logistics', application_scope: 'order',
     }))
+    demonter()
+  })
+
+  it('refuse un doublon de nom côté client', async () => {
+    depot.structure = { families: [FAMILY], articles: [], services: [] }
+    await monter()
+
+    const nom = hote.querySelector<HTMLInputElement>('input[required]')
+    expect(nom).not.toBeNull()
+    await act(async () => {
+      if (nom) saisir(nom, FAMILY.name)
+    })
+    await act(async () => {
+      hote.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(depot.createCatalogFamily).not.toHaveBeenCalled()
+    demonter()
+  })
+
+  it('supprime une catégorie et rafraîchit le catalogue tarifaire', async () => {
+    depot.structure = { families: [FAMILY], articles: [], services: [] }
+    await monter()
+
+    const supprimer = hote.querySelector<HTMLButtonElement>('[aria-label="Supprimer Linge courant"]')
+    expect(supprimer).not.toBeNull()
+    await act(async () => supprimer?.click())
+    await act(async () => new Promise((resoudre) => setTimeout(resoudre, 0)))
+
+    expect(depot.deleteCatalogFamily).toHaveBeenCalledWith(TENANT, 'family-1')
+    expect(onCatalogChanged).toHaveBeenCalled()
     demonter()
   })
 })

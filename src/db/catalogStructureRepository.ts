@@ -195,9 +195,9 @@ export async function loadCatalogStructure(tenantId: string): Promise<CatalogStr
   }
   const supabase = getSupabaseClient()
   const [families, articles, services] = await Promise.all([
-    supabase.from('catalog_families').select('*').eq('tenant_id', tenantId).order('sort_order').order('name'),
-    supabase.from('catalog_articles').select('*').eq('tenant_id', tenantId).order('sort_order').order('name'),
-    supabase.from('catalog_services').select('*').eq('tenant_id', tenantId).order('sort_order').order('name'),
+    supabase.from('catalog_families').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
+    supabase.from('catalog_articles').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
+    supabase.from('catalog_services').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
   ])
   const error = families.error ?? articles.error ?? services.error
   if (error) throw erreurCatalogue(error)
