@@ -104,12 +104,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   const order = orderData as OrderRecord
 
-  const { data: membership } = await admin
+  const { data: membership, error: membershipError } = await admin
     .from('tenant_users')
     .select('tenant_id, role')
     .eq('user_id', userId)
     .eq('tenant_id', order.tenant_id)
     .maybeSingle()
+
+  if (membershipError) {
+    console.error('[cinetpay-init] lecture appartenance', membershipError)
+    return apiError('membership_lookup_failed', "Impossible de vérifier l'accès au pressing.", 503, origin)
+  }
 
   if (!membership) {
     return apiError(
@@ -141,11 +146,23 @@ Deno.serve(async (request: Request): Promise<Response> => {
   // Depuis le palier 2, un client peut régler un acompte en espèces au
   // comptoir. Facturer `total_amount` dans ce cas ferait payer deux fois la
   // part déjà réglée : on ne demande que le solde réel, relu en base.
-  const { data: paidRows } = await admin
+  const { data: paidRows, error: paidRowsError } = await admin
     .from('payment_transactions')
     .select('amount')
     .eq('order_id', order.id)
     .eq('status', 'paid')
+
+  // Ne jamais calculer un solde à partir d'une lecture incomplète : si la
+  // base ne répond pas, continuer pourrait créer un deuxième encaissement.
+  if (paidRowsError) {
+    console.error('[cinetpay-init] lecture des encaissements existants', paidRowsError)
+    return apiError(
+      'payment_balance_unavailable',
+      'Impossible de vérifier le solde de la commande. Réessayez dans un instant.',
+      503,
+      origin,
+    )
+  }
 
   const alreadyPaid = (paidRows ?? []).reduce(
     (somme, ligne) => somme + Number(ligne.amount ?? 0),
@@ -203,13 +220,25 @@ Deno.serve(async (request: Request): Promise<Response> => {
   // valides chez CinetPay : le client peut payer deux fois, sans remboursement
   // automatique. La fenêtre de réutilisation couvre le temps de saisie normal.
   const REUSE_WINDOW_MS = 15 * 60 * 1000
-  const { data: openRows } = await admin
+  const { data: openRows, error: openRowsError } = await admin
     .from('payment_transactions')
     .select('id, transaction_id, amount, payment_url, status, created_at')
     .eq('order_id', order.id)
     .in('status', ['pending', 'initiated'])
     .order('created_at', { ascending: false })
     .limit(1)
+
+  // La recherche du guichet ouvert est une garde anti-double paiement. Une
+  // erreur de lecture ne doit pas être assimilée à « aucun paiement ouvert ».
+  if (openRowsError) {
+    console.error('[cinetpay-init] recherche du paiement ouvert', openRowsError)
+    return apiError(
+      'payment_state_unavailable',
+      'Impossible de vérifier une tentative de paiement existante. Réessayez dans un instant.',
+      503,
+      origin,
+    )
+  }
 
   const open = openRows?.[0]
 
@@ -233,10 +262,20 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     // Guichet trop ancien, montant modifié ou tentative interrompue : on le
     // clôture avant d'en ouvrir un nouveau (l'index unique l'exigerait).
-    await admin
+    const { error: cancelOpenError } = await admin
       .from('payment_transactions')
       .update({ status: 'cancelled' })
       .eq('id', open.id)
+
+    if (cancelOpenError) {
+      console.error('[cinetpay-init] clôture de l’ancienne tentative', cancelOpenError)
+      return apiError(
+        'payment_state_update_failed',
+        'Impossible de clôturer la tentative précédente. Réessayez dans un instant.',
+        503,
+        origin,
+      )
+    }
   }
 
   // Identifiant court et unique (CinetPay recommande ≤ 30 caractères).
@@ -317,7 +356,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       metadata: JSON.stringify({ orderId: order.id, tenantId: order.tenant_id }),
     })
 
-    await admin
+    const { error: persistInitError } = await admin
       .from('payment_transactions')
       .update({
         status: 'initiated',
@@ -327,6 +366,18 @@ Deno.serve(async (request: Request): Promise<Response> => {
         provider_payload: { init: result.raw, mode: config.mode },
       })
       .eq('transaction_id', transactionId)
+
+    if (persistInitError) {
+      console.error('[cinetpay-init] enregistrement de la réponse CinetPay', persistInitError)
+      // L'URL ne doit pas être présentée comme une initiation réussie si la
+      // tentative n'est pas correctement persistée pour le webhook et les reprises.
+      return apiError(
+        'payment_init_persist_failed',
+        "Le paiement a été initialisé, mais son suivi n'a pas pu être enregistré. Contactez le comptoir avant de réessayer.",
+        503,
+        origin,
+      )
+    }
 
     return json(
       {
