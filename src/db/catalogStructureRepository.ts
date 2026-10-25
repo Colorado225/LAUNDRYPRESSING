@@ -93,6 +93,107 @@ function prestationDepuisLigne(ligne: LocalCatalogStructureRow): CatalogServiceR
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Synchronisation serveur → cache local (mode connecté).
+ *
+ * La structure est un référentiel serveur, mais l'application est
+ * offline-first : chaque lecture serveur reconstitue le cache Dexie, et
+ * chaque écrition serveur réussie le met à jour immédiatement. En cas de
+ * coupure réseau, `loadCatalogStructure` retombe sur ce cache — le
+ * catalogue reste gérable et consultable hors ligne, jusqu'au prochain
+ * rafraîchissement serveur.
+ * ------------------------------------------------------------------ */
+
+function ligneDepuisFamille(row: CatalogFamilyRow): LocalCatalogStructureRow {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    kind: 'family',
+    name: row.name,
+    description: row.description,
+    familyId: null,
+    careInstructions: null,
+    defaultUnit: null,
+    serviceType: null,
+    applicationScope: null,
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at,
+  }
+}
+
+function ligneDepuisArticle(row: CatalogArticleRow): LocalCatalogStructureRow {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    kind: 'article',
+    name: row.name,
+    description: row.description,
+    familyId: row.family_id,
+    careInstructions: row.care_instructions,
+    defaultUnit: row.default_unit,
+    serviceType: null,
+    applicationScope: null,
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at,
+  }
+}
+
+function ligneDepuisService(row: CatalogServiceRow): LocalCatalogStructureRow {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    kind: 'service',
+    name: row.name,
+    description: row.description,
+    familyId: null,
+    careInstructions: null,
+    defaultUnit: null,
+    serviceType: row.service_type,
+    applicationScope: row.application_scope,
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at,
+  }
+}
+
+/** Écriture best-effort dans le cache local : un échec ne invalide pas le succès serveur. */
+async function ecrireReferenceLocale(ligne: LocalCatalogStructureRow): Promise<void> {
+  try {
+    await db.catalogStructure.put(ligne)
+  } catch {
+    // Le cache local se recouvre au prochain `loadCatalogStructure`.
+  }
+}
+
+async function purgerReferenceLocale(id: string): Promise<void> {
+  try {
+    await db.catalogStructure.delete(id)
+  } catch {
+    // Idem : le prochain rafraîchissement serveur purgera la ligne.
+  }
+}
+
+/**
+ * Rafraîchissement complet du cache local d'un tenant à partir d'un
+ * jeu serveur complet : les lignes supprimées côté serveur disparaissent
+ * du cache (le serveur est l'autorité).
+ */
+async function synchroniserCacheLocal(
+  tenantId: string,
+  lignes: LocalCatalogStructureRow[],
+): Promise<void> {
+  try {
+    await db.transaction('rw', db.catalogStructure, async () => {
+      await db.catalogStructure.where('tenantId').equals(tenantId).delete()
+      await db.catalogStructure.bulkPut(lignes)
+    })
+  } catch {
+    // Un cache : l'affichage serveur reste valable sans lui.
+  }
+}
+
 async function creerReferenceLocale(
   tenantId: string,
   ligne: Omit<LocalCatalogStructureRow, 'id' | 'tenantId' | 'updatedAt'>,
@@ -193,49 +294,88 @@ export async function loadCatalogStructure(tenantId: string): Promise<CatalogStr
     const services = lignes.filter((l) => l.kind === 'service').map(prestationDepuisLigne).sort(comparerParOrdre)
     return { families: familles, articles, services }
   }
-  const supabase = getSupabaseClient()
-  const [families, articles, services] = await Promise.all([
-    supabase.from('catalog_families').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
-    supabase.from('catalog_articles').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
-    supabase.from('catalog_services').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
-  ])
-  const error = families.error ?? articles.error ?? services.error
-  if (error) throw erreurCatalogue(error)
-  return {
-    families: families.data ?? [],
-    articles: articles.data ?? [],
-    services: services.data ?? [],
+  try {
+    const supabase = getSupabaseClient()
+    const [families, articles, services] = await Promise.all([
+      supabase.from('catalog_families').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
+      supabase.from('catalog_articles').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
+      supabase.from('catalog_services').select('*').eq('tenant_id', tenantId).order('sort_order,name'),
+    ])
+    const error = families.error ?? articles.error ?? services.error
+    if (error) throw erreurCatalogue(error)
+    const famillesData = (families.data ?? []) as CatalogFamilyRow[]
+    const articlesData = (articles.data ?? []) as CatalogArticleRow[]
+    const servicesData = (services.data ?? []) as CatalogServiceRow[]
+    await synchroniserCacheLocal(
+      tenantId,
+      [
+        ...famillesData.map(ligneDepuisFamille),
+        ...articlesData.map(ligneDepuisArticle),
+        ...servicesData.map(ligneDepuisService),
+      ],
+    )
+    return { families: famillesData, articles: articlesData, services: servicesData }
+  } catch (cause) {
+    // Hors ligne : la copie locale mémorisée reste consultable — mieux vaut
+    // une structure légèrement datée qu'un écran inutilisable. Sans cache,
+    // on relaie l'erreur serveur (RLS, réseau) pour l'afficher.
+    const lignes = await db.catalogStructure.where('tenantId').equals(tenantId).toArray()
+    if (lignes.length === 0) throw cause
+    const familles = lignes.filter((l) => l.kind === 'family').map(familleDepuisLigne).sort(comparerParOrdre)
+    const articles = lignes.filter((l) => l.kind === 'article').map(articleDepuisLigne).sort(comparerParOrdre)
+    const services = lignes.filter((l) => l.kind === 'service').map(prestationDepuisLigne).sort(comparerParOrdre)
+    return { families: familles, articles: articles, services: services }
   }
 }
 
+type TableReference = 'catalog_families' | 'catalog_articles' | 'catalog_services'
+type LigneReference = CatalogFamilyRow | CatalogArticleRow | CatalogServiceRow
+
+/** Reconstitue la ligne de cache local correspondant à une ligne serveur. */
+function ligneDepuisReference(table: TableReference, ligne: LigneReference): LocalCatalogStructureRow {
+  if (table === 'catalog_families') return ligneDepuisFamille(ligne as CatalogFamilyRow)
+  if (table === 'catalog_articles') return ligneDepuisArticle(ligne as CatalogArticleRow)
+  return ligneDepuisService(ligne as CatalogServiceRow)
+}
+
 async function modifierReference(
-  table: 'catalog_families' | 'catalog_articles' | 'catalog_services',
+  table: TableReference,
   tenantId: string,
   id: string,
   values: Record<string, unknown>,
-): Promise<void> {
+): Promise<LigneReference> {
   const { data, error } = await getSupabaseClient()
     .from(table)
     .update(values as never)
     .eq('tenant_id', tenantId)
     .eq('id', id)
-    .select('id')
+    .select('*')
     .maybeSingle()
   if (error) throw erreurCatalogue(error)
   if (!data) throw new Error('Élément introuvable dans le catalogue de ce pressing.')
+  const ligne = data as LigneReference
+  await ecrireReferenceLocale(ligneDepuisReference(table, ligne))
+  return ligne
 }
 
 async function creerReference(
-  table: 'catalog_families' | 'catalog_articles' | 'catalog_services',
+  table: TableReference,
   tenantId: string,
   values: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await getSupabaseClient().from(table).insert({
-    id: newId(),
-    tenant_id: tenantId,
-    ...values,
-  } as never)
+): Promise<LigneReference> {
+  const { data, error } = await getSupabaseClient()
+    .from(table)
+    .insert({
+      id: newId(),
+      tenant_id: tenantId,
+      ...values,
+    } as never)
+    .select('*')
+    .single()
   if (error) throw erreurCatalogue(error)
+  const ligne = data as LigneReference
+  await ecrireReferenceLocale(ligneDepuisReference(table, ligne))
+  return ligne
 }
 
 async function compterDependances(
@@ -279,7 +419,7 @@ async function compterTarifsDependants(
 }
 
 async function supprimerReference(
-  table: 'catalog_families' | 'catalog_articles' | 'catalog_services',
+  table: TableReference,
   tenantId: string,
   id: string,
 ): Promise<void> {
@@ -292,6 +432,7 @@ async function supprimerReference(
     .maybeSingle()
   if (error) throw erreurCatalogue(error)
   if (!data) throw new Error('Élément introuvable dans le catalogue de ce pressing.')
+  await purgerReferenceLocale(id)
 }
 
 export async function createCatalogFamily(tenantId: string, input: CatalogFamilyInput): Promise<void> {
