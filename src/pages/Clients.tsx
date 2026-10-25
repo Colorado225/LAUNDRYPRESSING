@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CloudOff, Loader2, MapPin, Phone, Save, Search, UserRound } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { Button, Field, FieldLabel, Input } from '@/components/ui'
 import { useLocalOrders } from '@/db/hooks'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -129,12 +130,14 @@ export default function Clients() {
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
             aria-hidden
           />
-          <input
-            value={recherche}
-            onChange={(event) => setRecherche(event.target.value)}
-            placeholder="Nom ou téléphone"
-            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-teal"
-          />
+          <Field>
+            <Input
+              value={recherche}
+              onChange={(event) => setRecherche(event.target.value)}
+              placeholder="Nom ou téléphone"
+              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-teal"
+            />
+          </Field>
         </label>
       </header>
 
@@ -265,24 +268,21 @@ export default function Clients() {
                     </p>
                   ) : (
                     <div className="mt-2 space-y-2">
-                      <label className="block">
-                        <span className="mb-1 block text-xs font-semibold text-slate-600">
-                          Adresse / quartier
-                        </span>
-                        <input
+                      <Field>
+                        <FieldLabel htmlFor="client-adresse">Adresse / quartier</FieldLabel>
+                        <Input
+                          id="client-adresse"
                           value={adresse}
                           onChange={(event) => setAdresse(event.target.value)}
                           maxLength={300}
                           placeholder="Cocody, près de la pharmacie"
-                          className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
                         />
-                      </label>
+                      </Field>
 
-                      <label className="block">
-                        <span className="mb-1 block text-xs font-semibold text-slate-600">
-                          Préférences et remarques
-                        </span>
+                      <Field>
+                        <FieldLabel htmlFor="client-notes">Préférences et remarques</FieldLabel>
                         <textarea
+                          id="client-notes"
                           value={notes}
                           onChange={(event) => setNotes(event.target.value)}
                           rows={2}
@@ -290,13 +290,13 @@ export default function Clients() {
                           placeholder="Repassage léger, prévient avant de venir…"
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-teal"
                         />
-                      </label>
+                      </Field>
 
-                      <button
+                      <Button
                         type="button"
                         onClick={() => void enregistrerFiche()}
                         disabled={envoi}
-                        className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+                        className="w-full"
                       >
                         {envoi ? (
                           <Loader2 className="animate-spin" size={16} aria-hidden />
@@ -304,7 +304,7 @@ export default function Clients() {
                           <Save size={16} aria-hidden />
                         )}
                         Enregistrer la fiche
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>

@@ -10,6 +10,7 @@ import {
   updateCatalogEntry,
 } from '@/db/catalogRepository'
 import CatalogStructureManager from '@/components/CatalogStructureManager'
+import { Button, Field, FieldLabel, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui'
 import type { LocalCatalogEntry } from '@/db/localDb'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -291,34 +292,35 @@ export default function Catalogue() {
         )}
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-600">Article</span>
-            <input
+          <Field>
+            <FieldLabel htmlFor="catalog-article">Article</FieldLabel>
+            <Input
+              id="catalog-article"
               value={article}
               maxLength={60}
               onChange={(event) => setArticle(event.target.value)}
               placeholder="Chemise"
-              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
             />
-          </label>
+          </Field>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-600">Prestation</span>
-            <input
+          <Field>
+            <FieldLabel htmlFor="catalog-service">Prestation</FieldLabel>
+            <Input
+              id="catalog-service"
               value={service}
               maxLength={60}
               onChange={(event) => setService(event.target.value)}
               placeholder="Lavage"
-              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
             />
-          </label>
+          </Field>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-600">Mode de tarification</span>
-            <select
-              value={modeTarif}
-              onChange={(event) => {
-                const mode = event.target.value as CatalogPricingMode
+          <Field>
+            <FieldLabel htmlFor="catalog-mode">Mode de tarification</FieldLabel>
+            <Select
+              id="catalog-mode"
+              defaultValue={modeTarif}
+              onValueChange={(value) => {
+                const mode = value as CatalogPricingMode
                 setModeTarif(mode)
                 if (mode === 'QUOTE') {
                   setUnite('FLAT')
@@ -332,46 +334,56 @@ export default function Catalogue() {
                   setPrix('')
                 }
               }}
-              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
             >
-              <option value="FIXED">Prix fixe</option>
-              <option value="FROM">À partir de</option>
-              <option value="QUOTE">Sur devis</option>
-              <option value="UNCONFIGURED">Non configuré (non facturable)</option>
-            </select>
-          </label>
+              <SelectTrigger id="catalog-mode-trigger">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="FIXED">Prix fixe</SelectItem>
+                <SelectItem value="FROM">À partir de</SelectItem>
+                <SelectItem value="QUOTE">Sur devis</SelectItem>
+                <SelectItem value="UNCONFIGURED">Non configuré (non facturable)</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-600">Unité facturable</span>
-            <select
-              value={unite}
+          <Field>
+            <FieldLabel htmlFor="catalog-unit">Unité facturable</FieldLabel>
+            <Select
+              id="catalog-unit"
+              defaultValue={unite}
               disabled={modeTarif === 'QUOTE'}
-              onChange={(event) => {
-                const next = event.target.value as CatalogBillingUnit
+              onValueChange={(value) => {
+                const next = value as CatalogBillingUnit
                 setUnite(next)
                 if (next === 'FLAT') {
                   setQuantiteMinimum('')
                   setIncrement('')
                 }
               }}
-              className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal disabled:bg-slate-100"
             >
-              <option value="PIECE">Pièce</option>
-              <option value="PAIR">Paire</option>
-              <option value="SET">Ensemble</option>
-              <option value="KG">Kilogramme</option>
-              <option value="M2">Mètre carré</option>
-              <option value="METER">Mètre linéaire</option>
-              <option value="PACKAGE">Paquet</option>
-              <option value="FLAT">Forfait</option>
-            </select>
-          </label>
+              <SelectTrigger id="catalog-unit-trigger">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PIECE">Pièce</SelectItem>
+                <SelectItem value="PAIR">Paire</SelectItem>
+                <SelectItem value="SET">Ensemble</SelectItem>
+                <SelectItem value="KG">Kilogramme</SelectItem>
+                <SelectItem value="M2">Mètre carré</SelectItem>
+                <SelectItem value="METER">Mètre linéaire</SelectItem>
+                <SelectItem value="PACKAGE">Paquet</SelectItem>
+                <SelectItem value="FLAT">Forfait</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-600">
+          <Field>
+            <FieldLabel htmlFor="catalog-price">
               {modeTarif === 'FROM' ? 'Prix de départ (FCFA / unité)' : 'Prix unitaire (FCFA / unité)'}
-            </span>
-            <input
+            </FieldLabel>
+            <Input
+              id="catalog-price"
               type="number"
               min={0}
               step={1}
@@ -380,57 +392,57 @@ export default function Catalogue() {
               onChange={(event) => setPrix(event.target.value)}
               disabled={modeTarif === 'QUOTE' || modeTarif === 'UNCONFIGURED'}
               placeholder="1500"
-              className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal disabled:bg-slate-100"
             />
-          </label>
+          </Field>
 
           {unite !== 'FLAT' && modeTarif !== 'QUOTE' && (
             <>
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-600">Quantité minimum</span>
-                <input
+              <Field>
+                <FieldLabel htmlFor="catalog-min-qty">Quantité minimum</FieldLabel>
+                <Input
+                  id="catalog-min-qty"
                   type="number"
                   min={0.001}
                   step={['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(unite) ? 1 : 0.001}
                   value={quantiteMinimum}
                   onChange={(event) => setQuantiteMinimum(event.target.value)}
                   placeholder="Aucun minimum"
-                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
                 />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-600">Incrément de facturation</span>
-                <input
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="catalog-increment">Incrément de facturation</FieldLabel>
+                <Input
+                  id="catalog-increment"
                   type="number"
                   min={0.001}
                   step={['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(unite) ? 1 : 0.001}
                   value={increment}
                   onChange={(event) => setIncrement(event.target.value)}
                   placeholder="Aucun arrondi"
-                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
                 />
-              </label>
+              </Field>
             </>
           )}
 
           {modeTarif !== 'QUOTE' && (
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-slate-600">Minimum facturable (FCFA)</span>
-              <input
+            <Field>
+              <FieldLabel htmlFor="catalog-min-charge">Minimum facturable (FCFA)</FieldLabel>
+              <Input
+                id="catalog-min-charge"
                 type="number"
                 min={0}
                 step={1}
                 value={minimumFacturable}
                 onChange={(event) => setMinimumFacturable(event.target.value)}
                 placeholder="Aucun minimum"
-                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
               />
-            </label>
+            </Field>
           )}
 
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-slate-600">Conditions tarifaires (facultatif)</span>
+          <Field className="sm:col-span-2">
+            <FieldLabel htmlFor="catalog-conditions">Conditions tarifaires (facultatif)</FieldLabel>
             <textarea
+              id="catalog-conditions"
               value={conditions}
               maxLength={1000}
               rows={2}
@@ -438,14 +450,14 @@ export default function Catalogue() {
               placeholder="Ex. : poids final confirmé à la réception"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-brand-teal"
             />
-          </label>
+          </Field>
 
           <div className="flex items-end lg:col-span-4">
-            <button
+            <Button
               type="button"
               onClick={() => void enregistrer()}
               disabled={envoi}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+              className="w-full"
             >
               {envoi ? (
                 <Loader2 className="animate-spin" size={16} aria-hidden />
@@ -455,7 +467,7 @@ export default function Catalogue() {
                 <Plus size={16} aria-hidden />
               )}
               {editingId ? 'Enregistrer le tarif' : 'Ajouter le tarif'}
-            </button>
+            </Button>
           </div>
         </div>
 
