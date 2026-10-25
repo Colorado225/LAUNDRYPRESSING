@@ -269,4 +269,59 @@ describe('Catalogue — administration des tarifs existants', () => {
     expect(hote.querySelector('[aria-label^="Modifier "]')).toBeNull()
     demonter()
   })
+
+  it('rafraîchit les sélecteurs de mode et d’unité en modifiant un tarif devis', async () => {
+    depot.entries = [
+      ...depot.entries,
+      {
+        id: 'tarif-devis',
+        tenantId: TENANT,
+        article: 'Robe',
+        service: 'Nettoyage à sec',
+        price: 0,
+        pricingMode: 'QUOTE',
+        billingUnit: 'FLAT',
+        requiresReview: true,
+        isActive: true,
+        sortOrder: 3,
+      },
+    ]
+    await monter()
+
+    await act(async () => {
+      hote
+        .querySelector<HTMLButtonElement>('[aria-label="Modifier Robe — Nettoyage à sec"]')
+        ?.click()
+    })
+
+    const sectionTarifs = [...hote.querySelectorAll('section')].find((section) =>
+      section.textContent?.includes('Modifier un tarif'),
+    )
+    const selects = [...(sectionTarifs?.querySelectorAll('select') ?? [])]
+    expect(selects[0]?.value).toBe('QUOTE')
+    expect(selects[1]?.value).toBe('FLAT')
+    demonter()
+  })
+
+  it('n’affiche pas le guide de création quand le catalogue contient déjà des tarifs', async () => {
+    await monter()
+    expect(hote.textContent).not.toContain('Guide de création')
+    demonter()
+  })
+
+  it('installe la grille de départ depuis l’état vide', async () => {
+    depot.entries = []
+    depot.seedDefaultCatalog.mockResolvedValue(40)
+    await monter()
+
+    const boutonGrille = [...hote.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Installer la grille de départ'),
+    )
+    expect(boutonGrille).toBeDefined()
+    await act(async () => boutonGrille?.click())
+
+    expect(depot.seedDefaultCatalog).toHaveBeenCalledWith(TENANT)
+    expect(depot.refreshCatalog).toHaveBeenCalledWith(TENANT)
+    demonter()
+  })
 })

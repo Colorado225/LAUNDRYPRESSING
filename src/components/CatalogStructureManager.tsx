@@ -152,6 +152,16 @@ export default function CatalogStructureManager({ tenantId, canManage = false, o
       toast.error('Choisissez une catégorie active pour cet article.')
       return
     }
+    // Détection immédiate des doublons : la contrainte d'unicité est serveur,
+    // mais un retour rapide évite un aller-retour réseau inutile.
+    if (!form.id) {
+      const section =
+        tab === 'families' ? structure.families : tab === 'articles' ? structure.articles : structure.services
+      if (section.some((item) => item.name === nom)) {
+        toast.error('Un élément portant ce nom existe déjà dans ce pressing.')
+        return
+      }
+    }
 
     setEnvoi(true)
     try {
@@ -220,7 +230,9 @@ export default function CatalogStructureManager({ tenantId, canManage = false, o
       if (tab === 'families') await deleteCatalogFamily(tenantId, item.id)
       else if (tab === 'articles') await deleteCatalogArticle(tenantId, item.id)
       else await deleteCatalogService(tenantId, item.id)
-      await recharger()
+      // La suppression peut invalider des références dans le cache tarifaire :
+      // le catalogue recharge ses métadonnées comme après toute autre opération.
+      await Promise.all([recharger(), onCatalogChanged()])
       toast.success('Élément supprimé.')
     } catch (cause) {
       toast.error(texteErreur(cause))
@@ -348,30 +360,16 @@ export default function CatalogStructureManager({ tenantId, canManage = false, o
             </>
           )}
 
-          {tab !== 'articles' && (
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-slate-600">Description (facultative)</span>
-              <textarea
-                value={form.description}
-                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                maxLength={500}
-                rows={2}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base"
-              />
-            </label>
-          )}
-          {tab === 'articles' && (
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-slate-600">Description (facultative)</span>
-              <textarea
-                value={form.description}
-                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                maxLength={500}
-                rows={2}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base"
-              />
-            </label>
-          )}
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-slate-600">Description (facultative)</span>
+            <textarea
+              value={form.description}
+              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+              maxLength={500}
+              rows={2}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base"
+            />
+          </label>
 
           <label className="block max-w-40">
             <span className="mb-1 block text-xs font-semibold text-slate-600">Ordre d’affichage</span>

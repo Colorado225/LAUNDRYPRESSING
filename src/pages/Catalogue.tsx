@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Tag } from 'lucide-react'
+import { Archive, CloudOff, Loader2, Lock, Pencil, Plus, RotateCcw, Tag, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Tooltip from '@/components/Tooltip'
 import CatalogGuide from '@/components/CatalogGuide'
@@ -8,10 +8,11 @@ import {
   deactivateCatalogEntry,
   getCachedCatalog,
   refreshCatalog,
+  seedDefaultCatalog,
   updateCatalogEntry,
 } from '@/db/catalogRepository'
 import CatalogStructureManager from '@/components/CatalogStructureManager'
-import { Button, Field, FieldLabel, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui'
+import { Button, Field, FieldLabel, Input, Select, SelectItem } from '@/components/ui'
 import type { LocalCatalogEntry } from '@/db/localDb'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -56,22 +57,32 @@ export default function Catalogue() {
   const [envoi, setEnvoi] = useState(false)
 
   /** Guide contextuel : visible si le catalogue est vide et n'a pas été terminé. */
-  const guideTermine = localStorage.getItem('catalogue-guide-termine') === '1'
-  const [guideVisible, setGuideVisible] = useState(
-    entrees.length === 0 && !guideTermine,
-  )
+  const [guideTermine, setGuideTermine] = useState(() => {
+    try {
+      return localStorage.getItem('catalogue-guide-termine') === '1'
+    } catch {
+      // localStorage indisponible : on ignore silencieusement
+      return false
+    }
+  })
+  const [recherche, setRecherche] = useState('')
+
+  // Le guide ne s'affiche qu'après le premier chargement : sinon, `entrees`
+  // étant encore vide pendant `chargement`, il apparaîtrait en flash à chaque
+  // ouverture de l'écran, même pour un catalogue déjà complet.
+  const guideVisible = !guideTermine && !chargement && entrees.length === 0
 
   useEffect(() => {
     // Si des entrées apparaissent (chargement ou création), on ferme le guide.
-    if (entrees.length > 0 && guideVisible) {
-      setGuideVisible(false)
+    if (entrees.length > 0 && !guideTermine) {
+      setGuideTermine(true)
       try {
         localStorage.setItem('catalogue-guide-termine', '1')
       } catch {
         // localStorage indisponible : on ignore silencieusement
       }
     }
-  }, [entrees, guideVisible])
+  }, [entrees, guideTermine])
 
   const recharger = useMemo(
     () => async () => {
@@ -92,16 +103,23 @@ export default function Catalogue() {
   }, [recharger, tenantId])
 
   const groupes = useMemo(() => {
+    const critere = recherche.trim().toLowerCase()
     const map = new Map<string, LocalCatalogEntry[]>()
     entrees
       .filter((entree) => afficherArchives || entree.isActive)
+      .filter(
+        (entree) =>
+          critere === '' ||
+          entree.article.toLowerCase().includes(critere) ||
+          entree.service.toLowerCase().includes(critere),
+      )
       .forEach((entree) => {
         const liste = map.get(entree.article) ?? []
         liste.push(entree)
         map.set(entree.article, liste)
       })
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'fr'))
-  }, [entrees, afficherArchives])
+  }, [entrees, afficherArchives, recherche])
 
   const remettreFormulaire = () => {
     setEditingId(null)
@@ -233,8 +251,31 @@ export default function Catalogue() {
     }
   }
 
+  const installerGrille = async () => {
+    if (!tenantId) return
+    setEnvoi(true)
+    try {
+      const nombre = await seedDefaultCatalog(tenantId)
+      await refreshCatalog(tenantId)
+      await recharger()
+      toast.success(
+        nombre > 0
+          ? `${nombre} prestations de la grille de départ ajoutées`
+          : 'Grille de départ déjà présente',
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Installation impossible')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
   const nombreArchives = entrees.filter((entree) => !entree.isActive).length
-  const nombreAConfirmer = entrees.filter((entree) => entree.requiresReview).length
+  // Seuls les tarifs actifs doivent être confirmés : un tarif archivé n'est
+  // plus proposé aux nouvelles commandes, sa vérification ne sert plus rien.
+  const nombreAConfirmer = entrees.filter(
+    (entree) => entree.isActive && entree.requiresReview,
+  ).length
 
   if (!peutGerer) {
     return (
@@ -283,6 +324,18 @@ export default function Catalogue() {
           )}
         </div>
       </header>
+
+      {entrees.length > 0 && (
+        <div className="flex justify-center">
+          <Input
+            value={recherche}
+            onChange={(event) => setRecherche(event.target.value)}
+            placeholder="Rechercher un article ou une prestation…"
+            aria-label="Rechercher dans le catalogue"
+            className="max-w-md"
+          />
+        </div>
+      )}
 
       {tenantId && <CatalogStructureManager tenantId={tenantId} canManage={peutGerer} onCatalogChanged={recharger} />}
 
@@ -337,7 +390,7 @@ export default function Catalogue() {
             <FieldLabel htmlFor="catalog-mode">Mode de tarification</FieldLabel>
             <Select
               id="catalog-mode"
-              defaultValue={modeTarif}
+              value={modeTarif}
               onValueChange={(value) => {
                 const mode = value as CatalogPricingMode
                 setModeTarif(mode)
@@ -354,15 +407,10 @@ export default function Catalogue() {
                 }
               }}
             >
-              <SelectTrigger id="catalog-mode-trigger">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="FIXED">Prix fixe</SelectItem>
-                <SelectItem value="FROM">À partir de</SelectItem>
-                <SelectItem value="QUOTE">Sur devis</SelectItem>
-                <SelectItem value="UNCONFIGURED">Non configuré (non facturable)</SelectItem>
-              </SelectContent>
+              <SelectItem value="FIXED">Prix fixe</SelectItem>
+              <SelectItem value="FROM">À partir de</SelectItem>
+              <SelectItem value="QUOTE">Sur devis</SelectItem>
+              <SelectItem value="UNCONFIGURED">Non configuré (non facturable)</SelectItem>
             </Select>
           </Field>
 
@@ -370,7 +418,7 @@ export default function Catalogue() {
             <FieldLabel htmlFor="catalog-unit">Unité facturable</FieldLabel>
             <Select
               id="catalog-unit"
-              defaultValue={unite}
+              value={unite}
               disabled={modeTarif === 'QUOTE'}
               onValueChange={(value) => {
                 const next = value as CatalogBillingUnit
@@ -381,19 +429,14 @@ export default function Catalogue() {
                 }
               }}
             >
-              <SelectTrigger id="catalog-unit-trigger">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PIECE">Pièce</SelectItem>
-                <SelectItem value="PAIR">Paire</SelectItem>
-                <SelectItem value="SET">Ensemble</SelectItem>
-                <SelectItem value="KG">Kilogramme</SelectItem>
-                <SelectItem value="M2">Mètre carré</SelectItem>
-                <SelectItem value="METER">Mètre linéaire</SelectItem>
-                <SelectItem value="PACKAGE">Paquet</SelectItem>
-                <SelectItem value="FLAT">Forfait</SelectItem>
-              </SelectContent>
+              <SelectItem value="PIECE">Pièce</SelectItem>
+              <SelectItem value="PAIR">Paire</SelectItem>
+              <SelectItem value="SET">Ensemble</SelectItem>
+              <SelectItem value="KG">Kilogramme</SelectItem>
+              <SelectItem value="M2">Mètre carré</SelectItem>
+              <SelectItem value="METER">Mètre linéaire</SelectItem>
+              <SelectItem value="PACKAGE">Paquet</SelectItem>
+              <SelectItem value="FLAT">Forfait</SelectItem>
             </Select>
           </Field>
 
@@ -467,7 +510,7 @@ export default function Catalogue() {
               rows={2}
               onChange={(event) => setConditions(event.target.value)}
               placeholder="Ex. : poids final confirmé à la réception"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-brand-teal"
+              className="w-full min-h-12 rounded-xl border border-slate-300 px-3 py-2 text-base outline-none focus:border-brand-teal"
             />
           </Field>
 
@@ -505,12 +548,34 @@ export default function Catalogue() {
           Chargement du catalogue…
         </p>
       ) : groupes.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white py-12 text-center">
-          <p className="font-semibold text-slate-700">Catalogue vide</p>
-          <p className="mt-1 text-sm text-slate-500">
-            Ajoutez vos prestations ci-dessus, ou installez la grille de départ.
-          </p>
-        </div>
+        recherche.trim() ? (
+          <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white py-12 text-center">
+            <p className="font-semibold text-slate-700">Aucune prestation trouvée</p>
+            <p className="mt-1 text-sm text-slate-500">
+              « {recherche.trim()} » ne correspond à aucun article ou prestation du catalogue.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white py-12 text-center">
+            <p className="font-semibold text-slate-700">Catalogue vide</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Ajoutez vos prestations ci-dessus, ou installez la grille de départ.
+            </p>
+            <button
+              type="button"
+              onClick={() => void installerGrille()}
+              disabled={envoi}
+              className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-brand-navy hover:bg-slate-50 disabled:opacity-50"
+            >
+              {envoi ? (
+                <Loader2 className="animate-spin" size={16} aria-hidden />
+              ) : (
+                <Zap size={16} aria-hidden />
+              )}
+              Installer la grille de départ
+            </button>
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {groupes.map(([nomArticle, prestations]) => (
@@ -518,6 +583,9 @@ export default function Catalogue() {
               <h2 className="font-bold text-brand-navy">
                 <Tooltip contenu={`${prestations.length} prestation${prestations.length > 1 ? 's' : ''} dans cette catégorie`}>{nomArticle}</Tooltip>
               </h2>
+              {prestations[0]?.familyName && (
+                <p className="text-xs text-slate-500">{prestations[0].familyName}</p>
+              )}
               <ul className="mt-2 flex flex-wrap gap-2">
                 {prestations.map((prestation) => (
                   <li
@@ -546,7 +614,7 @@ export default function Catalogue() {
                         Article ou prestation archivé
                       </span>
                     )}
-                    {prestation.requiresReview && (
+                    {prestation.isActive && prestation.requiresReview && (
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
                         À vérifier
                       </span>
@@ -571,7 +639,7 @@ export default function Catalogue() {
                         aria-label={`Désactiver ${nomArticle} — ${prestation.service}`}
                         className="inline-flex size-12 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
                       >
-                        ×
+                        <Archive size={14} aria-hidden />
                       </button>
                     ) : (
                       <button
@@ -595,7 +663,7 @@ export default function Catalogue() {
       {guideVisible && (
         <CatalogGuide
           onPremiereCreation={() => {
-            setGuideVisible(false)
+            setGuideTermine(true)
             try {
               localStorage.setItem('catalogue-guide-termine', '1')
             } catch {
