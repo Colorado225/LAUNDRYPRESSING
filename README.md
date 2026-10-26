@@ -13,6 +13,10 @@ Application web installable (PWA) pour gérer les commandes d’un pressing. Le 
 - Encaissements espèces, acomptes, clôture de caisse, remboursements et reçus/factures imprimables.
 - Paiement Mobile Money via CinetPay et fonctions Supabase Edge.
 - Clients, stock, dépenses, tableau de bord, rapports, audit et support.
+- CRUD complet des modules de gestion : fiches clients créées/modifiées/supprimées,
+  articles de stock archivés ou supprimés selon leur historique, fournisseurs,
+  dépenses corrigées, réclamations clôturées, demandes de support retirées et
+  gestion de l'équipe par le propriétaire ([`docs/CRUD-COMPLET.md`](docs/CRUD-COMPLET.md)).
 - Authentification Supabase, rôles et isolation multi-tenant avec politiques RLS.
 - PWA installable avec écran de repli hors ligne.
 
@@ -70,6 +74,10 @@ Le serveur Vite écoute sur `0.0.0.0:3000`. Pour un environnement réellement co
 
 Le déploiement nécessite un projet Supabase configuré et une URL HTTPS pour l’application. Les migrations sont dans `supabase/migrations/`; les fonctions sont dans `supabase/functions/`.
 
+La migration `025_crud_complet.sql` est **additive** : elle ajoute les politiques,
+déclencheurs et fonctions des écritures de gestion manquantes, sans supprimer de
+données. Elle doit être appliquée avant de déployer le frontend correspondant.
+
 La migration `020_suppression_tarification_et_laundry_models.sql` supprime les tables de catalogue, les modèles commerciaux, les compositions de forfaits et leurs références spécifiques sur les lignes. Les libellés, quantités, montants vendus et snapshots génériques des lignes sont conservés. **Faire une sauvegarde et vérifier le projet ciblé avant d’appliquer cette migration** : sa suppression de données commerciales est irréversible.
 
 La recette locale et les tests automatisés ne remplacent pas un test de bout en bout sur le projet Supabase et le compte marchand CinetPay de production. La procédure est détaillée dans [`docs/DEPLOIEMENT-FONCTIONS.md`](docs/DEPLOIEMENT-FONCTIONS.md) et [`docs/RECETTE-SUPABASE.md`](docs/RECETTE-SUPABASE.md).
@@ -88,7 +96,7 @@ src/
   test/           tests Vitest
 supabase/
   functions/      fonctions Edge CinetPay
-  migrations/     migrations SQL 001 à 020
+  migrations/     migrations SQL 001 à 025
   tests/          recettes et vérifications SQL
 scripts/          installation, base, recette et déploiement
 ```

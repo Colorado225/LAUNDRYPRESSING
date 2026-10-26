@@ -18,7 +18,7 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 |---|---|
 | `npm run typecheck` | Réussi |
 | `npm run lint` | Réussi |
-| `npm test` | **578 tests réussis / 578**, 55 fichiers |
+| `npm test` | **625 tests réussis / 625**, 59 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
 | CI PostgreSQL 16 | Réussie sur la PR #7 : migrations et suite SQL ordonnée passées |
@@ -26,6 +26,27 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 | Supabase/CinetPay réels | Non vérifiés dans cette session |
 
 Le passage complet dans PGlite valide l’ordre des migrations et des tests jusqu’à 020. La CI de la PR #7 a également exécuté `scripts/sql-verify.sh` sur PostgreSQL 16 réel avec succès ; cela ne remplace pas une recette Supabase déployée. Pendant ces vérifications, le test `catalogue_commercial_models.sql` a été corrigé : il prétendait tester un article hors périmètre, mais réutilisait par erreur l’identifiant d’une chemise déjà incluse dans le forfait.
+
+## Mise à jour du 26 octobre 2026 — CRUD complet (migration 025)
+
+Les écritures manquantes des modules de gestion ont été ajoutées : fiches clients
+(création, modification complète, suppression propriétaire), édition et archivage
+des articles de stock, modification/désactivation des fournisseurs, correction des
+dépenses, clôture/réouverture/suppression des réclamations, clôture et retrait des
+demandes de support, suppression de commande encadrée, et gestion de l'équipe par
+le propriétaire (rattachement par e-mail, rôle, nom, détachement).
+
+La migration `025_crud_complet.sql` est **additive** : aucune table ni donnée
+supprimée. Elle ajoute deux politiques sur `customers`, trois déclencheurs de
+protection (fiches clients, stock et fournisseurs, suppression de commande) et six
+fonctions `security definer` contrôlées par le rôle. Le détail de la matrice et les règles métier sont
+dans [`CRUD-COMPLET.md`](CRUD-COMPLET.md).
+
+Contrôles rejoués : typecheck, lint, build et suite Vitest (625 tests / 59
+fichiers). La chaîne complète des migrations et des tests SQL, y compris
+`supabase/tests/crud_complet.sql` (19 contrôles), a été exécutée avec succès sur
+PostgreSQL via PGlite ; `psql` reste absent de l'environnement, la CI PostgreSQL 16
+doit rejouer `npm run sql:verify`.
 
 ## Architecture
 

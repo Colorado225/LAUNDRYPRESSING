@@ -31,6 +31,12 @@ export interface ClientSummary {
   outstanding: number
   lastOrderAt: string
   lateCount: number
+  /** Fiche serveur associée, `null` tant qu'aucune fiche n'a été lue. */
+  customerId?: string | null
+  email?: string | null
+  address?: string | null
+  /** Vrai si une fiche existe côté serveur (créée par une commande ou à la main). */
+  hasCard?: boolean
 }
 
 /**
@@ -102,8 +108,60 @@ export function filterClients(clients: ClientSummary[], recherche: string): Clie
   return clients.filter((client) => {
     if (client.name.toLowerCase().includes(terme)) return true
     if (client.phone.toLowerCase().includes(terme)) return true
+    if (client.email?.toLowerCase().includes(terme)) return true
     return chiffres.length >= 3 && normalisePhone(client.phone).includes(chiffres)
   })
+}
+
+/**
+ * Fusionne l'historique local et les fiches serveur.
+ *
+ * L'historique vient des commandes de la tablette ; les fiches servent à faire
+ * apparaître un client **créé au comptoir avant toute commande** (livraison à
+ * venir, dépôt sans ticket) et à afficher l'e-mail ou l'adresse connus. Une
+ * fiche sans commande reste donc visible, avec zéro commande.
+ */
+export function mergeCustomerCards(
+  orders: LocalOrder[],
+  cards: CustomerRow[],
+  today: string = todayIso(),
+): ClientSummary[] {
+  const parCle = new Map(summariseClients(orders, today).map((client) => [client.key, client]))
+
+  for (const carte of cards) {
+    const key = carte.phone_key || normalisePhone(carte.phone) || carte.phone.trim().toLowerCase()
+    if (!key) continue
+
+    const existant = parCle.get(key)
+    if (existant) {
+      // La fiche est tenue à jour par le déclencheur des commandes : elle fait
+      // foi sur l'identité, l'historique local restant la source des montants.
+      existant.customerId = carte.id
+      existant.hasCard = true
+      existant.name = carte.name || existant.name
+      existant.phone = carte.phone || existant.phone
+      existant.email = carte.email
+      existant.address = carte.address
+      continue
+    }
+
+    parCle.set(key, {
+      key,
+      name: carte.name,
+      phone: carte.phone,
+      orderCount: 0,
+      totalSpent: 0,
+      outstanding: 0,
+      lastOrderAt: carte.created_at,
+      lateCount: 0,
+      customerId: carte.id,
+      email: carte.email,
+      address: carte.address,
+      hasCard: true,
+    })
+  }
+
+  return [...parCle.values()].sort((a, b) => b.lastOrderAt.localeCompare(a.lastOrderAt))
 }
 
 /** Commandes d'un client, de la plus récente à la plus ancienne. */
@@ -116,51 +174,252 @@ export function ordersForClient(orders: LocalOrder[], key: string): LocalOrder[]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-/** Fiche serveur d'un client, `null` hors ligne ou si elle n'existe pas. */
-export async function fetchCustomerCard(
-  tenantId: string,
-  phoneKey: string,
-): Promise<CustomerRow | null> {
-  if (!isSupabaseConfigured) return null
+/** Longueurs maximales alignées sur les contraintes de la table `customers`. */
+export const CUSTOMER_LIMITS = {
+  name: 120,
+  phone: 30,
+  email: 160,
+  address: 300,
+  notes: 1000,
+} as const
+
+/** Traduit les erreurs PostgreSQL en message utilisable au comptoir. */
+export function customerErrorMessage(message: string): string {
+  if (/Failed to fetch|NetworkError|Load failed/i.test(message)) {
+    return 'Réseau indisponible : cette action sur la fiche client nécessite une connexion.'
+  }
+  if (
+    message.includes('customers_phone_unique') ||
+    message.includes('duplicate key')
+  ) {
+    return 'Un client utilise déjà ce numéro de téléphone dans ce pressing.'
+  }
+  if (message.includes('row-level security') || message.includes('42501')) {
+    return 'Votre rôle ne permet pas cette action sur les fiches clients.'
+  }
+  if (message.includes('Numéro de téléphone invalide')) {
+    return 'Indiquez un numéro de téléphone valide.'
+  }
+  return message
+}
+
+export interface CustomerInput {
+  name: string
+  phone: string
+  email?: string | null
+  address?: string | null
+  notes?: string | null
+}
+
+/** Validation locale, miroir des contraintes SQL (nom, téléphone, longueurs). */
+export function validateCustomer(input: CustomerInput): string | null {
+  const nom = input.name.trim()
+  if (nom.length < 1) return 'Indiquez le nom du client.'
+  if (nom.length > CUSTOMER_LIMITS.name) {
+    return `Le nom ne peut pas dépasser ${CUSTOMER_LIMITS.name} caractères.`
+  }
+
+  const telephone = input.phone.trim()
+  if (normalisePhone(telephone).length < 6) {
+    return 'Indiquez un numéro de téléphone valide (au moins 6 chiffres).'
+  }
+  if (telephone.length > CUSTOMER_LIMITS.phone) {
+    return `Le téléphone ne peut pas dépasser ${CUSTOMER_LIMITS.phone} caractères.`
+  }
+
+  const email = input.email?.trim() ?? ''
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return 'L’adresse e-mail semble invalide.'
+  }
+  if (email.length > CUSTOMER_LIMITS.email) return 'L’adresse e-mail est trop longue.'
+  if ((input.address?.trim().length ?? 0) > CUSTOMER_LIMITS.address) {
+    return `L’adresse ne peut pas dépasser ${CUSTOMER_LIMITS.address} caractères.`
+  }
+  if ((input.notes?.trim().length ?? 0) > CUSTOMER_LIMITS.notes) {
+    return `Les préférences ne peuvent pas dépasser ${CUSTOMER_LIMITS.notes} caractères.`
+  }
+
+  return null
+}
+
+function optional(value: string | null | undefined): string | null {
+  const propre = value?.trim()
+  return propre ? propre : null
+}
+
+/**
+ * Fiches serveur du pressing, pour l'écran Clients.
+ *
+ * Hors ligne ou sans configuration Supabase, la liste est vide : l'écran
+ * retombe sur l'historique dérivé des commandes de la tablette.
+ */
+export async function listCustomerCards(tenantId: string): Promise<CustomerRow[]> {
+  if (!isSupabaseConfigured || !navigator.onLine) return []
 
   const { data, error } = await getSupabaseClient()
     .from('customers')
     .select('*')
     .eq('tenant_id', tenantId)
-    .eq('phone_key', phoneKey)
-    .maybeSingle()
+    .order('name', { ascending: true })
 
-  return error ? null : data
+  if (error) throw new Error(customerErrorMessage(error.message))
+  return data ?? []
 }
 
 /**
- * Enregistre les informations enrichies d'une fiche.
+ * Crée une fiche client sans commande.
  *
- * Cette écriture est **en ligne uniquement** : une adresse ou une préférence
- * n'a pas besoin d'être saisie en pleine coupure, et un conflit silencieux
- * entre deux tablettes serait plus gênant qu'utile.
+ * `phone_key` est calculé par le déclencheur `prepare_customer_row` (migration
+ * 025) : le client n'envoie que le numéro tel qu'il a été saisi.
+ */
+export async function createCustomer(
+  tenantId: string,
+  input: CustomerInput,
+): Promise<CustomerRow> {
+  if (!isSupabaseConfigured) {
+    throw new Error('La création d’une fiche client nécessite une connexion.')
+  }
+
+  const invalide = validateCustomer(input)
+  if (invalide) throw new Error(invalide)
+
+  const { data, error } = await getSupabaseClient()
+    .from('customers')
+    .insert({
+      tenant_id: tenantId,
+      name: input.name.trim(),
+      phone: input.phone.trim(),
+      email: optional(input.email),
+      address: optional(input.address),
+      notes: optional(input.notes),
+    })
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw new Error(customerErrorMessage(error.message))
+  if (!data) throw new Error('Fiche non créée : vérifiez vos droits.')
+  return data
+}
+
+/**
+ * Modifie une fiche : identité, contact et préférences.
+ *
+ * L'écriture est **en ligne uniquement** : une adresse ou une préférence n'a
+ * pas besoin d'être saisie en pleine coupure, et un conflit silencieux entre
+ * deux tablettes serait plus gênant qu'utile. Un changement de téléphone est
+ * refusé si une autre fiche porte déjà ce numéro (index unique du pressing).
+ */
+export async function updateCustomer(
+  tenantId: string,
+  customerId: string,
+  patch: Partial<CustomerInput>,
+): Promise<CustomerRow> {
+  if (!isSupabaseConfigured) {
+    throw new Error('La fiche client détaillée nécessite une connexion.')
+  }
+
+  const valeurs: Partial<Pick<CustomerRow, 'name' | 'phone' | 'email' | 'address' | 'notes'>> = {}
+  if (patch.name !== undefined) valeurs.name = patch.name.trim()
+  if (patch.phone !== undefined) valeurs.phone = patch.phone.trim()
+  if (patch.email !== undefined) valeurs.email = optional(patch.email)
+  if (patch.address !== undefined) valeurs.address = optional(patch.address)
+  if (patch.notes !== undefined) valeurs.notes = optional(patch.notes)
+
+  if (Object.keys(valeurs).length === 0) {
+    throw new Error('Aucune modification à enregistrer.')
+  }
+
+  // Un patch partiel (adresse seule, par exemple) ne doit pas exiger les
+  // autres champs : chaque valeur fournie est validée séparément.
+  const controles: Array<[boolean, string | null]> = [
+    [patch.name !== undefined, valeurs.name && valeurs.name.length >= 1 ? null : 'Indiquez le nom du client.'],
+    [
+      patch.name !== undefined,
+      (valeurs.name?.length ?? 0) > CUSTOMER_LIMITS.name
+        ? `Le nom ne peut pas dépasser ${CUSTOMER_LIMITS.name} caractères.`
+        : null,
+    ],
+    [
+      patch.phone !== undefined,
+      normalisePhone(valeurs.phone ?? '').length >= 6
+        ? null
+        : 'Indiquez un numéro de téléphone valide (au moins 6 chiffres).',
+    ],
+    [
+      patch.phone !== undefined,
+      (valeurs.phone?.length ?? 0) > CUSTOMER_LIMITS.phone
+        ? `Le téléphone ne peut pas dépasser ${CUSTOMER_LIMITS.phone} caractères.`
+        : null,
+    ],
+    [
+      patch.email !== undefined,
+      valeurs.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valeurs.email)
+        ? 'L’adresse e-mail semble invalide.'
+        : null,
+    ],
+    [
+      patch.email !== undefined,
+      (valeurs.email?.length ?? 0) > CUSTOMER_LIMITS.email
+        ? 'L’adresse e-mail est trop longue.'
+        : null,
+    ],
+    [
+      patch.address !== undefined,
+      (valeurs.address?.length ?? 0) > CUSTOMER_LIMITS.address
+        ? `L’adresse ne peut pas dépasser ${CUSTOMER_LIMITS.address} caractères.`
+        : null,
+    ],
+    [
+      patch.notes !== undefined,
+      (valeurs.notes?.length ?? 0) > CUSTOMER_LIMITS.notes
+        ? `Les préférences ne peuvent pas dépasser ${CUSTOMER_LIMITS.notes} caractères.`
+        : null,
+    ],
+  ]
+  const erreur = controles.find(([actif, message]) => actif && message)?.[1]
+  if (erreur) throw new Error(erreur)
+
+  const { data, error } = await getSupabaseClient()
+    .from('customers')
+    .update(valeurs)
+    .eq('tenant_id', tenantId)
+    .eq('id', customerId)
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw new Error(customerErrorMessage(error.message))
+  if (!data) throw new Error('Fiche client introuvable ou non modifiable.')
+  return data
+}
+
+/**
+ * Ancienne signature conservée pour l'écran historique : elle n'expose que les
+ * deux champs enrichis. Les nouveaux écrans passent par `updateCustomer`.
  */
 export async function updateCustomerCard(
   tenantId: string,
   customerId: string,
   patch: { notes?: string | null; address?: string | null },
 ): Promise<CustomerRow> {
+  return updateCustomer(tenantId, customerId, patch)
+}
+
+/**
+ * Supprime une fiche client (propriétaire uniquement, RLS `customers_delete_owner`).
+ *
+ * Les commandes ne sont pas touchées : elles gardent le nom et le téléphone
+ * saisis, seul le lien vers la fiche est remis à `NULL`.
+ */
+export async function deleteCustomer(tenantId: string, customerId: string): Promise<void> {
   if (!isSupabaseConfigured) {
-    throw new Error('La fiche client détaillée nécessite une connexion.')
+    throw new Error('La suppression d’une fiche client nécessite une connexion.')
   }
 
-  const { data, error } = await getSupabaseClient()
+  const { error } = await getSupabaseClient()
     .from('customers')
-    .update({
-      notes: patch.notes?.trim() ? patch.notes.trim() : null,
-      address: patch.address?.trim() ? patch.address.trim() : null,
-    })
+    .delete()
     .eq('tenant_id', tenantId)
     .eq('id', customerId)
-    .select('*')
-    .maybeSingle()
 
-  if (error) throw new Error(error.message)
-  if (!data) throw new Error('Fiche client introuvable ou non modifiable.')
-  return data
+  if (error) throw new Error(customerErrorMessage(error.message))
 }

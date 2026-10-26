@@ -184,6 +184,30 @@ export async function answerSupport(
   if (error) throw new PlatformError(traduire(error.message))
 }
 
+/**
+ * Clôture une demande par le pressing (migration 025).
+ *
+ * La fonction serveur vérifie le rôle et le `tenant_id` : un réceptionniste ne
+ * peut pas clôturer la demande d'un autre pressing. Utile quand le problème a
+ * été résolu sur place et qu'aucune réponse de l'éditeur n'est nécessaire.
+ */
+export async function closeSupportRequest(requestId: string): Promise<void> {
+  if (!isSupabaseConfigured) throw new Error('Le support nécessite une connexion.')
+  const { error } = await getSupabaseClient().rpc('tenant_close_support_request', {
+    p_id: requestId,
+  })
+  if (error) throw new PlatformError(traduire(error.message))
+}
+
+/** Retire une demande encore ouverte (erreur de saisie). */
+export async function deleteSupportRequest(requestId: string): Promise<void> {
+  if (!isSupabaseConfigured) throw new Error('Le support nécessite une connexion.')
+  const { error } = await getSupabaseClient().rpc('tenant_delete_support_request', {
+    p_id: requestId,
+  })
+  if (error) throw new PlatformError(traduire(error.message))
+}
+
 export const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
   open: 'Ouverte',
   in_progress: 'En cours',

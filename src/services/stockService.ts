@@ -39,6 +39,12 @@ export function isLowStock(item: Pick<StockItemRow, 'quantity' | 'min_quantity' 
 /** Traduit les erreurs PostgreSQL en message exploitable au comptoir. */
 export function stockErrorMessage(message: string): string {
   if (message.includes('Stock insuffisant')) return message
+  if (message.includes('stock_items_guard_delete') || message.includes('archivez-le')) {
+    return 'Cet article a déjà des mouvements : archivez-le au lieu de le supprimer.'
+  }
+  if (message.includes('suppliers_guard_delete') || message.includes('désactivez-le')) {
+    return 'Ce fournisseur est déjà utilisé : désactivez-le au lieu de le supprimer.'
+  }
   if (message.includes('duplicate key') || message.includes('stock_items_name_unique')) {
     return 'Un article porte déjà ce nom dans ce pressing.'
   }
@@ -121,11 +127,55 @@ export async function createStockItem(
 export async function updateStockItem(
   tenantId: string,
   itemId: string,
-  patch: Partial<Pick<StockItemRow, 'name' | 'min_quantity' | 'unit_cost' | 'is_active'>>,
+  patch: Partial<
+    Pick<StockItemRow, 'name' | 'category' | 'unit' | 'min_quantity' | 'unit_cost' | 'is_active'>
+  >,
 ): Promise<void> {
+  if (patch.name !== undefined) {
+    const nom = patch.name.trim()
+    if (nom.length < 2) throw new Error('Le nom de l’article doit contenir au moins 2 caractères.')
+    patch = { ...patch, name: nom }
+  }
+  if (patch.min_quantity !== undefined && (!Number.isFinite(patch.min_quantity) || patch.min_quantity < 0)) {
+    throw new Error('Le seuil d’alerte doit être positif ou nul.')
+  }
+  if (
+    patch.unit_cost !== undefined &&
+    patch.unit_cost !== null &&
+    (!Number.isInteger(patch.unit_cost) || patch.unit_cost < 0)
+  ) {
+    throw new Error('Le coût unitaire doit être un entier positif, en FCFA.')
+  }
+
   const { error } = await requireClient()
     .from('stock_items')
     .update(patch)
+    .eq('tenant_id', tenantId)
+    .eq('id', itemId)
+
+  if (error) throw new Error(stockErrorMessage(error.message))
+}
+
+/** Archive (ou réactive) un article sans toucher à son journal de mouvements. */
+export async function setStockItemActive(
+  tenantId: string,
+  itemId: string,
+  actif: boolean,
+): Promise<void> {
+  await updateStockItem(tenantId, itemId, { is_active: actif })
+}
+
+/**
+ * Supprime un article **jamais mouvementé**.
+ *
+ * Le déclencheur `stock_items_guard_delete` (migration 025) refuse la
+ * suppression dès qu'un mouvement existe : le journal est la source de vérité
+ * de la quantité, le supprimer effacerait des consommations déjà imputées.
+ */
+export async function deleteStockItem(tenantId: string, itemId: string): Promise<void> {
+  const { error } = await requireClient()
+    .from('stock_items')
+    .delete()
     .eq('tenant_id', tenantId)
     .eq('id', itemId)
 
@@ -271,10 +321,28 @@ export async function listSuppliers(tenantId: string): Promise<SupplierRow[]> {
   return data ?? []
 }
 
+export interface SupplierInput {
+  name: string
+  phone: string | null
+  notes: string | null
+}
+
+function validateSupplier(input: SupplierInput): string | null {
+  const nom = input.name.trim()
+  if (nom.length < 2) return 'Le nom du fournisseur doit contenir au moins 2 caractères.'
+  if (nom.length > 120) return 'Le nom du fournisseur ne peut pas dépasser 120 caractères.'
+  if ((input.phone?.trim().length ?? 0) > 30) return 'Le téléphone du fournisseur est trop long.'
+  if ((input.notes?.trim().length ?? 0) > 500) return 'La note ne peut pas dépasser 500 caractères.'
+  return null
+}
+
 export async function createSupplier(
   tenantId: string,
-  input: { name: string; phone: string | null; notes: string | null },
+  input: SupplierInput,
 ): Promise<SupplierRow> {
+  const invalide = validateSupplier(input)
+  if (invalide) throw new Error(invalide)
+
   const { data, error } = await requireClient()
     .from('suppliers')
     .insert({
@@ -289,4 +357,55 @@ export async function createSupplier(
   if (error) throw new Error(stockErrorMessage(error.message))
   if (!data) throw new Error('Fournisseur non créé : vérifiez vos droits.')
   return data
+}
+
+/** Modifie l'identité d'un fournisseur ou le désactive (archivage). */
+export async function updateSupplier(
+  tenantId: string,
+  supplierId: string,
+  patch: Partial<SupplierInput & { is_active: boolean }>,
+): Promise<SupplierRow> {
+  const valeurs: Partial<Pick<SupplierRow, 'name' | 'phone' | 'notes' | 'is_active'>> = {}
+  if (patch.name !== undefined) valeurs.name = patch.name.trim()
+  if (patch.phone !== undefined) valeurs.phone = patch.phone?.trim() ? patch.phone.trim() : null
+  if (patch.notes !== undefined) valeurs.notes = patch.notes?.trim() ? patch.notes.trim() : null
+  if (patch.is_active !== undefined) valeurs.is_active = patch.is_active
+
+  if (Object.keys(valeurs).length === 0) throw new Error('Aucune modification à enregistrer.')
+
+  const invalide = validateSupplier({
+    name: typeof valeurs.name === 'string' ? valeurs.name : 'Fournisseur',
+    phone: typeof valeurs.phone === 'string' ? valeurs.phone : null,
+    notes: typeof valeurs.notes === 'string' ? valeurs.notes : null,
+  })
+  if ((patch.name !== undefined || patch.phone !== undefined || patch.notes !== undefined) && invalide) {
+    throw new Error(invalide)
+  }
+
+  const { data, error } = await requireClient()
+    .from('suppliers')
+    .update(valeurs)
+    .eq('tenant_id', tenantId)
+    .eq('id', supplierId)
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw new Error(stockErrorMessage(error.message))
+  if (!data) throw new Error('Fournisseur introuvable ou non modifiable.')
+  return data
+}
+
+/**
+ * Supprime un fournisseur inutilisé. Le déclencheur `suppliers_guard_delete`
+ * refuse la suppression s'il porte déjà une dépense ou un mouvement : il faut
+ * alors le désactiver pour ne pas perdre l'origine des écritures.
+ */
+export async function deleteSupplier(tenantId: string, supplierId: string): Promise<void> {
+  const { error } = await requireClient()
+    .from('suppliers')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('id', supplierId)
+
+  if (error) throw new Error(stockErrorMessage(error.message))
 }

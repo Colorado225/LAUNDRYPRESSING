@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CloudOff, Loader2, Lock, Receipt, Trash2, Wallet } from 'lucide-react'
+import { CloudOff, Loader2, Lock, Pencil, Receipt, Trash2, Wallet, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -13,6 +13,7 @@ import {
   deleteExpense,
   listExpensesPage,
   sumExpensesSince,
+  updateExpense,
 } from '@/services/expenseService'
 import { startOfMonth } from '@/services/dashboardService'
 import type { Curseur } from '@/lib/pagination'
@@ -49,6 +50,8 @@ export default function Depenses() {
   const [fournisseurId, setFournisseurId] = useState('')
   const [note, setNote] = useState('')
   const [envoi, setEnvoi] = useState(false)
+  /** Dépense en cours de correction ; `null` = formulaire de création. */
+  const [editionId, setEditionId] = useState<string | null>(null)
 
   /**
    * Première page. Le total du mois vient d'une agrégation **serveur** : il
@@ -102,6 +105,27 @@ export default function Depenses() {
     void charger()
   }, [charger])
 
+  const reinitialiserFormulaire = () => {
+    setEditionId(null)
+    setLibelle('')
+    setMontant('')
+    setNote('')
+    setFournisseurId('')
+    setCategorie('fournitures')
+    setDate(todayIso())
+  }
+
+  const commencerEdition = (depense: ExpenseRow) => {
+    setEditionId(depense.id)
+    setLibelle(depense.label)
+    setCategorie(depense.category)
+    setMontant(String(depense.amount))
+    setDate(depense.spent_on)
+    setFournisseurId(depense.supplier_id ?? '')
+    setNote(depense.note ?? '')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const ajouter = async () => {
     if (!tenantId) return
 
@@ -117,19 +141,24 @@ export default function Depenses() {
 
     setEnvoi(true)
     try {
-      await createExpense(tenantId, {
+      const valeurs = {
         label: libelle,
         category: categorie,
         amount: valeur,
         spentOn: date,
         supplierId: fournisseurId || null,
         note: note || null,
-      })
-      toast.success('Dépense enregistrée', { icon: '🧾' })
-      setLibelle('')
-      setMontant('')
-      setNote('')
-      setFournisseurId('')
+      }
+
+      if (editionId) {
+        await updateExpense(tenantId, editionId, valeurs)
+        toast.success('Dépense mise à jour', { icon: '✏️' })
+      } else {
+        await createExpense(tenantId, valeurs)
+        toast.success('Dépense enregistrée', { icon: '🧾' })
+      }
+
+      reinitialiserFormulaire()
       await charger()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Enregistrement impossible')
@@ -146,6 +175,7 @@ export default function Depenses() {
     try {
       await deleteExpense(tenantId, depense.id)
       toast.success('Dépense supprimée')
+      if (editionId === depense.id) reinitialiserFormulaire()
       await charger()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Suppression impossible')
@@ -210,9 +240,21 @@ export default function Depenses() {
       )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-          Nouvelle dépense
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+            {editionId ? <Pencil size={16} aria-hidden /> : null}
+            {editionId ? 'Modifier la dépense' : 'Nouvelle dépense'}
+          </h2>
+          {editionId && (
+            <button
+              type="button"
+              onClick={reinitialiserFormulaire}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              <X size={14} aria-hidden /> Annuler la modification
+            </button>
+          )}
+        </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <label className="block sm:col-span-2">
@@ -301,7 +343,7 @@ export default function Depenses() {
           className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
         >
           {envoi ? <Loader2 className="animate-spin" size={16} aria-hidden /> : null}
-          Enregistrer la dépense
+          {editionId ? 'Enregistrer les modifications' : 'Enregistrer la dépense'}
         </button>
       </section>
 
@@ -347,6 +389,14 @@ export default function Depenses() {
                   <span className="text-sm font-bold text-rose-700">
                     −{formatFcfa(depense.amount)}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => commencerEdition(depense)}
+                    aria-label={`Modifier la dépense ${depense.label}`}
+                    className="inline-flex size-12 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-brand-teal hover:text-brand-navy"
+                  >
+                    <Pencil size={16} aria-hidden />
+                  </button>
                   <button
                     type="button"
                     onClick={() => void supprimer(depense)}

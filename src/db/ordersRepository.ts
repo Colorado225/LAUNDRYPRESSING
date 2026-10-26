@@ -341,6 +341,42 @@ export async function updateOrderAssignmentLocal(
 }
 
 /** Récupère une commande et ses vêtements. */
+/**
+ * Supprime une commande **et ses dépendances locales**.
+ *
+ * Dexie ne connaît pas les clés étrangères : sans ce nettoyage, des lignes,
+ * encaissements, réclamations et notifications resteraient orphelins et
+ * réapparaîtraient dans les agrégats de caisse ou de rapports.
+ *
+ * L'appelant a déjà vérifié qu'aucun encaissement réel n'était rattaché et,
+ * pour une commande synchronisée, que la suppression distante a réussi.
+ */
+export async function deleteOrderLocal(orderId: string): Promise<void> {
+  await db.transaction(
+    'rw',
+    [
+      db.orders,
+      db.orderItems,
+      db.cashPayments,
+      db.orderIssues,
+      db.notifications,
+      db.pendingPayments,
+      db.refunds,
+    ],
+    async () => {
+      await Promise.all([
+        db.orders.delete(orderId),
+        db.orderItems.where('orderId').equals(orderId).delete(),
+        db.cashPayments.where('orderId').equals(orderId).delete(),
+        db.orderIssues.where('orderId').equals(orderId).delete(),
+        db.notifications.where('orderId').equals(orderId).delete(),
+        db.pendingPayments.where('orderId').equals(orderId).delete(),
+        db.refunds.where('orderId').equals(orderId).delete(),
+      ])
+    },
+  )
+}
+
 export async function getOrderWithItems(orderId: string): Promise<LocalOrderWithItems | null> {
   const order = await db.orders.get(orderId)
   if (!order) return null

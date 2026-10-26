@@ -53,6 +53,8 @@ La liste permet de consulter et de rechercher les commandes. Ouvrir une commande
 
 Les transitions disponibles suivent le flux de traitement. Le personnel d’atelier peut mettre à jour les étapes autorisées par son rôle. Si plusieurs appareils modifient une commande hors ligne, l’application signale un conflit et propose de conserver la version locale ou d’adopter celle du serveur : ne pas fermer ce choix sans vérifier les modifications.
 
+Le propriétaire peut **supprimer définitivement** une commande depuis sa fiche, mais seulement si aucun encaissement ni remboursement n’y est rattaché. Une commande qui porte de l’argent doit être **annulée** : elle reste dans l’historique et conserve ses reçus.
+
 ## 5. Atelier et QR code
 
 1. Depuis la commande, afficher ou imprimer l’étiquette QR.
@@ -68,13 +70,15 @@ Depuis la fiche d’une commande, le panneau **Encaissement** affiche le total, 
 
 Les reçus thermiques et les factures s’ouvrent depuis la fiche de commande. La page **Caisse** regroupe les encaissements et la clôture journalière. Les remboursements sont soumis aux permissions et aux règles applicables aux montants encaissés.
 
-## 7. Clients, stock et dépenses
+## 7. Clients, stock, dépenses et équipe
 
-- **Clients** : consulter les clients connus et leur historique disponible.
-- **Stock** : consulter les articles, fournisseurs et mouvements ; certaines actions demandent les droits appropriés.
-- **Dépenses** : enregistrer et consulter les dépenses selon le rôle.
+- **Clients** : la liste réunit les clients des commandes de l’appareil et les fiches enregistrées sur le serveur. **Nouveau client** crée une fiche sans commande (dépôt à venir, renseignement au comptoir) ; sélectionner un client ouvre sa fiche où le nom, le téléphone, l’e-mail, l’adresse et les préférences se modifient. La suppression d’une fiche est réservée au propriétaire : les commandes et leur historique restent conservés.
+- **Stock** : créer un article, puis modifier son nom, sa catégorie, son unité, son seuil et son coût. Un article déjà mouvementé ne peut pas être supprimé : **archiver** le retire des mouvements sans effacer le journal. Les fournisseurs se modifient de la même façon ; un fournisseur déjà utilisé par une dépense se désactive au lieu de se supprimer.
+- **Dépenses** : créer, corriger (bouton crayon sur la ligne) et supprimer une dépense. Le total du mois est recalculé côté serveur.
+- **Équipe** (dans **Paramètres**) : le propriétaire rattache un collègue par son e-mail, change son rôle ou son nom affiché, ou le détache. Le dernier propriétaire du pressing ne peut pas être retiré. Le collègue doit avoir créé son compte au préalable ; aucun mot de passe ne circule dans cet écran.
+- **Support** : clôturer une demande résolue sur place, ou retirer une demande encore ouverte (erreur de saisie).
 
-Ces écrans de gestion dépendent du réseau. L’indicateur de connexion et de synchronisation signale si des données restent en attente.
+Ces écrans de gestion dépendent du réseau, à l’exception de l’historique client calculé sur l’appareil. L’indicateur de connexion et de synchronisation signale si des données restent en attente.
 
 ## 8. Tableau de bord, rapports et audit
 

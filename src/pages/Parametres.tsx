@@ -12,6 +12,7 @@ import {
   Loader2,
   LogOut,
   Pencil,
+  Plus,
   RefreshCw,
   Save,
   ShieldCheck,
@@ -38,8 +39,18 @@ import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { requestPasswordReset, signOutEverywhere } from '@/services/authService'
-import { fetchTeamMembers, memberLabel, ROLE_LABELS, type TeamMember } from '@/services/tenantMembers'
+import {
+  addTeamMemberByEmail,
+  fetchTeamMembers,
+  memberLabel,
+  removeTeamMember,
+  ROLE_LABELS,
+  teamErrorMessage,
+  updateTeamMember,
+  type TeamMember,
+} from '@/services/tenantMembers'
 import { fetchTenantPressing, updateTenant } from '@/services/tenantService'
+import type { TenantRole } from '@/types/database'
 import { useSyncStore } from '@/stores/syncStore'
 import { syncPendingOrders } from '@/sync/syncEngine'
 
@@ -81,6 +92,17 @@ export default function Parametres() {
   const [enLigne, setEnLigne] = useState(() => navigator.onLine)
   const [synchronisation, setSynchronisation] = useState(false)
   const [equipe, setEquipe] = useState<TeamMember[]>([])
+
+  // Gestion de l'équipe : le propriétaire seul écrit (fonctions `tenant_*`,
+  // migration 025). L'ajout se fait par e-mail : aucun mot de passe ne circule.
+  const [membreEnEdition, setMembreEnEdition] = useState<TeamMember | null>(null)
+  const [editMembreRole, setEditMembreRole] = useState<TenantRole>('receptionist')
+  const [editMembreNom, setEditMembreNom] = useState('')
+  const [ajoutMembreOuvert, setAjoutMembreOuvert] = useState(false)
+  const [nouvelEmail, setNouvelEmail] = useState('')
+  const [nouveauNom, setNouveauNom] = useState('')
+  const [nouveauRole, setNouveauRole] = useState<TenantRole>('receptionist')
+  const [equipeEnvoi, setEquipeEnvoi] = useState(false)
 
   const [edition, setEdition] = useState(false)
   const [nom, setNom] = useState(tenantName ?? '')
@@ -127,18 +149,85 @@ export default function Parametres() {
     void rafraichirLocal()
   }, [rafraichirLocal])
 
-  useEffect(() => {
+  const rafraichirEquipe = useCallback(async () => {
     if (!tenantId || !isSupabaseConfigured) return
-    let actif = true
-    void fetchTeamMembers(tenantId)
-      .then((membres) => {
-        if (actif) setEquipe(membres)
-      })
-      .catch(() => undefined)
-    return () => {
-      actif = false
+    try {
+      setEquipe(await fetchTeamMembers(tenantId))
+    } catch {
+      // Hors ligne : la liste précédente reste affichée, les écritures seront
+      // refusées par le service avec un message explicite.
     }
   }, [tenantId])
+
+  useEffect(() => {
+    void rafraichirEquipe()
+  }, [rafraichirEquipe])
+
+  const ouvrirEditionMembre = (membre: TeamMember) => {
+    setMembreEnEdition(membre)
+    setEditMembreRole(membre.role)
+    setEditMembreNom(membre.displayName ?? '')
+    setAjoutMembreOuvert(false)
+  }
+
+  const enregistrerMembre = async () => {
+    if (!membreEnEdition) return
+    setEquipeEnvoi(true)
+    try {
+      await updateTeamMember({
+        userId: membreEnEdition.userId,
+        role: editMembreRole,
+        displayName: editMembreNom,
+      })
+      toast.success('Membre mis à jour', { icon: '👥' })
+      setMembreEnEdition(null)
+      await rafraichirEquipe()
+    } catch (error) {
+      toast.error(error instanceof Error ? teamErrorMessage(error.message) : 'Modification impossible')
+    } finally {
+      setEquipeEnvoi(false)
+    }
+  }
+
+  const ajouterMembre = async () => {
+    setEquipeEnvoi(true)
+    try {
+      await addTeamMemberByEmail({
+        email: nouvelEmail,
+        role: nouveauRole,
+        displayName: nouveauNom,
+      })
+      toast.success('Collègue rattaché au pressing', { icon: '👥' })
+      setNouvelEmail('')
+      setNouveauNom('')
+      setNouveauRole('receptionist')
+      setAjoutMembreOuvert(false)
+      await rafraichirEquipe()
+    } catch (error) {
+      toast.error(error instanceof Error ? teamErrorMessage(error.message) : 'Rattachement impossible')
+    } finally {
+      setEquipeEnvoi(false)
+    }
+  }
+
+  const retirerMembre = async (membre: TeamMember) => {
+    const confirme = window.confirm(
+      `Détacher ${memberLabel(membre, userId)} du pressing ? Le compte reste actif, mais perd l’accès à ce pressing.`,
+    )
+    if (!confirme) return
+
+    setEquipeEnvoi(true)
+    try {
+      await removeTeamMember(membre.userId)
+      toast.success('Membre détaché du pressing')
+      if (membreEnEdition?.userId === membre.userId) setMembreEnEdition(null)
+      await rafraichirEquipe()
+    } catch (error) {
+      toast.error(error instanceof Error ? teamErrorMessage(error.message) : 'Retrait impossible')
+    } finally {
+      setEquipeEnvoi(false)
+    }
+  }
 
   const copier = async (valeur: string, libelle: string) => {
     try {
@@ -478,9 +567,24 @@ export default function Parametres() {
 
         {/* ----------------------------------------------------------- Équipe */}
         <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-            <Users size={16} aria-hidden /> Équipe
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <Users size={16} aria-hidden /> Équipe
+            </h2>
+            {estProprietaire && isSupabaseConfigured && enLigne && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAjoutMembreOuvert((ouvert) => !ouvert)
+                  setMembreEnEdition(null)
+                }}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-brand-teal"
+              >
+                {ajoutMembreOuvert ? <X size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
+                {ajoutMembreOuvert ? 'Fermer' : 'Ajouter'}
+              </button>
+            )}
+          </div>
 
           {equipe.length === 0 ? (
             <p className="mt-3 text-sm text-slate-500">
@@ -490,20 +594,174 @@ export default function Parametres() {
             <ul className="mt-3 divide-y divide-slate-100 text-sm">
               {equipe.map((membre) => (
                 <li key={membre.userId} className="flex items-center justify-between gap-2 py-2">
-                  <span className="min-w-0 truncate font-medium text-slate-800">
-                    {memberLabel(membre, userId)}
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-slate-800">
+                      {memberLabel(membre, userId)}
+                    </span>
+                    {membre.email && (
+                      <span className="block truncate text-xs text-slate-400">{membre.email}</span>
+                    )}
                   </span>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                    {ROLE_LABELS[membre.role]}
+
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                      {ROLE_LABELS[membre.role]}
+                    </span>
+
+                    {estProprietaire && isSupabaseConfigured && enLigne && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => ouvrirEditionMembre(membre)}
+                          aria-label={`Modifier le membre ${memberLabel(membre, userId)}`}
+                          className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+                        >
+                          <Pencil size={14} aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void retirerMembre(membre)}
+                          aria-label={`Détacher le membre ${memberLabel(membre, userId)}`}
+                          className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600"
+                        >
+                          <Trash2 size={14} aria-hidden />
+                        </button>
+                      </>
+                    )}
                   </span>
                 </li>
               ))}
             </ul>
           )}
 
+          {membreEnEdition && estProprietaire && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                Modifier {memberLabel(membreEnEdition, userId)}
+              </p>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Nom affiché (facultatif)
+                </span>
+                <input
+                  value={editMembreNom}
+                  onChange={(event) => setEditMembreNom(event.target.value)}
+                  maxLength={80}
+                  placeholder="Awa — comptoir"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Rôle</span>
+                <select
+                  value={editMembreRole}
+                  onChange={(event) => setEditMembreRole(event.target.value as TenantRole)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                >
+                  {(['owner', 'receptionist', 'artisan'] as TenantRole[]).map((valeur) => (
+                    <option key={valeur} value={valeur}>
+                      {ROLE_LABELS[valeur]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void enregistrerMembre()}
+                  disabled={equipeEnvoi}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+                >
+                  {equipeEnvoi ? (
+                    <Loader2 className="animate-spin" size={16} aria-hidden />
+                  ) : (
+                    <Save size={16} aria-hidden />
+                  )}
+                  Enregistrer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMembreEnEdition(null)}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+
+          {ajoutMembreOuvert && estProprietaire && (
+            <div className="mt-3 rounded-xl border border-brand-teal/40 bg-slate-50 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                Rattacher un collègue
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Le compte doit déjà exister (créé depuis l’écran de connexion). Aucun mot de passe
+                ne circule ici.
+              </p>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">E-mail</span>
+                <input
+                  type="email"
+                  value={nouvelEmail}
+                  onChange={(event) => setNouvelEmail(event.target.value)}
+                  placeholder="collegue@exemple.ci"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Nom affiché (facultatif)
+                </span>
+                <input
+                  value={nouveauNom}
+                  onChange={(event) => setNouveauNom(event.target.value)}
+                  maxLength={80}
+                  placeholder="Awa — comptoir"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Rôle</span>
+                <select
+                  value={nouveauRole}
+                  onChange={(event) => setNouveauRole(event.target.value as TenantRole)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                >
+                  {(['receptionist', 'artisan', 'owner'] as TenantRole[]).map((valeur) => (
+                    <option key={valeur} value={valeur}>
+                      {ROLE_LABELS[valeur]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => void ajouterMembre()}
+                disabled={equipeEnvoi}
+                className="mt-2 inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+              >
+                {equipeEnvoi ? (
+                  <Loader2 className="animate-spin" size={16} aria-hidden />
+                ) : (
+                  <Plus size={16} aria-hidden />
+                )}
+                Rattacher au pressing
+              </button>
+            </div>
+          )}
+
           <p className="mt-2 text-xs text-slate-500">
-            L’ajout d’un collègue et la modification des rôles se font par le propriétaire, depuis la
-            console de supervision.
+            {estProprietaire
+              ? 'Seul le propriétaire gère l’équipe. Le dernier propriétaire ne peut pas être retiré.'
+              : 'Seul le propriétaire peut ajouter ou modifier un membre de l’équipe.'}
           </p>
         </section>
 

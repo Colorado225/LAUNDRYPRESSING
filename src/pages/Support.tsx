@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { LifeBuoy, Loader2, Send, ShieldAlert } from 'lucide-react'
+import { CheckCircle2, LifeBuoy, Loader2, Send, ShieldAlert, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
@@ -7,7 +7,9 @@ import { isSupabaseConfigured } from '@/lib/env'
 import { formatDateTimeFr } from '@/lib/formatters'
 import {
   SUPPORT_STATUS_LABELS,
+  closeSupportRequest,
   createSupportRequest,
+  deleteSupportRequest,
   fetchMySupportRequests,
 } from '@/services/platformService'
 import type { SupportRequestRow } from '@/types/database'
@@ -32,6 +34,8 @@ export default function Support() {
   const [sujet, setSujet] = useState('')
   const [message, setMessage] = useState('')
   const [envoi, setEnvoi] = useState(false)
+  /** Demande en cours de clôture ou de retrait : désactive ses boutons. */
+  const [actionId, setActionId] = useState<string | null>(null)
 
   const charger = useCallback(async () => {
     if (!tenantId) {
@@ -82,6 +86,42 @@ export default function Support() {
       toast.error(error instanceof Error ? error.message : 'Envoi impossible.')
     } finally {
       setEnvoi(false)
+    }
+  }
+
+  const cloturer = async (id: string) => {
+    const confirme = window.confirm(
+      'Clôturer cette demande ? Utilisez cette action quand le problème est résolu sur place.',
+    )
+    if (!confirme) return
+
+    setActionId(id)
+    try {
+      await closeSupportRequest(id)
+      toast.success('Demande clôturée')
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Clôture impossible.')
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  const retirer = async (id: string) => {
+    const confirme = window.confirm(
+      'Retirer cette demande ? Elle disparaîtra pour le support. Réservé aux demandes encore ouvertes.',
+    )
+    if (!confirme) return
+
+    setActionId(id)
+    try {
+      await deleteSupportRequest(id)
+      toast.success('Demande retirée')
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Retrait impossible.')
+    } finally {
+      setActionId(null)
     }
   }
 
@@ -206,6 +246,36 @@ export default function Support() {
                     {demande.response}
                   </p>
                 )}
+
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {demande.status !== 'closed' && (
+                    <button
+                      type="button"
+                      onClick={() => void cloturer(demande.id)}
+                      disabled={actionId === demande.id}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:border-emerald-300 hover:text-emerald-800 disabled:opacity-50"
+                    >
+                      {actionId === demande.id ? (
+                        <Loader2 className="animate-spin" size={14} aria-hidden />
+                      ) : (
+                        <CheckCircle2 size={14} aria-hidden />
+                      )}
+                      Clôturer la demande
+                    </button>
+                  )}
+
+                  {demande.status === 'open' && (role === 'owner' || demande.author_id === userId) && (
+                    <button
+                      type="button"
+                      onClick={() => void retirer(demande.id)}
+                      disabled={actionId === demande.id}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-rose-200 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      <Trash2 size={14} aria-hidden />
+                      Retirer
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

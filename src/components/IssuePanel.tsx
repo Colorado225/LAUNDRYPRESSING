@@ -1,11 +1,17 @@
 import { useState } from 'react'
-import { AlertTriangle, Check, Loader2, Plus } from 'lucide-react'
+import { AlertTriangle, Check, Loader2, Plus, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useOrderIssues } from '@/db/hooks'
 import { queueOrderIssue, type NewIssueInput } from '@/db/issueRepository'
 import type { LocalOrder, LocalOrderItem } from '@/db/localDb'
 import { useTenantStore } from '@/lib/tenantContext'
 import { formatDateTimeFr } from '@/lib/formatters'
+import {
+  ISSUE_RESOLUTIONS,
+  deleteOrderIssue,
+  resolveOrderIssue,
+  type IssueResolution,
+} from '@/services/issueService'
 
 /**
  * Réclamations et vêtements abîmés (palier 2).
@@ -52,7 +58,15 @@ export default function IssuePanel({
   const [description, setDescription] = useState('')
   const [envoi, setEnvoi] = useState(false)
 
+  // Clôture d'une réclamation : le comptoir décide, l'atelier constate.
+  const [resolutionPour, setResolutionPour] = useState<string | null>(null)
+  const [resolution, setResolution] = useState<IssueResolution>('repaired')
+  const [noteResolution, setNoteResolution] = useState('')
+  const [actionEnCours, setActionEnCours] = useState<string | null>(null)
+
   const peutDeclarer = role !== null && order.status !== 'cancelled'
+  const peutResoudre = role === 'owner' || role === 'receptionist'
+  const peutSupprimer = role === 'owner'
 
   const enregistrer = async () => {
     if (description.trim().length < 5) {
@@ -77,6 +91,57 @@ export default function IssuePanel({
       toast.error(error instanceof Error ? error.message : 'Enregistrement impossible')
     } finally {
       setEnvoi(false)
+    }
+  }
+
+  const cloturer = async (issueId: string) => {
+    const issue = issues?.find((entree) => entree.id === issueId)
+    if (!issue) return
+
+    setActionEnCours(issueId)
+    try {
+      await resolveOrderIssue(issue, resolution, noteResolution)
+      toast.success('Réclamation clôturée', { icon: '✅' })
+      setResolutionPour(null)
+      setNoteResolution('')
+      setResolution('repaired')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Clôture impossible')
+    } finally {
+      setActionEnCours(null)
+    }
+  }
+
+  const rouvrir = async (issueId: string) => {
+    const issue = issues?.find((entree) => entree.id === issueId)
+    if (!issue) return
+
+    setActionEnCours(issueId)
+    try {
+      await resolveOrderIssue(issue, null, null)
+      toast.success('Réclamation rouverte')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Réouverture impossible')
+    } finally {
+      setActionEnCours(null)
+    }
+  }
+
+  const supprimer = async (issueId: string) => {
+    const issue = issues?.find((entree) => entree.id === issueId)
+    if (!issue) return
+
+    const confirme = window.confirm('Supprimer définitivement cette réclamation ?')
+    if (!confirme) return
+
+    setActionEnCours(issueId)
+    try {
+      await deleteOrderIssue(issue)
+      toast.success('Réclamation supprimée')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Suppression impossible')
+    } finally {
+      setActionEnCours(null)
     }
   }
 
@@ -136,6 +201,107 @@ export default function IssuePanel({
               </p>
               {issue.lastError && (
                 <p className="mt-1 text-xs font-semibold text-rose-700">{issue.lastError}</p>
+              )}
+
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {peutResoudre && !issue.resolution && resolutionPour !== issue.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResolutionPour(issue.id)
+                      setResolution('repaired')
+                      setNoteResolution('')
+                    }}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:border-emerald-300 hover:text-emerald-800"
+                  >
+                    <Check size={13} aria-hidden /> Clôturer
+                  </button>
+                )}
+
+                {peutResoudre && issue.resolution && (
+                  <button
+                    type="button"
+                    onClick={() => void rouvrir(issue.id)}
+                    disabled={actionEnCours === issue.id}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {actionEnCours === issue.id ? (
+                      <Loader2 className="animate-spin" size={13} aria-hidden />
+                    ) : null}
+                    Rouvrir
+                  </button>
+                )}
+
+                {peutSupprimer && (
+                  <button
+                    type="button"
+                    onClick={() => void supprimer(issue.id)}
+                    disabled={actionEnCours === issue.id}
+                    aria-label="Supprimer la réclamation"
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    <Trash2 size={13} aria-hidden /> Supprimer
+                  </button>
+                )}
+              </div>
+
+              {resolutionPour === issue.id && peutResoudre && (
+                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">
+                      Décision
+                    </span>
+                    <select
+                      value={resolution}
+                      onChange={(event) =>
+                        setResolution(event.target.value as IssueResolution)
+                      }
+                      className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal"
+                    >
+                      {ISSUE_RESOLUTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="mt-2 block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">
+                      Note (facultatif)
+                    </span>
+                    <input
+                      value={noteResolution}
+                      onChange={(event) => setNoteResolution(event.target.value)}
+                      maxLength={300}
+                      placeholder="Ex. : reprise effectuée, geste commercial de 2 000 FCFA"
+                      className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal"
+                    />
+                  </label>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void cloturer(issue.id)}
+                      disabled={actionEnCours === issue.id}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-brand-teal px-3 text-xs font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+                    >
+                      {actionEnCours === issue.id ? (
+                        <Loader2 className="animate-spin" size={13} aria-hidden />
+                      ) : (
+                        <Check size={13} aria-hidden />
+                      )}
+                      Enregistrer la clôture
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setResolutionPour(null)}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-600"
+                    >
+                      <X size={13} aria-hidden /> Annuler
+                    </button>
+                  </div>
+                </div>
               )}
             </li>
           ))}

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Loader2,
   RefreshCw,
+  Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatGarmentComposition } from '@/constants/garmentTypes'
@@ -35,12 +36,14 @@ import AssignmentPanel from '@/components/AssignmentPanel'
 import IssuePanel from '@/components/IssuePanel'
 import NotifyPanel from '@/components/NotifyPanel'
 import { useState } from 'react'
+import { checkOrderDeletion, deleteOrderEverywhere } from '@/services/orderAdminService'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
  * Les changements de statut sont appliqués localement (mode avion compris).
  */
 export default function OrderDetail() {
+  const navigate = useNavigate()
   const { orderId } = useParams<{ orderId: string }>()
   const [searchParams] = useSearchParams()
   // Retour de la création de commande avec « encaisser maintenant » : le
@@ -56,6 +59,7 @@ export default function OrderDetail() {
   // entre le chargement et l'affichage de la fiche.
   const [annulationOuverte, setAnnulationOuverte] = useState(false)
   const [motifAnnulation, setMotifAnnulation] = useState('')
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false)
 
   if (data === undefined) {
     return (
@@ -90,6 +94,31 @@ export default function OrderDetail() {
   // afficher le bouton aux autres rôles ne produirait qu'une erreur serveur.
   const peutReculer = can(role, 'orders.editDetails') && role === 'owner'
   const peutAnnuler = can(role, 'orders.updateStatus') && role !== 'artisan'
+  const peutSupprimer = can(role, 'orders.delete')
+
+  const supprimerCommande = async () => {
+    const controle = await checkOrderDeletion(order)
+    if (!controle.autorisee) {
+      toast.error(controle.raison ?? 'Suppression impossible.')
+      return
+    }
+
+    const confirme = window.confirm(
+      `Supprimer définitivement la commande de ${order.customerName} ? Les lignes et l’historique local seront effacés. Une commande avec encaissement doit être annulée, pas supprimée.`,
+    )
+    if (!confirme) return
+
+    setSuppressionEnCours(true)
+    try {
+      await deleteOrderEverywhere(order)
+      toast.success('Commande supprimée')
+      navigate('/commandes')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Suppression impossible')
+    } finally {
+      setSuppressionEnCours(false)
+    }
+  }
 
   const changeStatus = async (status: typeof order.status, reason: string | null = null) => {
     try {
@@ -379,6 +408,33 @@ export default function OrderDetail() {
           </div>
         )}
       </section>
+
+      {/* Suppression réservée au propriétaire (`orders.delete`). Une commande
+          qui porte de l'argent s'annule, elle ne s'efface pas. */}
+      {peutSupprimer && (
+        <section className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-rose-800">
+            <Trash2 size={16} aria-hidden /> Supprimer la commande
+          </h2>
+          <p className="mt-1 text-sm text-rose-900">
+            Suppression définitive, réservée au propriétaire. Si la commande a été payée ou
+            remboursée, annulez-la : le journal de caisse doit rester complet.
+          </p>
+          <button
+            type="button"
+            onClick={() => void supprimerCommande()}
+            disabled={suppressionEnCours}
+            className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 text-sm font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+          >
+            {suppressionEnCours ? (
+              <Loader2 className="animate-spin" size={16} aria-hidden />
+            ) : (
+              <Trash2 size={16} aria-hidden />
+            )}
+            Supprimer définitivement
+          </button>
+        </section>
+      )}
     </div>
   )
 }

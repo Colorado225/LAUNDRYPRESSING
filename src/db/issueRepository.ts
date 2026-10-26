@@ -72,6 +72,28 @@ export async function markIssueError(
   })
 }
 
+/**
+ * Enregistre la décision du comptoir sur une réclamation.
+ *
+ * `resolvedAt` vient du serveur quand l'écriture a été faite en ligne : la date
+ * affichée doit être celle de la base, pas l'heure approximative d'une tablette.
+ */
+export async function updateIssueLocal(
+  issueId: string,
+  patch: {
+    resolution: LocalOrderIssue['resolution']
+    resolutionNote: string | null
+    resolvedAt: string | null
+  },
+): Promise<void> {
+  await db.orderIssues.update(issueId, patch)
+}
+
+/** Retire une réclamation de la tablette (la suppression serveur a réussi). */
+export async function deleteIssueLocal(issueId: string): Promise<void> {
+  await db.orderIssues.delete(issueId)
+}
+
 /** Nombre de réclamations en attente (badge du bandeau de synchronisation). */
 export async function countPendingIssues(tenantId: string): Promise<number> {
   return db.orderIssues.where('[tenantId+synced]').equals([tenantId, 0]).count()
