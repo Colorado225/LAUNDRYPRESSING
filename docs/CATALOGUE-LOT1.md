@@ -12,7 +12,7 @@ Tarification » v1.0, adapté à l'architecture Supabase de ce dépôt.
 | Table `services` | Réutilisation de **`tenant_services`** (migrations 021-023), déjà référencée par les lignes de commande ; étendue (code stable, description, délai estimé, express, archivage) |
 | `service_categories` | Les **activités** (`tenant_activities`, 022) portent déjà ce regroupement ; pas de doublon au Lot 1 |
 | Catalogue **obligatoire** | Obligation activée **par pressing, dès l'installation** de son catalogue (garde serveur) : aucun pressing existant n'est bloqué avant d'avoir installé et tarifé |
-| Seed système | 12 catégories + 45 articles, **sans aucun prix** ; clonage par tenant via `install_catalog_reference()` (idempotent, n'écrase jamais une personnalisation) |
+| Seed système | 12 catégories + 46 articles, **sans aucun prix** ; clonage par tenant via `install_catalog_reference()` (idempotent, n'écrase jamais une personnalisation) |
 | Tranches au kilo, modèles, forfaits | **Lots suivants** (livraison phasée). Le kilo actuel (`tenant_services.unit_price`) reste inchangé |
 
 Le modèle historique supprimé par la migration 020 (familles/articles/

@@ -17,6 +17,9 @@ import {
 } from '@/services/tenantServices'
 import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
 import { fetchCatalogConfiguration } from '@/services/catalogService'
+import { fetchPricingRules } from '@/services/pricingRulesService'
+import { calculerPrixKilo, formaterDetailKilo } from '@/lib/prixKilo'
+import type { LocalPricingRule } from '@/db/localDb'
 import {
   articlesParCategorie,
   indexerPrix,
@@ -84,6 +87,7 @@ export default function OrderForm() {
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
   const [articlesCatalogue, setArticlesCatalogue] = useState<LocalCatalogGarment[]>([])
   const [prixCatalogue, setPrixCatalogue] = useState<LocalCatalogPrice[]>([])
+  const [reglesKilo, setReglesKilo] = useState<LocalPricingRule[]>([])
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -114,6 +118,11 @@ export default function OrderForm() {
         if (!active) return
         setArticlesCatalogue(configuration.garments)
         setPrixCatalogue(configuration.prices)
+      })
+      .catch(() => undefined)
+    void fetchPricingRules(tenantId)
+      .then((regles) => {
+        if (active) setReglesKilo(regles)
       })
       .catch(() => undefined)
     return () => {
@@ -151,9 +160,54 @@ export default function OrderForm() {
     setItems((current) => current.map((item, itemIndex) => {
       if (itemIndex !== index) return item
       const updated = { ...item, ...patch }
-      updated.price = Math.round(updated.quantity * updated.unitPrice)
+      // Devis kilo par tranches : le total calculé prime sur le produit
+      // quantité × prix unitaire (non linéaire).
+      updated.price = updated.totalImpose ?? Math.round(updated.quantity * updated.unitPrice)
       return updated
     }))
+  }
+
+  const regleKiloPour = (serviceId: string): LocalPricingRule | undefined =>
+    reglesKilo.find((regle) => regle.tenantServiceId === serviceId && regle.isActive)
+
+  /** (Re)calcule le devis d'une ligne au kilo régie par des tranches. */
+  const appliquerDevisKilo = (index: number, poids: number, regle: LocalPricingRule) => {
+    const devis = calculerPrixKilo(
+      {
+        mode: regle.ruleMode,
+        minBillableKg: regle.minBillableKg,
+        stepKg: regle.stepKg,
+        rounding: regle.roundingMode,
+      },
+      regle.tiers.map((t) => ({ minKg: t.minKg, maxKg: t.maxKg, prixParKg: t.pricePerKgXof })),
+      poids,
+    )
+    if (!devis) {
+      updateItem(index, { quantity: poids, totalImpose: undefined, unitPrice: 0, conditionsSnapshot: null })
+      return
+    }
+    updateItem(index, {
+      quantity: poids,
+      totalImpose: devis.montant,
+      billedQuantity: devis.poidsFactureKg,
+      unitPrice: Math.max(1, Math.round(devis.montant / Math.max(devis.poidsFactureKg, 0.001))),
+      conditionsSnapshot: formaterDetailKilo(devis),
+    })
+  }
+
+  const majQuantite = (index: number, valeur: number) => {
+    const item = items[index]
+    if (item?.billingUnit === 'KG') {
+      const poids = Math.max(0, valeur || 0)
+      const regle = item.selectedOfferingId ? regleKiloPour(item.selectedOfferingId) : undefined
+      if (regle) {
+        appliquerDevisKilo(index, poids, regle)
+        return
+      }
+      updateItem(index, { quantity: poids, totalImpose: undefined, conditionsSnapshot: null })
+      return
+    }
+    updateItem(index, { quantity: Math.max(1, valeur || 1) })
   }
 
   const choisirActivite = (index: number, activityId: string) => {
@@ -237,12 +291,22 @@ export default function OrderForm() {
       activityNameSnapshot: offering.activityName,
       garmentTypeId: auKilo ? null : item?.garmentTypeId ?? null,
       catalogUnitPriceSnapshot: prixGrille,
+      totalImpose: undefined,
+      conditionsSnapshot: null,
       label,
       billingUnit: offering.billingUnit,
       quantity: 1,
       unitPrice: prixGrille ?? offering.unitPrice ?? 0,
       garmentDetails: auKilo ? [{ type: '', quantity: 1 }] : [],
     })
+    if (auKilo) {
+      const regle = regleKiloPour(offering.id)
+      if (regle) {
+        // Ligne fraîchement basculée au kilo : devis initial pour 1 kg,
+        // recalculé à chaque pesée via majQuantite.
+        setTimeout(() => appliquerDevisKilo(index, 1, regle), 0)
+      }
+    }
   }
 
   /**
@@ -628,11 +692,11 @@ export default function OrderForm() {
                     )}
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Poids total (kg)' : 'Quantité'}</span>
-                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => updateItem(index, { quantity: item.billingUnit === 'KG' ? Math.max(0, Number(event.target.value) || 0) : Math.max(1, Number(event.target.value) || 1) })} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => majQuantite(index, Number(event.target.value))} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Tarif/kg (FCFA)' : 'Prix unitaire (FCFA)'}</span>
-                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} readOnly={catalogueActif && Boolean(item.garmentTypeId)} title={catalogueActif && item.garmentTypeId ? 'Prix de la grille catalogue (modifiable dans Catalogue → Tarifs)' : undefined} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal read-only:bg-slate-50" />
+                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} readOnly={(catalogueActif && Boolean(item.garmentTypeId)) || item.totalImpose !== undefined} title={item.totalImpose !== undefined ? 'Total calculé par la règle au kilo (Catalogue → Au kilo)' : catalogueActif && item.garmentTypeId ? 'Prix de la grille catalogue (modifiable dans Catalogue → Tarifs)' : undefined} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal read-only:bg-slate-50" />
                     </label>
                     <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
                   </div>
@@ -703,6 +767,9 @@ export default function OrderForm() {
                         <p className="mt-2 text-xs font-medium text-slate-700">Composition : {formatDraftComposition(item.garmentDetails)}</p>
                       )}
                     </div>
+                  )}
+                  {item.totalImpose !== undefined && item.conditionsSnapshot && (
+                    <p className="mt-2 text-right text-xs font-medium text-slate-500">{item.conditionsSnapshot}</p>
                   )}
                   <p className="mt-3 text-right text-sm font-semibold text-slate-700">Total de la ligne : {formatFcfa(item.price)}</p>
                 </fieldset>

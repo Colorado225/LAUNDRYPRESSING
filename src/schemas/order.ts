@@ -63,6 +63,11 @@ export const orderItemInputSchema = z.object({
   tenantServiceId: z.string().uuid('Référence de prestation invalide').nullable().optional(),
   /** Article du catalogue choisi (obligatoire au comptoir quand le catalogue est installé). */
   garmentTypeId: z.string().uuid("Référence d'article invalide").nullable().optional(),
+  /**
+   * Total imposé par un calcul externe (tarification au kilo par tranches) :
+   * prime sur quantité × prix unitaire, le serveur recalcule et contrôle.
+   */
+  totalImpose: z.number().int().positive().max(10_000_000).optional(),
   activityNameSnapshot: z.string().trim().max(80).nullable().optional(),
   /** Types et quantités énumérés pour une ligne de prestation au kilo. */
   garmentDetails: z.array(z.object({

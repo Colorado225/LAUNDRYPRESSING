@@ -170,6 +170,27 @@ export interface LocalCatalogGarment {
 }
 
 /** Prix courant d'une prestation pour un article (absence de ligne = non configuré). */
+/** Tranche d'une règle au kilo (embarquée dans la règle mise en cache). */
+export interface LocalPricingTier {
+  minKg: number
+  maxKg: number | null
+  pricePerKgXof: number
+}
+
+/** Règle de tarification au kilo d'une prestation (cache hors ligne). */
+export interface LocalPricingRule {
+  id: string
+  tenantId: string
+  tenantServiceId: string
+  ruleName: string
+  ruleMode: 'flat_rate' | 'progressive_tiers'
+  minBillableKg: number
+  stepKg: number
+  roundingMode: 'ceil' | 'nearest' | 'exact'
+  isActive: boolean
+  tiers: LocalPricingTier[]
+}
+
 export interface LocalCatalogPrice {
   id: string
   tenantId: string
@@ -390,6 +411,7 @@ export class PressingDatabase extends Dexie {
   tenantServices!: Table<LocalTenantService, string>
   catalogGarments!: Table<LocalCatalogGarment, string>
   catalogPrices!: Table<LocalCatalogPrice, string>
+  catalogPricingRules!: Table<LocalPricingRule, string>
 
   constructor() {
     super('pressing-pro')
@@ -627,6 +649,12 @@ export class PressingDatabase extends Dexie {
           if (item.garmentTypeId === undefined) item.garmentTypeId = null
         })
       })
+
+    // v17 : cache hors ligne des règles de tarification au kilo par tranches.
+    this.version(17).stores({
+      catalogPricingRules: 'id, tenantId, tenantServiceId, [tenantId+tenantServiceId]',
+    })
+
   }
 }
 

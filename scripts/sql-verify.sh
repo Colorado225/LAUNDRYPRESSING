@@ -130,6 +130,9 @@ FICHIERS=(
   "supabase/migrations/026_client_sync_events.sql"
   "supabase/migrations/027_catalogue_lot1.sql"
   "supabase/tests/catalogue_lot1.sql"
+  "supabase/migrations/028_tarification_kilo_tranches.sql"
+  "supabase/migrations/029_modeles_forfaits.sql"
+  "supabase/tests/catalogue_lot2.sql"
 )
 
 ECHECS=0

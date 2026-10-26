@@ -200,7 +200,7 @@ export function useAddOrderItem() {
   const tenantId = useTenantStore((state) => state.tenantId)
 
   return useCallback(
-    async (orderId: string, input: { label: string; quantity: number; unitPrice: number }) => {
+    async (orderId: string, input: Parameters<typeof addOrderItemLocal>[2]) => {
       if (!tenantId) throw new Error('Aucun pressing sélectionné.')
       return addOrderItemLocal(tenantId, orderId, input)
     },
