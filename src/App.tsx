@@ -30,8 +30,6 @@ const Orders = lazy(() => import('@/pages/Orders'))
 const OrderForm = lazy(() => import('@/pages/OrderForm'))
 const OrderDetail = lazy(() => import('@/pages/OrderDetail'))
 const Atelier = lazy(() => import('@/pages/Atelier'))
-const Catalogue = lazy(() => import('@/pages/Catalogue'))
-const ModelesCommerciaux = lazy(() => import('@/pages/ModelesCommerciaux'))
 const Caisse = lazy(() => import('@/pages/Caisse'))
 const Receipt = lazy(() => import('@/pages/Receipt'))
 const Facture = lazy(() => import('@/pages/Facture'))
@@ -105,8 +103,6 @@ function RootRoutes() {
             <Route path="/commandes/nouvelle" element={<OrderForm />} />
             <Route path="/commandes/:orderId" element={<OrderDetail />} />
             <Route path="/atelier" element={<Atelier />} />
-            <Route path="/catalogue" element={<Catalogue />} />
-            <Route path="/modeles-commerciaux" element={<ModelesCommerciaux />} />
             <Route path="/caisse" element={<Caisse />} />
             <Route path="/tableau-de-bord" element={<TableauDeBord />} />
             <Route path="/rapports" element={<Rapports />} />

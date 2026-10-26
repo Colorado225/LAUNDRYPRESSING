@@ -9,7 +9,6 @@ import {
   CreditCard,
   History,
   LayoutDashboard,
-  Layers3,
   LifeBuoy,
   LogOut,
   Menu,
@@ -17,7 +16,6 @@ import {
   ScanLine,
   Settings,
   Shirt,
-  Tag,
   Users,
   Wallet,
   X,
@@ -90,11 +88,6 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
 
   if (can(role, 'expenses.manage')) {
     items.push({ to: '/depenses', label: 'Dépenses', icon: Wallet })
-  }
-
-  if (can(role, 'catalog.manage')) {
-    items.push({ to: '/catalogue', label: 'Catalogue', icon: Tag })
-    items.push({ to: '/modeles-commerciaux', label: 'Modèles commerciaux', icon: Layers3 })
   }
 
   if (can(role, 'subscription.view')) {

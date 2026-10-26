@@ -18,12 +18,11 @@ import type { AuditLogRow } from '@/types/database'
  */
 
 /** Familles proposées au filtre de l'écran. */
-export type FamilleAudit = 'pressing' | 'comptes' | 'tarifs' | 'caisse' | 'depenses' | 'abonnement'
+export type FamilleAudit = 'pressing' | 'comptes' | 'caisse' | 'depenses' | 'abonnement'
 
 export const FAMILLES_AUDIT: { valeur: FamilleAudit; label: string; tables: string[] }[] = [
   { valeur: 'pressing', label: 'Pressing', tables: ['tenants'] },
   { valeur: 'comptes', label: 'Comptes et rôles', tables: ['tenant_users'] },
-  { valeur: 'tarifs', label: 'Prestations', tables: ['catalog_entries'] },
   { valeur: 'caisse', label: 'Caisse', tables: ['cash_sessions', 'payment_refunds'] },
   { valeur: 'depenses', label: 'Dépenses', tables: ['expenses'] },
   { valeur: 'abonnement', label: 'Abonnement', tables: ['subscriptions'] },
@@ -36,9 +35,6 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'tenant_users.insert': 'Compte rattaché au pressing',
   'tenant_users.update': 'Rôle d’un compte modifié',
   'tenant_users.delete': 'Compte détaché du pressing',
-  'catalog_entries.insert': 'Prestation ajoutée',
-  'catalog_entries.update': 'Prestation ou tarif modifié',
-  'catalog_entries.delete': 'Prestation supprimée',
   'cash_sessions.insert': 'Caisse clôturée',
   'cash_sessions.update': 'Clôture de caisse corrigée',
   'payment_refunds.insert': 'Remboursement enregistré',
