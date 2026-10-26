@@ -20,11 +20,12 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 | `npm run lint` | Réussi |
 | `npm test` | **578 tests réussis / 578**, 55 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
-| `npm run sql:verify` | Non exécuté : `psql` n’est pas installé dans l’environnement |
-| Suite SQL ordonnée | Tous les scripts de migration et tests listés par `scripts/sql-verify.sh` passent dans PGlite ; extension `pgcrypto` omise car non disponible dans PGlite |
+| `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
+| CI PostgreSQL 16 | Réussie sur la PR #7 : migrations et suite SQL ordonnée passées |
+| Suite SQL ordonnée dans PGlite | Tous les scripts listés par `scripts/sql-verify.sh` passent ; extension `pgcrypto` omise car non disponible dans PGlite |
 | Supabase/CinetPay réels | Non vérifiés dans cette session |
 
-Le passage complet des fichiers SQL dans PGlite valide l’ordre des migrations et des tests, jusqu’à 020. Il ne remplace pas une exécution sur PostgreSQL 15+ réel ni une recette Supabase. Pendant cette vérification, le test `catalogue_commercial_models.sql` a été corrigé : il prétendait tester un article hors périmètre, mais réutilisait par erreur l’identifiant d’une chemise déjà incluse dans le forfait.
+Le passage complet dans PGlite valide l’ordre des migrations et des tests jusqu’à 020. La CI de la PR #7 a également exécuté `scripts/sql-verify.sh` sur PostgreSQL 16 réel avec succès ; cela ne remplace pas une recette Supabase déployée. Pendant ces vérifications, le test `catalogue_commercial_models.sql` a été corrigé : il prétendait tester un article hors périmètre, mais réutilisait par erreur l’identifiant d’une chemise déjà incluse dans le forfait.
 
 ## Architecture
 
