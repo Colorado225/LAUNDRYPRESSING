@@ -21,7 +21,7 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 | `npm test` | **625 tests réussis / 625**, 59 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
-| CI PostgreSQL 16 | Réussie sur la PR #7 : migrations et suite SQL ordonnée passées |
+| CI PostgreSQL 16 | Réussie sur la PR #8 : migrations 001→025 et 19 contrôles CRUD passés |
 | Suite SQL ordonnée dans PGlite | Tous les scripts listés par `scripts/sql-verify.sh` passent ; extension `pgcrypto` omise car non disponible dans PGlite |
 | Supabase/CinetPay réels | Non vérifiés dans cette session |
 
@@ -45,8 +45,9 @@ dans [`CRUD-COMPLET.md`](CRUD-COMPLET.md).
 Contrôles rejoués : typecheck, lint, build et suite Vitest (625 tests / 59
 fichiers). La chaîne complète des migrations et des tests SQL, y compris
 `supabase/tests/crud_complet.sql` (19 contrôles), a été exécutée avec succès sur
-PostgreSQL via PGlite ; `psql` reste absent de l'environnement, la CI PostgreSQL 16
-doit rejouer `npm run sql:verify`.
+PostgreSQL via PGlite, puis confirmée par la CI sur PostgreSQL 16 réel
+(`npm run sql:verify`, PR #8) : toutes les migrations 001 à 025 et tous les tests
+SQL passent.
 
 ## Architecture
 

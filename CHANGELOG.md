@@ -53,8 +53,9 @@ va avec.
 
 - 625 tests sur 59 fichiers Vitest ; typecheck, lint et build réussis.
 - `supabase/tests/crud_complet.sql` : 19 contrôles RLS et déclencheurs, rejoués
-  avec toute la chaîne de migrations sur PostgreSQL (PGlite, `pgcrypto` omis).
-  `npm run sql:verify` reste à rejouer en CI sur PostgreSQL 16.
+  avec toute la chaîne de migrations sur PostgreSQL (PGlite, `pgcrypto` omis)
+  puis par la CI sur PostgreSQL 16 réel (`npm run sql:verify`, PR #8) : tout
+  passe.
 
 ---
 

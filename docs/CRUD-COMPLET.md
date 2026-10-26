@@ -122,8 +122,9 @@ renvoient une erreur explicite (« fonction introuvable »).
 après la 024. La suite complète a été rejouée le 26 octobre 2026 sur PostgreSQL
 via PGlite (extension `pgcrypto` omise, `gen_random_uuid()` natif) : toutes les
 migrations et tous les tests passent, y compris les 19 contrôles du nouveau test.
-`psql` n'étant pas installé dans l'environnement de développement, la même suite
-doit être rejouée en CI sur PostgreSQL 16 (`npm run sql:verify`).
+`psql` n'étant pas installé dans l'environnement de développement, la suite a
+également été rejouée par la CI sur PostgreSQL 16 réel (`npm run sql:verify`,
+PR #8) : migrations 001 à 025 et tous les tests SQL passent, sans réserve.
 
 ## 5. Points d'attention
 
