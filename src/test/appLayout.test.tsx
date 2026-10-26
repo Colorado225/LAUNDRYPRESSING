@@ -70,7 +70,7 @@ describe('AppLayout — navigation mobile en tiroir', () => {
 
     const tiroir = hote.querySelector<HTMLElement>('[aria-label="Menu de navigation"]')
     expect(tiroir).not.toBeNull()
-    expect(tiroir?.textContent).toContain('Catalogue')
+    expect(tiroir?.textContent).toContain('Commandes')
     expect(tiroir?.textContent).toContain('Atelier')
     expect(bouton('aria-label', 'Ouvrir le menu').getAttribute('aria-expanded')).toBe('true')
     demonter()
@@ -85,7 +85,7 @@ describe('AppLayout — navigation mobile en tiroir', () => {
 
     // Un onglet navigue vers une autre page et le tiroir se referme.
     const lien = [...hote.querySelectorAll('a')].find((element) =>
-      element.textContent?.includes('Catalogue'),
+      element.textContent?.includes('Atelier'),
     )
     expect(lien).toBeDefined()
     await act(async () => lien?.click())

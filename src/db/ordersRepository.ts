@@ -504,12 +504,9 @@ export function toSupabaseOrder(order: LocalOrder): OrderRow {
 }
 
 export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
-  if (item.laundryModelTypeSnapshot === 'FAMILY_PACKAGE') {
-    throw new Error('Un forfait famille doit être transmis par le RPC atomique de composition.');
-  }
-  // L'API reçoit une ligne forfaitaire cohérente pour son premier contrôle,
-  // puis le déclencheur commercial valide le poids et restaure les instantanés.
-  const modeleCommercial = Boolean(item.laundryModelId)
+  // Le schéma ne conserve plus de clé vers le catalogue ou les modèles
+  // commerciaux. Les informations génériques de la ligne restent figées pour
+  // préserver les reçus et les quantités historiques.
   return {
     id: item.id,
     order_id: item.orderId,
@@ -518,13 +515,12 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     fabric_type: item.fabricType,
     special_instructions: item.specialInstructions,
     price: item.price,
-    quantity: modeleCommercial ? 1 : item.quantity,
-    billed_quantity: modeleCommercial ? 1 : item.billedQuantity,
-    billing_unit: modeleCommercial ? 'FLAT' : item.billingUnit,
-    unit_price: modeleCommercial ? item.price : item.unitPrice,
-    pricing_mode: modeleCommercial ? 'FIXED' : item.pricingMode,
+    quantity: item.quantity,
+    billed_quantity: item.billedQuantity,
+    billing_unit: item.billingUnit,
+    unit_price: item.unitPrice,
+    pricing_mode: item.pricingMode,
     price_status: item.priceStatus,
-    catalog_entry_id: item.catalogEntryId,
     article_name: item.articleName,
     service_name: item.serviceName,
     family_name_snapshot: item.familyNameSnapshot,
@@ -534,19 +530,6 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     minimum_charge_snapshot: item.minimumChargeSnapshot,
     conditions_snapshot: item.conditionsSnapshot,
     price_reason: item.priceReason,
-    laundry_model_id: item.laundryModelId ?? null,
-    laundry_model_name_snapshot: item.laundryModelNameSnapshot ?? null,
-    laundry_model_type_snapshot: item.laundryModelTypeSnapshot ?? null,
-    laundry_weight_kg: item.laundryWeightKg ?? null,
-    laundry_price_breakdown_snapshot: item.laundryPriceBreakdownSnapshot ?? null,
-    laundry_services_snapshot: item.laundryServicesSnapshot ?? null,
-    laundry_price_per_kg_snapshot: item.laundryPricePerKgSnapshot ?? null,
-    laundry_package_price_snapshot: item.laundryPackagePriceSnapshot ?? null,
-    laundry_included_weight_kg_snapshot: item.laundryIncludedWeightKgSnapshot ?? null,
-    laundry_overage_price_per_kg_snapshot: item.laundryOveragePricePerKgSnapshot ?? null,
-    laundry_minimum_weight_kg_snapshot: item.laundryMinimumWeightKgSnapshot ?? null,
-    laundry_billing_increment_kg_snapshot: item.laundryBillingIncrementKgSnapshot ?? null,
-    laundry_minimum_charge_snapshot: item.laundryMinimumChargeSnapshot ?? null,
   }
 }
 

@@ -162,13 +162,6 @@ export const orderItemInputSchema = z.object({
       message: 'Une prestation forfaitaire se facture une seule fois.',
     })
   }
-  if (!item.catalogEntryId && (item.priceReason ?? '').trim().length < 10) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['priceReason'],
-      message: 'Une ligne saisie librement exige un motif de 10 caractères minimum.',
-    })
-  }
   if (item.pricingMode === 'UNCONFIGURED') {
     context.addIssue({
       code: z.ZodIssueCode.custom,

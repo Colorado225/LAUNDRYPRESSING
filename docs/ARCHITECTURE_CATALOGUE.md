@@ -1,4 +1,6 @@
-# Catalogue et formules commerciales — décisions de conception
+# Archive — catalogue et formules commerciales
+
+> **Fonctionnalité retirée le 26 octobre 2026.** Ce document décrit l’ancien modèle de catalogue et de formules commerciales ; il ne correspond plus au produit courant. La migration 020 supprime le catalogue et les modèles de la base. Les commandes actuelles utilisent des lignes saisies librement. Consulter [`AUDIT-COURANT.md`](AUDIT-COURANT.md) et le [`README`](../README.md).
 
 ## Décisions validées
 

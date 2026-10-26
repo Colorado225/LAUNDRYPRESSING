@@ -124,18 +124,18 @@ describe('Journal d’audit — contenu', () => {
     demonter()
   })
 
-  it('affiche un changement de tarif en français', async () => {
+  it('affiche une clôture de caisse en français', async () => {
     etatPage.lignes = [
       evenement({
-        action: 'catalog_entries.update',
-        entity: 'catalog_entries',
-        details: { price: { avant: 1500, apres: 2000 } },
+        action: 'cash_sessions.insert',
+        entity: 'cash_sessions',
+        details: { declared_total: { avant: 1500, apres: 2000 } },
       }),
     ]
     await monter()
 
-    expect(texte()).toContain('Prestation ou tarif modifié')
-    expect(texte()).toContain('tarif : 1 500 FCFA → 2 000 FCFA')
+    expect(texte()).toContain('Caisse clôturée')
+    expect(texte()).toContain('montant déclaré : 1 500 FCFA → 2 000 FCFA')
     // Aucun JSON brut ne doit apparaître à l'écran.
     expect(texte()).not.toContain('{"avant"')
     demonter()

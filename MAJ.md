@@ -1,8 +1,10 @@
-# MAJ — Feuille de route Pressing Pro
+# MAJ — Feuille de route Pressing Pro (archive)
 
-**Dernière mise à jour :** 23 octobre 2026
-**Branche de travail :** `arena/17b0abba-laundrypressing`
-**Base :** `main` au commit `23551c7` (fusion de la PR #1)
+> Cette feuille de route documente une branche et un état antérieurs. Elle n’est pas le statut de la branche active. Pour la référence du 26 octobre 2026, lire [`docs/AUDIT-COURANT.md`](docs/AUDIT-COURANT.md).
+
+**Dernière mise à jour historique :** 23 octobre 2026
+**Branche historique :** `arena/17b0abba-laundrypressing`
+**Base historique :** `main` au commit `23551c7` (fusion de la PR #1)
 **Référentiels :** `RESTRUCTURATION.md` (cahier des charges du MVP) et ce document
 
 > Ce fichier consigne trois choses, dans cet ordre :

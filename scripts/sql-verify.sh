@@ -117,6 +117,8 @@ FICHIERS=(
   "supabase/tests/laundry_models.sql"
   "supabase/tests/stock_consumption_costs.sql"
   "supabase/tests/catalogue_commercial_models.sql"
+  "supabase/migrations/020_suppression_tarification_et_laundry_models.sql"
+  "supabase/tests/suppression_tarification.sql"
 )
 
 ECHECS=0

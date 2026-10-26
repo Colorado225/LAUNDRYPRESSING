@@ -92,7 +92,7 @@ export interface LocalOrderItem {
   unitPrice: number
   pricingMode: CatalogPricingMode
   priceStatus: OrderItemPriceStatus
-  /** Références et conditions tarifaires figées au moment de la vente. */
+  /** Métadonnées locales historiques ; les champs génériques restent disponibles sur la ligne serveur. */
   catalogEntryId: string | null
   articleName: string | null
   serviceName: string | null
@@ -117,16 +117,15 @@ export interface LocalOrderItem {
   laundryMinimumWeightKgSnapshot?: number | null
   laundryBillingIncrementKgSnapshot?: number | null
   laundryMinimumChargeSnapshot?: number | null
-  /** Composition locale, préservée jusqu’au RPC du forfait famille. */
+  /** Composition issue des anciennes données locales ; elle n’est plus envoyée au serveur. */
   familyPackageSnapshot?: FamilyPackageSnapshot | null
 }
 
 /**
- * Cache local du catalogue (palier 2).
+ * Structure Dexie historique du catalogue.
  *
- * Le catalogue vit sur le serveur (seul le propriétaire l'écrit) mais doit
- * rester consultable hors ligne : la tablette en garde une copie en lecture
- * seule, rafraîchie à chaque synchronisation.
+ * Conservée pour lire et migrer les données locales des versions précédentes.
+ * Le catalogue n'est plus proposé par l'application courante ni synchronisé.
  */
 export interface LocalCatalogEntry {
   id: string
@@ -149,15 +148,11 @@ export interface LocalCatalogEntry {
 }
 
 /**
- * Structure locale du catalogue (palier 2).
+ * Schéma Dexie historique du catalogue.
  *
- * En production, les catégories, articles et prestations vivent dans trois
- * tables serveur distinctes (`catalog_families`, `catalog_articles`,
- * `catalog_services`). En mode démonstration — où aucun projet Supabase n'est
- * configuré — la structure est administrée hors ligne dans cette table Dexie
- * unique, discriminante par `kind`, qui reproduit les trois schémas serveur.
- * Les opérations réécrivent la ligne locale ET l'envoi serveur : à la
- * synchronisation, le serveur reste l'autorité.
+ * Gardé pour reconnaître les données créées par les versions précédentes et
+ * éviter de supprimer les caches locaux lors d'une mise à jour. Il ne reflète
+ * plus le schéma PostgreSQL courant et n'est plus synchronisé.
  */
 export interface LocalCatalogStructureRow {
   id: string
@@ -177,7 +172,7 @@ export interface LocalCatalogStructureRow {
   updatedAt: string
 }
 
-/** Cache hors ligne des paramètres commerciaux, avec libellés de prestations figés. */
+/** Cache Dexie historique des modèles commerciaux, conservé pour compatibilité locale. */
 export interface LocalLaundryModel {
   id: string
   tenantId: string

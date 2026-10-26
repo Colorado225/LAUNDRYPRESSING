@@ -107,7 +107,6 @@ export type OrderItemRow = {
   pricing_mode: CatalogPricingMode
   price_status: OrderItemPriceStatus
   /** Références et paramètres tarifaires figés avec la ligne. */
-  catalog_entry_id: string | null
   article_name: string | null
   service_name: string | null
   family_name_snapshot: string | null
@@ -119,21 +118,6 @@ export type OrderItemRow = {
   /** Motif d'un écart de tarif ou d'une ligne libre. */
   price_reason: string | null
   /** Modèle commercial et conditions tarifaires figés à la réception. */
-  laundry_model_id: string | null
-  laundry_model_name_snapshot: string | null
-  laundry_model_type_snapshot: LaundryModelType | null
-  laundry_weight_kg: number | null
-  laundry_price_breakdown_snapshot: string | null
-  laundry_services_snapshot: string | null
-  laundry_price_per_kg_snapshot: number | null
-  laundry_package_price_snapshot: number | null
-  laundry_included_weight_kg_snapshot: number | null
-  laundry_overage_price_per_kg_snapshot: number | null
-  laundry_minimum_weight_kg_snapshot: number | null
-  laundry_billing_increment_kg_snapshot: number | null
-  laundry_minimum_charge_snapshot: number | null
-  /** Opérations internes de la prestation, figées lors de l'ajout à la commande. */
-  service_operations_snapshot?: Json
 }
 
 /** Réclamation ou vêtement abîmé (table `order_issues`, migration 005). */
@@ -758,7 +742,6 @@ export interface Database {
           | 'id'
           | 'fabric_type'
           | 'special_instructions'
-          | 'catalog_entry_id'
           | 'article_name'
           | 'service_name'
           | 'price_reason'
@@ -774,20 +757,6 @@ export interface Database {
           | 'billing_increment_snapshot'
           | 'minimum_charge_snapshot'
           | 'conditions_snapshot'
-          | 'laundry_model_id'
-          | 'laundry_model_name_snapshot'
-          | 'laundry_model_type_snapshot'
-          | 'laundry_weight_kg'
-          | 'laundry_price_breakdown_snapshot'
-          | 'laundry_services_snapshot'
-          | 'laundry_price_per_kg_snapshot'
-          | 'laundry_package_price_snapshot'
-          | 'laundry_included_weight_kg_snapshot'
-          | 'laundry_overage_price_per_kg_snapshot'
-          | 'laundry_minimum_weight_kg_snapshot'
-          | 'laundry_billing_increment_kg_snapshot'
-          | 'laundry_minimum_charge_snapshot'
-          | 'service_operations_snapshot'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
         Relationships: []
@@ -813,168 +782,6 @@ export interface Database {
           'id' | 'previous_status' | 'reason' | 'changed_by' | 'changed_at'
         >
         Update: Partial<Omit<OrderStatusHistoryRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      catalog_families: {
-        Row: CatalogFamilyRow
-        Insert: InsertOf<
-          CatalogFamilyRow,
-          'id' | 'template_code' | 'description' | 'is_active' | 'sort_order' | 'created_by' | 'created_at' | 'updated_at'
-        >
-        Update: Partial<Omit<CatalogFamilyRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      catalog_articles: {
-        Row: CatalogArticleRow
-        Insert: InsertOf<
-          CatalogArticleRow,
-          | 'id'
-          | 'template_code'
-          | 'description'
-          | 'care_instructions'
-          | 'default_unit'
-          | 'is_active'
-          | 'sort_order'
-          | 'created_by'
-          | 'created_at'
-          | 'updated_at'
-        >
-        Update: Partial<Omit<CatalogArticleRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      catalog_services: {
-        Row: CatalogServiceRow
-        Insert: InsertOf<
-          CatalogServiceRow,
-          | 'id'
-          | 'template_code'
-          | 'service_type'
-          | 'application_scope'
-          | 'description'
-          | 'is_active'
-          | 'sort_order'
-          | 'created_by'
-          | 'created_at'
-          | 'updated_at'
-        >
-        Update: Partial<Omit<CatalogServiceRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      catalog_operation_definitions: {
-        Row: CatalogOperationDefinitionRow
-        Insert: InsertOf<CatalogOperationDefinitionRow, 'sort_order'>
-        Update: Partial<CatalogOperationDefinitionRow>
-        Relationships: []
-      }
-      catalog_model_templates: {
-        Row: CatalogModelTemplateRow
-        Insert: InsertOf<CatalogModelTemplateRow, 'description' | 'default_unit' | 'service_type' | 'application_scope' | 'operation_codes' | 'sort_order' | 'is_active' | 'created_at'>
-        Update: Partial<Omit<CatalogModelTemplateRow, 'code'>>
-        Relationships: []
-      }
-      laundry_model_templates: {
-        Row: LaundryModelTemplateRow
-        Insert: InsertOf<LaundryModelTemplateRow, 'description' | 'included_weight_kg' | 'included_pieces' | 'conditions' | 'exclusions' | 'turnaround_days' | 'is_active' | 'sort_order' | 'created_at'>
-        Update: Partial<Omit<LaundryModelTemplateRow, 'code'>>
-        Relationships: []
-      }
-      laundry_model_template_services: {
-        Row: LaundryModelTemplateServiceRow
-        Insert: InsertOf<LaundryModelTemplateServiceRow, 'sort_order'>
-        Update: Partial<LaundryModelTemplateServiceRow>
-        Relationships: []
-      }
-      laundry_model_template_families: {
-        Row: LaundryModelTemplateFamilyRow
-        Insert: LaundryModelTemplateFamilyRow
-        Update: Partial<LaundryModelTemplateFamilyRow>
-        Relationships: []
-      }
-      catalog_article_aliases: {
-        Row: CatalogArticleAliasRow
-        Insert: InsertOf<CatalogArticleAliasRow, 'id' | 'alias_key' | 'created_at'>
-        Update: Partial<Omit<CatalogArticleAliasRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      catalog_service_operations: {
-        Row: CatalogServiceOperationRow
-        Insert: InsertOf<CatalogServiceOperationRow, 'created_at'>
-        Update: Partial<Omit<CatalogServiceOperationRow, 'tenant_id' | 'service_id'>>
-        Relationships: []
-      }
-      laundry_model_catalog_scope: {
-        Row: LaundryModelCatalogScopeRow
-        Insert: InsertOf<LaundryModelCatalogScopeRow, 'id' | 'created_at'>
-        Update: Partial<Omit<LaundryModelCatalogScopeRow, 'id' | 'tenant_id' | 'model_id'>>
-        Relationships: []
-      }
-      order_item_family_packages: {
-        Row: OrderItemFamilyPackageRow
-        Insert: InsertOf<OrderItemFamilyPackageRow, 'id' | 'model_name_snapshot' | 'package_price_snapshot' | 'included_pieces_snapshot' | 'overage_price_per_piece_snapshot' | 'minimum_charge_snapshot' | 'scope_snapshot' | 'price_breakdown_snapshot' | 'created_at'>
-        Update: Partial<Omit<OrderItemFamilyPackageRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      order_item_family_package_contents: {
-        Row: OrderItemFamilyPackageContentRow
-        Insert: InsertOf<OrderItemFamilyPackageContentRow, 'id' | 'article_name_snapshot' | 'care_instructions_snapshot' | 'service_operations_snapshot' | 'created_at'>
-        Update: Partial<Omit<OrderItemFamilyPackageContentRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      catalog_entries: {
-        Row: CatalogEntryRow
-        Insert: InsertOf<
-          CatalogEntryRow,
-          | 'id'
-          | 'article_id'
-          | 'service_id'
-          | 'pricing_mode'
-          | 'billing_unit'
-          | 'minimum_quantity'
-          | 'billing_increment'
-          | 'minimum_charge'
-          | 'conditions'
-          | 'requires_review'
-          | 'is_active'
-          | 'sort_order'
-          | 'created_at'
-          | 'updated_at'
-        >
-        Update: Partial<Omit<CatalogEntryRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      laundry_models: {
-        Row: LaundryModelRow
-        Insert: InsertOf<
-          LaundryModelRow,
-          | 'id'
-          | 'description'
-          | 'pricing_basis'
-          | 'price_per_kg'
-          | 'package_price'
-          | 'included_weight_kg'
-          | 'overage_price_per_kg'
-          | 'included_pieces'
-          | 'overage_price_per_piece'
-          | 'minimum_weight_kg'
-          | 'billing_increment_kg'
-          | 'minimum_charge'
-          | 'conditions'
-          | 'exclusions'
-          | 'pickup_delivery_terms'
-          | 'turnaround_days'
-          | 'is_active'
-          | 'sort_order'
-          | 'created_by'
-          | 'created_at'
-          | 'updated_at'
-        >
-        Update: Partial<Omit<LaundryModelRow, 'id' | 'tenant_id'>>
-        Relationships: []
-      }
-      laundry_model_services: {
-        Row: LaundryModelServiceRow
-        Insert: InsertOf<LaundryModelServiceRow, 'id' | 'created_at'>
-        Update: Partial<Omit<LaundryModelServiceRow, 'id' | 'tenant_id' | 'model_id'>>
         Relationships: []
       }
       cash_sessions: {
@@ -1144,44 +951,6 @@ export interface Database {
       report_stock_consumption_costs: {
         Args: { p_order_item_ids: string[] }
         Returns: { order_item_id: string; cost_amount: number; missing_cost_movements: number }[]
-      }
-      save_laundry_model: {
-        Args: { p_model: Json; p_services?: Json; p_scope?: Json }
-        Returns: string
-      }
-      apply_catalog_model_templates: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      initialize_catalog_model_templates: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      save_catalog_service_operations: {
-        Args: { p_service_id: string; p_operation_codes: string[] }
-        Returns: undefined
-      }
-      save_catalog_article_aliases: {
-        Args: { p_article_id: string; p_aliases: string[] }
-        Returns: undefined
-      }
-      apply_laundry_model_template: {
-        Args: { p_template_code: string; p_model: Json; p_scope?: Json | null }
-        Returns: string
-      }
-      create_family_package_order_item: {
-        Args: {
-          p_order_id: string
-          p_laundry_model_id: string
-          p_contents: Json
-          p_total_price: number
-          p_price_reason: string
-          p_label?: string | null
-          p_fabric_type?: string | null
-          p_special_instructions?: string | null
-          p_order_item_id?: string | null
-        }
-        Returns: string
       }
       my_subscription: {
         Args: Record<PropertyKey, never>

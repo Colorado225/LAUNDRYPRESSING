@@ -211,7 +211,7 @@ begin
             'Drap hors forfait', 'PIECE') returning id into v_outside_article;
     insert into public.order_item_family_package_contents (
       tenant_id, order_id, order_item_id, article_id, article_name_snapshot, quantity
-    ) values (v_tenant, v_order, v_item, v_article_shirt, 'Drap', 1);
+    ) values (v_tenant, v_order, v_item, v_outside_article, 'Drap', 1);
   exception when check_violation then
     v_rejected := true;
   end;

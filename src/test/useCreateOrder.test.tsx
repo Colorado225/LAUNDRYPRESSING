@@ -172,17 +172,17 @@ describe('useCreateOrder', () => {
     hook.unmount()
   })
 
-  it('refuse une ligne libre sans motif même si le hook est appelé hors formulaire', async () => {
+  it('accepte une ligne libre tarifée sans référence de catalogue', async () => {
     const hook = renderHook(() => useCreateOrder())
 
-    await expect(
-      hook.result()({
-        customerName: 'Awa Koné',
-        customerPhone: '+2250700000001',
-        items: [{ label: 'Retouche', price: 700 }],
-      }),
-    ).rejects.toThrow()
-    expect(await db.orders.count()).toBe(0)
+    const { order, items } = await hook.result()({
+      customerName: 'Awa Koné',
+      customerPhone: '+2250700000001',
+      items: [{ label: 'Retouche', price: 700 }],
+    })
+    expect(order.totalAmount).toBe(700)
+    expect(items[0]?.catalogEntryId).toBeNull()
+    expect(await db.orders.count()).toBe(1)
     hook.unmount()
   })
 
