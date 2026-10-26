@@ -211,7 +211,7 @@ async function appliquerFichier(client, fichier) {
     await client.query('commit')
   } catch (erreur) {
     await client.query('rollback').catch(() => {})
-    throw new Error(`${fichier} : ${erreur.message}`)
+    throw new Error(`${fichier} : ${erreur.message}`, { cause: erreur })
   }
 }
 
