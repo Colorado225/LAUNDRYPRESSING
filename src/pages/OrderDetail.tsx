@@ -39,6 +39,7 @@ import IssuePanel from '@/components/IssuePanel'
 import NotifyPanel from '@/components/NotifyPanel'
 import { useState } from 'react'
 import { checkOrderDeletion, deleteOrderEverywhere } from '@/services/orderAdminService'
+import { syncOrderNow } from '@/sync/syncEngine'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
@@ -63,6 +64,7 @@ export default function OrderDetail() {
   const [annulationOuverte, setAnnulationOuverte] = useState(false)
   const [motifAnnulation, setMotifAnnulation] = useState('')
   const [suppressionEnCours, setSuppressionEnCours] = useState(false)
+  const [synchronisationEnCours, setSynchronisationEnCours] = useState(false)
   const [echeanceOuverte, setEcheanceOuverte] = useState(false)
   const [echeanceSaisie, setEcheanceSaisie] = useState('')
 
@@ -106,6 +108,22 @@ export default function OrderDetail() {
   const peutCorriger = can(role, 'orders.editDetails') && !order.syncConflict
   const correctionBloquee =
     order.status === 'delivered' || order.status === 'cancelled' || order.paymentStatus === 'paid'
+
+  const synchroniser = async () => {
+    setSynchronisationEnCours(true)
+    try {
+      const resultat = await syncOrderNow(order.id)
+      if (resultat.statut === 'synced') {
+        toast.success('Commande synchronisée avec le serveur.', { icon: '✅' })
+      } else if (resultat.statut === 'conflict') {
+        toast.error(resultat.message)
+      } else {
+        toast.error(resultat.message)
+      }
+    } finally {
+      setSynchronisationEnCours(false)
+    }
+  }
 
   const enregistrerEcheance = async (valeur: string | null) => {
     try {
@@ -299,6 +317,24 @@ export default function OrderDetail() {
           )}
         </p>
         {order.syncError && <p className="mt-1 text-xs">{order.syncError}</p>}
+
+        {/* Envoi immédiat : le comptoir ne dépend plus du minuteur de fond.
+            Le bouton reste utile après un échec réseau ou un refus serveur. */}
+        {order.synced !== 1 && !order.syncConflict && (
+          <button
+            type="button"
+            onClick={() => void synchroniser()}
+            disabled={synchronisationEnCours}
+            className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {synchronisationEnCours ? (
+              <Loader2 className="animate-spin" size={15} aria-hidden />
+            ) : (
+              <RefreshCw size={15} aria-hidden />
+            )}
+            {synchronisationEnCours ? 'Envoi en cours…' : 'Synchroniser maintenant'}
+          </button>
+        )}
       </section>
 
       {/* Vêtements */}

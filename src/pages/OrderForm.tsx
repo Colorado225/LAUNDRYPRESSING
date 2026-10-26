@@ -4,7 +4,9 @@ import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder, useLocalOrders } from '@/db/hooks'
 import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
+import { syncOrderNow } from '@/sync/syncEngine'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
+import { problemeTarifaire } from '@/lib/orderPricing'
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -75,6 +77,9 @@ export default function OrderForm() {
   // placer le focus, pour qu'un « Suivant » sans effet ne soit jamais muet.
   const [champsInvalides, setChampsInvalides] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  // Étape d'enregistrement affichée pendant que la commande part au serveur :
+  // le comptoir doit voir que le travail continue après le clic.
+  const [enregistrement, setEnregistrement] = useState<'local' | 'serveur' | null>(null)
 
   useEffect(() => {
     if (!tenantId) return
@@ -181,6 +186,23 @@ export default function OrderForm() {
    * (message, toast, champ surligné) et on laisse l'utilisateur circuler ;
    * l'enregistrement, lui, reste strict et ramène sur l'étape fautive.
    */
+  /**
+   * Motifs de refus tarifaires (prix unitaire à zéro, total incohérent).
+   *
+   * PostgreSQL rejette ces lignes avec `guard_order_item_price` : on les arrête
+   * ici pour que le comptoir corrige au lieu de découvrir l'échec à l'envoi.
+   */
+  const problemesTarifaires = (): string[] =>
+    items.flatMap((item) => {
+      const probleme = problemeTarifaire({
+        label: item.label,
+        unitPrice: item.unitPrice,
+        price: item.price,
+        priceStatus: item.priceStatus,
+      })
+      return probleme ? [probleme] : []
+    })
+
   const controlerEtape = (step: number): boolean => {
     const parsed = step === 0
       ? createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
@@ -191,6 +213,14 @@ export default function OrderForm() {
       : createOrderSchema.pick({ items: true }).safeParse({ items })
 
     if (parsed.success) {
+      if (step === 1) {
+        const tarifs = problemesTarifaires()
+        if (tarifs.length > 0) {
+          setErrors(tarifs)
+          toast.error(tarifs[0]!)
+          return false
+        }
+      }
       return true
     }
 
@@ -276,17 +306,47 @@ export default function OrderForm() {
         return
       }
 
+      // 1. Écriture locale immédiate (le comptoir ne dépend pas du réseau).
+      setEnregistrement('local')
+      // Le serveur refuse une ligne à 0 FCFA : autant le dire avant l'envoi.
+      const tarifs = problemesTarifaires()
+      if (tarifs.length > 0) {
+        setErrors(tarifs)
+        setEtape(1)
+        toast.error(tarifs[0]!)
+        window.setTimeout(signalerBlocage, 0)
+        return
+      }
+
       const { order } = await createOrder(parsed.data)
-      toast.success('Commande enregistrée sur cet appareil.')
+
+      // 2. Envoi immédiat vers Supabase, sans attendre la boucle de fond :
+      //    la commande et ses lignes arrivent en base dans la seconde, et un
+      //    échec est signalé tout de suite avec son motif.
+      setEnregistrement('serveur')
+      const envoi = await syncOrderNow(order.id)
+
+      if (envoi.statut === 'synced') {
+        toast.success('Commande enregistrée et synchronisée.', { icon: '✅' })
+      } else {
+        toast(
+          `Commande enregistrée sur cet appareil. ${envoi.message}`,
+          { icon: '📥', duration: 6000 },
+        )
+      }
+
+      // La fiche s'ouvre toujours : elle montre l'état de synchronisation et
+      // permet de relancer l'envoi si besoin.
       navigate(paiement === 'especes'
         ? `/commandes/${order.id}?regler=1`
-        : '/commandes')
+        : `/commandes/${order.id}`)
     } catch (error) {
       setErrors([
         error instanceof Error ? error.message : "Impossible d'enregistrer la commande.",
       ])
     } finally {
       setSubmitting(false)
+      setEnregistrement(null)
     }
   }
 
@@ -516,7 +576,11 @@ export default function OrderForm() {
             <StepErrors errors={errors} />
             <div className="flex justify-between gap-3 pt-2">
               <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
-              <button type="button" onClick={submit} disabled={submitting || !canCreate} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{submitting ? 'Enregistrement…' : 'Enregistrer la commande'}</button>
+              <button type="button" onClick={submit} disabled={submitting || !canCreate} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{enregistrement === 'serveur'
+                  ? 'Envoi au serveur…'
+                  : submitting
+                    ? 'Enregistrement…'
+                    : 'Enregistrer la commande'}</button>
             </div>
           </div>
         )}
