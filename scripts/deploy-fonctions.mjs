@@ -96,7 +96,7 @@ async function appelApi(chemin, options, jeton) {
   })
 
   const texte = await reponse.text()
-  let corps = null
+  let corps
   try {
     corps = texte ? JSON.parse(texte) : null
   } catch {
