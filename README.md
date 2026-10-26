@@ -2,7 +2,7 @@
 
 Application web installable (PWA) pour gérer les commandes d’un pressing. Le projet cible en priorité les téléphones et tablettes Android, une interface française et les connexions intermittentes.
 
-> **État de cette révision (26 octobre 2026).** Le catalogue tarifaire et les modèles commerciaux ont été retirés du produit. Les commandes utilisent désormais des lignes librement saisies (libellé, quantité, prix unitaire). La migration 020 supprime ces données de la base : elle est destructive et doit être précédée d’une sauvegarde lorsqu’elle est appliquée à un projet existant. Voir [`docs/AUDIT-COURANT.md`](docs/AUDIT-COURANT.md) pour les contrôles et limites connus.
+> **État de cette révision (26 octobre 2026).** Le catalogue revient sous une forme simplifiée (Lot 1, migration 027) : articles par catégorie, grille de prix par prestation, bibliothèque système sans prix clonée par pressing. Dès qu'un pressing installe son catalogue, les nouvelles lignes à la pièce partent obligatoirement de la grille (garde serveur comprise) ; avant installation, la saisie libre reste possible. Voir [`docs/CATALOGUE-LOT1.md`](docs/CATALOGUE-LOT1.md). L'ancien catalogue et les modèles commerciaux restent supprimés par la migration 020 (destructive, sauvegarde requise sur un projet existant).
 
 ## Fonctionnalités
 
@@ -20,7 +20,7 @@ Application web installable (PWA) pour gérer les commandes d’un pressing. Le 
 - Authentification Supabase, rôles et isolation multi-tenant avec politiques RLS.
 - PWA installable avec écran de repli hors ligne.
 
-Les prix sont saisis sur les lignes de commande. Il n’existe plus de grille de prix ou de modèles au kilo/forfait dans l’interface actuelle.
+Une fois le catalogue installé par le propriétaire (« Catalogue & tarifs »), les prix des lignes à la pièce viennent de la grille prestation × article ; un couple sans tarif est affiché « non configuré » et bloque la vente. La tarification au kilo par tranches, les modèles de blanchisserie et les forfaits constituent les lots suivants.
 
 ## Stack
 
@@ -96,7 +96,7 @@ src/
   test/           tests Vitest
 supabase/
   functions/      fonctions Edge CinetPay
-  migrations/     migrations SQL 001 à 025
+  migrations/     migrations SQL 001 à 027
   tests/          recettes et vérifications SQL
 scripts/          installation, base, recette et déploiement
 ```

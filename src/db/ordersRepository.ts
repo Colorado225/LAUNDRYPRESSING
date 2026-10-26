@@ -106,6 +106,7 @@ export async function createOrderLocal(
       serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
       tenantServiceId: item.tenantServiceId ?? null,
       activityNameSnapshot: item.activityNameSnapshot?.trim() ? item.activityNameSnapshot.trim() : null,
+      garmentTypeId: item.garmentTypeId ?? null,
       familyNameSnapshot: item.familyNameSnapshot ?? null,
       catalogUnitPriceSnapshot: item.catalogUnitPriceSnapshot ?? null,
       minimumQuantitySnapshot: item.minimumQuantitySnapshot ?? null,
@@ -116,7 +117,9 @@ export async function createOrderLocal(
       // on le produit ici plutôt que de laisser la commande échouer à l'envoi.
       priceReason: motifPrixServeur({
         label: item.label,
-        catalogEntryId: item.catalogEntryId ?? null,
+        // Une ligne issue du catalogue (article choisi) n'est pas une ligne
+        // libre : pas de motif par défaut, le serveur contrôle la grille.
+        catalogEntryId: item.garmentTypeId ?? item.catalogEntryId ?? null,
         priceReason: item.priceReason,
       }),
       laundryModelId: item.laundryModelId ?? null,
@@ -737,6 +740,7 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     service_name: item.serviceName,
     tenant_service_id: item.tenantServiceId ?? null,
     activity_name_snapshot: item.activityNameSnapshot ?? null,
+    garment_type_id: item.garmentTypeId ?? null,
     family_name_snapshot: item.familyNameSnapshot,
     catalog_unit_price_snapshot: item.catalogUnitPriceSnapshot,
     minimum_quantity_snapshot: item.minimumQuantitySnapshot,
@@ -747,7 +751,7 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     // l'ajout du motif automatique : sans lui, leur envoi resterait bloqué.
     price_reason: motifPrixServeur({
       label: item.label,
-      catalogEntryId: item.catalogEntryId ?? null,
+      catalogEntryId: item.garmentTypeId ?? item.catalogEntryId ?? null,
       priceReason: item.priceReason,
     }),
     garment_details: item.garmentDetails ?? [],

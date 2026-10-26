@@ -17,6 +17,7 @@ import {
   Settings,
   Shirt,
   Sparkles,
+  Tags,
   Users,
   Wallet,
   X,
@@ -105,6 +106,10 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
 
   if (can(role, 'tenant.manage')) {
     items.push({ to: '/prestations', label: 'Services & activités', icon: Sparkles })
+  }
+
+  if (can(role, 'catalog.manage')) {
+    items.push({ to: '/catalogue', label: 'Catalogue & tarifs', icon: Tags })
   }
 
   if (isPlatformAdmin) {
