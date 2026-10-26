@@ -249,6 +249,33 @@ describe('navigation du formulaire de commande', () => {
   })
 })
 
+describe('compte sans droit de création', () => {
+  it('explique le refus au lieu de laisser un bouton inerte', async () => {
+    useTenantStore.setState({ tenantId: TENANT, role: 'artisan', tenantName: 'Pressing Test' })
+
+    await monter()
+
+    // Le motif est affiché dès l'ouverture, sans avoir à cliquer.
+    expect(hote.textContent).toContain('Ce compte ne peut pas créer de commande')
+    expect(hote.textContent).toContain('artisan')
+
+    // Et le clic reste possible : il produit un message, pas un silence.
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '07 00 00 00 42')
+    await cliquer(bouton('Suivant'))
+    await saisir(champ('Article / vêtement'), 'Chemise')
+    await saisir(champ('Prix unitaire (FCFA)'), '2500')
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Enregistrer la commande'))
+
+    expect(await db.orders.count()).toBe(0)
+    expect(hote.textContent).toContain('Création refusée')
+    expect(envoi.incidents.some((message) => message.includes('Création refusée'))).toBe(true)
+
+    demonter()
+  })
+})
+
 describe('enregistrement d’une nouvelle commande', () => {
   async function remplirEtEnregistrer() {
     await saisir(champ('Nom du client'), 'Awa Koné')

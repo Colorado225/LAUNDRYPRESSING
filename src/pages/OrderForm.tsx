@@ -62,7 +62,14 @@ export default function OrderForm() {
   const localOrders = useLocalOrders()
   const role = useTenantStore((state) => state.role)
   const tenantId = useTenantStore((state) => state.tenantId)
-  const canCreate = can(role, 'orders.create')
+  // Le rôle peut manquer alors que la boutique est connue (session restaurée
+  // depuis le cache, ancien stockage local). On retombe sur le rôle mémorisé
+  // pour la boutique active : sinon le bouton restait grisé sans explication.
+  const roleBoutique = useTenantStore(
+    (state) => state.shops.find((shop) => shop.tenantId === state.tenantId)?.role ?? null,
+  )
+  const roleEffectif = role ?? roleBoutique
+  const canCreate = can(roleEffectif, 'orders.create')
 
   const [activites, setActivites] = useState<TenantActivity[]>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
@@ -101,12 +108,14 @@ export default function OrderForm() {
   // laisse une trace à chaque ouverture.
   useEffect(() => {
     void signalerSonde({
-      role,
+      role: roleEffectif,
+      role_brut: role,
+      role_boutique: roleBoutique,
       boutique: tenantId,
       peut_creer: canCreate,
       en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
     })
-  }, [role, tenantId, canCreate])
+  }, [role, roleEffectif, roleBoutique, tenantId, canCreate])
 
   const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 
@@ -291,7 +300,11 @@ export default function OrderForm() {
 
   const submit = async () => {
     if (!canCreate) {
-      setErrors(["Vous n'avez pas le droit de créer une commande."])
+      const message = `Création refusée : votre rôle (${roleEffectif ?? 'inconnu'}) n'a pas le droit de créer une commande.`
+      setErrors([message])
+      toast.error(message)
+      void signalerIncidentCommande(message, { etape: 'droit', role: roleEffectif })
+      window.scrollTo?.({ top: 0, behavior: 'smooth' })
       return
     }
 
@@ -337,7 +350,23 @@ export default function OrderForm() {
         return
       }
 
-      const { order } = await createOrder(parsed.data)
+      // Garde-fou : une écriture locale bloquée (stockage saturé, transaction
+      // bloquée par un autre onglet) laisserait sinon le bouton tourner
+      // indéfiniment sans jamais rien dire.
+      const { order } = await Promise.race([
+        createOrder(parsed.data),
+        new Promise<never>((_, rejeter) =>
+          window.setTimeout(
+            () =>
+              rejeter(
+                new Error(
+                  "L'enregistrement local prend trop de temps : rechargez la page, puis réessayez. Aucune commande n'a été perdue.",
+                ),
+              ),
+            25_000,
+          ),
+        ),
+      ])
 
       // 2. Envoi immédiat vers Supabase, sans attendre la boucle de fond :
       //    la commande et ses lignes arrivent en base dans la seconde, et un
@@ -425,6 +454,20 @@ export default function OrderForm() {
           )
         })}
       </ol>
+
+      {!canCreate && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <p className="font-semibold">Ce compte ne peut pas créer de commande.</p>
+          <p className="mt-1">
+            Rôle détecté : <strong>{roleEffectif ?? 'aucun'}</strong>. Le propriétaire et le
+            réceptionniste en ont le droit, l’artisan non. Demandez au propriétaire de vérifier
+            votre rôle dans Paramètres → Équipe.
+          </p>
+        </div>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         {etape === 0 && (
@@ -616,7 +659,7 @@ export default function OrderForm() {
             <StepErrors errors={errors} />
             <div className="flex justify-between gap-3 pt-2">
               <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
-              <button type="button" onClick={submit} disabled={submitting || !canCreate} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{enregistrement === 'serveur'
+              <button type="button" onClick={submit} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{enregistrement === 'serveur'
                   ? 'Envoi au serveur…'
                   : submitting
                     ? 'Enregistrement…'
