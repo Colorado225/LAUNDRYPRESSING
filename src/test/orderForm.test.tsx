@@ -34,6 +34,7 @@ vi.mock('@/lib/supabaseClient', () => ({ getSupabaseClient: () => clientFactice 
 const envoi = vi.hoisted(() => ({
   resultat: { statut: 'synced', version: 1 } as Record<string, unknown>,
   appels: [] as string[],
+  incidents: [] as string[],
 }))
 
 vi.mock('@/sync/syncEngine', () => ({
@@ -41,6 +42,11 @@ vi.mock('@/sync/syncEngine', () => ({
     envoi.appels.push(orderId)
     return Promise.resolve(envoi.resultat)
   },
+  signalerIncidentCommande: (message: string) => {
+    envoi.incidents.push(message)
+    return Promise.resolve()
+  },
+  signalerSonde: () => Promise.resolve(),
 }))
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
@@ -109,6 +115,7 @@ beforeEach(async () => {
   await db.orders.clear()
   await db.orderItems.clear()
   envoi.appels.length = 0
+  envoi.incidents.length = 0
   envoi.resultat = { statut: 'synced', version: 1 }
   useTenantStore.setState({ tenantId: TENANT, role: 'owner', tenantName: 'Pressing Test' })
 })

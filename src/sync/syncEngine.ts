@@ -443,6 +443,42 @@ const MESSAGE_CONFLIT =
 const envoisEnCours = new Map<string, Promise<EnvoiCommande>>()
 
 /**
+ * Consigne un incident d'envoi dans la base (`log_client_sync`, migration 026).
+ *
+ * Raison d'être : un refus serveur ne laisse aucune trace — la base reste vide
+ * et le poste garde la commande en attente. Le compte connecté peut ainsi
+ * relire, depuis son propre pressing, ce que SON appareil a réellement reçu
+ * comme erreur (RLS, jeton expiré, contrainte). Jamais bloquant : si la
+ * journalisation échoue elle-même, on continue.
+ */
+async function journaliserEnvoi(
+  kind: 'push_error' | 'push_ok' | 'push_conflict',
+  order: LocalOrder | null,
+  message: string | null,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const supabase = getSupabaseClient()
+    await supabase.rpc('log_client_sync', {
+      p_kind: kind,
+      p_message: message,
+      p_order_id: order?.id ?? null,
+      p_details: {
+        poste: MARQUEUR_POSTE,
+        ...details,
+        tenant_local: order?.tenantId ?? getTenantId(),
+        version_locale: order?.serverVersion ?? null,
+        lignes: order ? (await getOrderItems(order.id)).length : null,
+        en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+        agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      },
+    })
+  } catch {
+    // Le diagnostic ne doit jamais casser le comptoir.
+  }
+}
+
+/**
  * Envoie une commande au serveur, en évitant tout envoi concurrent pour la même
  * commande (un appel déjà en cours est réutilisé tel quel).
  */
@@ -465,12 +501,17 @@ async function pousserCommande(order: LocalOrder): Promise<EnvoiCommande> {
 
     if (pushed.status === 'conflict') {
       await markOrderSyncConflict(order.id, MESSAGE_CONFLIT)
+      void journaliserEnvoi('push_conflict', order, MESSAGE_CONFLIT)
       return { statut: 'conflict', message: MESSAGE_CONFLIT }
     }
 
     if (pushed.status === 'error') {
       const message = toFrenchSyncError(new Error(pushed.message))
       await markOrderSyncError(order.id, message)
+      void journaliserEnvoi('push_error', order, message, {
+        etape: 'orders',
+        message_serveur: pushed.message,
+      })
       return { statut: 'error', message }
     }
 
@@ -505,6 +546,10 @@ async function pousserCommande(order: LocalOrder): Promise<EnvoiCommande> {
   } catch (error) {
     const message = toFrenchSyncError(error)
     await markOrderSyncError(order.id, message)
+    void journaliserEnvoi('push_error', order, message, {
+      etape: 'items',
+      message_serveur: error instanceof Error ? error.message : String(error),
+    })
     return { statut: 'error', message }
   }
 }
@@ -553,6 +598,47 @@ export async function syncOrderNow(orderId: string): Promise<EnvoiCommande> {
   }
 
   return resultat
+}
+
+/**
+ * Marqueur de version du poste, joint aux diagnostics.
+ *
+ * Permet de distinguer un vrai refus serveur d'un navigateur qui exécute encore
+ * un ancien paquet (cache du service worker) : sans ce repère, les deux se
+ * ressemblent à s'y méprendre.
+ */
+export const MARQUEUR_POSTE = 'commandes/2026-10-26'
+
+/**
+ * Sonde d'ouverture d'écran : consigne l'état réel du poste (boutique, rôle,
+ * droit de création, réseau) dans le journal de diagnostic.
+ *
+ * Utile quand le blocage est antérieur à toute requête métier — un bouton
+ * désactivé ne produit, lui, aucune erreur à capturer.
+ */
+export async function signalerSonde(details: Record<string, unknown>): Promise<void> {
+  try {
+    const supabase = getSupabaseClient()
+    await supabase.rpc('log_client_sync', {
+      p_kind: 'probe',
+      p_message: 'ouverture du formulaire de commande',
+      p_details: { poste: MARQUEUR_POSTE, ...details },
+    })
+  } catch {
+    // Diagnostic uniquement.
+  }
+}
+
+/**
+ * Signale au serveur un incident survenu AVANT l'envoi (validation, écriture
+ * locale refusée). Sans cela, un blocage au moment du clic ne laisse aucune
+ * trace : ni commande en base, ni erreur consultable.
+ */
+export async function signalerIncidentCommande(
+  message: string,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  await journaliserEnvoi('push_error', null, message, { origine: 'formulaire', ...details })
 }
 
 async function runSync(): Promise<SyncResult> {

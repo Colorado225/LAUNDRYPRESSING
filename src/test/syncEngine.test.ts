@@ -808,6 +808,28 @@ describe('syncOrderNow — envoi immédiat après création', () => {
     expect(remote.calls.filter((call) => call.table === 'order_items' && call.mode === 'upsert')).toHaveLength(1)
   })
 
+  it('consigne le refus serveur dans le journal de diagnostic', async () => {
+    const { order } = await seedOrder()
+    remote.failure = () => 'new row violates row-level security policy for table "orders"'
+    remote.rpcCalls.length = 0
+
+    await syncOrderNow(order.id)
+    // Le journal est écrit sans bloquer l'appelant.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    remote.failure = null
+
+    const incident = remote.rpcCalls.find((call) => call.fn === 'log_client_sync')
+    expect(incident).toBeDefined()
+    expect(incident?.args).toMatchObject({
+      p_kind: 'push_error',
+      p_order_id: order.id,
+    })
+    // Le poste joint l'erreur brute : elle seule permet de trancher entre un
+    // problème de droits et une contrainte métier.
+    const details = incident?.args['p_details'] as Record<string, unknown>
+    expect(String(details['message_serveur'] ?? '')).toContain('row-level security')
+  })
+
   it('n’envoie pas une commande portant un conflit non arbitré', async () => {
     const { order } = await seedOrder()
     await db.orders.update(order.id, { syncConflict: 'modifiée ailleurs' })

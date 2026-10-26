@@ -4,7 +4,7 @@ import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder, useLocalOrders } from '@/db/hooks'
 import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
-import { syncOrderNow } from '@/sync/syncEngine'
+import { signalerIncidentCommande, signalerSonde, syncOrderNow } from '@/sync/syncEngine'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
 import { problemeTarifaire } from '@/lib/orderPricing'
 import { formatFcfa } from '@/lib/formatters'
@@ -95,6 +95,18 @@ export default function OrderForm() {
       active = false
     }
   }, [tenantId])
+
+  // Sonde d'ouverture : si l'enregistrement ne produit AUCUN événement, c'est
+  // que le poste n'exécute pas cette version du formulaire. La sonde, elle,
+  // laisse une trace à chaque ouverture.
+  useEffect(() => {
+    void signalerSonde({
+      role,
+      boutique: tenantId,
+      peut_creer: canCreate,
+      en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+    })
+  }, [role, tenantId, canCreate])
 
   const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 
@@ -303,6 +315,12 @@ export default function OrderForm() {
         const premiere = String(parsed.error.issues[0]?.path[0] ?? '')
         setEtape(premiere === 'items' ? 1 : 0)
         window.setTimeout(signalerBlocage, 0)
+        // Un refus de validation bloque l'enregistrement : il doit laisser une
+        // trace consultable, comme un refus du serveur.
+        void signalerIncidentCommande(messages[0] ?? 'Validation refusée.', {
+          etape: 'validation',
+          erreurs: messages,
+        })
         return
       }
 
@@ -315,6 +333,7 @@ export default function OrderForm() {
         setEtape(1)
         toast.error(tarifs[0]!)
         window.setTimeout(signalerBlocage, 0)
+        void signalerIncidentCommande(tarifs[0]!, { etape: 'tarif' })
         return
       }
 
@@ -324,13 +343,30 @@ export default function OrderForm() {
       //    la commande et ses lignes arrivent en base dans la seconde, et un
       //    échec est signalé tout de suite avec son motif.
       setEnregistrement('serveur')
-      const envoi = await syncOrderNow(order.id)
+      // L'envoi ne doit jamais interrompre le parcours : quoi qu'il arrive, la
+      // commande existe sur l'appareil et le comptoir repart avec un message.
+      let envoi: { statut: string; message?: string }
+      try {
+        envoi = await syncOrderNow(order.id)
+      } catch (erreurEnvoi) {
+        envoi = {
+          statut: 'error',
+          message:
+            erreurEnvoi instanceof Error
+              ? erreurEnvoi.message
+              : "L'envoi au serveur a échoué.",
+        }
+        void signalerIncidentCommande(String(envoi.message ?? "L'envoi au serveur a échoué."), {
+          etape: 'envoi_immediat',
+          commande: order.id,
+        })
+      }
 
       if (envoi.statut === 'synced') {
         toast.success('Commande enregistrée et synchronisée.', { icon: '✅' })
       } else {
         toast(
-          `Commande enregistrée sur cet appareil. ${envoi.message}`,
+          `Commande enregistrée sur cet appareil. ${envoi.message ?? ''}`.trim(),
           { icon: '📥', duration: 6000 },
         )
       }
@@ -341,9 +377,13 @@ export default function OrderForm() {
         ? `/commandes/${order.id}?regler=1`
         : `/commandes/${order.id}`)
     } catch (error) {
-      setErrors([
-        error instanceof Error ? error.message : "Impossible d'enregistrer la commande.",
-      ])
+      const message =
+        error instanceof Error ? error.message : "Impossible d'enregistrer la commande."
+      setErrors([message])
+      toast.error(message)
+      // Trace côté serveur : un blocage au clic ne doit pas rester invisible.
+      void signalerIncidentCommande(message, { etape: 'creation_locale' })
+      window.scrollTo?.({ top: 0, behavior: 'smooth' })
     } finally {
       setSubmitting(false)
       setEnregistrement(null)
