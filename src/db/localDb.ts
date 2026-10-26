@@ -12,6 +12,7 @@ import type {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  TenantActivityCode,
 } from '@/types/database'
 
 /**
@@ -119,6 +120,15 @@ export interface LocalOrderItem {
   laundryMinimumChargeSnapshot?: number | null
   /** Composition issue des anciennes données locales ; elle n’est plus envoyée au serveur. */
   familyPackageSnapshot?: FamilyPackageSnapshot | null
+}
+
+/** Prestation configurée pour un pressing (cache hors ligne du référentiel). */
+export interface LocalTenantService {
+  id: string
+  tenantId: string
+  activityCode: TenantActivityCode
+  serviceName: string
+  sortOrder: number
 }
 
 /**
@@ -327,6 +337,7 @@ export class PressingDatabase extends Dexie {
   orderIssues!: Table<LocalOrderIssue, string>
   refunds!: Table<LocalRefund, string>
   notifications!: Table<LocalNotification, string>
+  tenantServices!: Table<LocalTenantService, string>
 
   constructor() {
     super('pressing-pro')
@@ -518,6 +529,11 @@ export class PressingDatabase extends Dexie {
     this.version(11).stores({
       catalogStructure: 'id, tenantId, kind, isActive, [tenantId+kind], [tenantId+isActive]',
     })
+
+    // v12 : prestations choisies par chaque pressing, utilisables hors ligne.
+    this.version(12).stores({
+      tenantServices: 'id, tenantId, activityCode, [tenantId+activityCode]',
+    })
   }
 }
 
@@ -540,6 +556,7 @@ export async function clearLocalData(): Promise<void> {
       db.orderIssues,
       db.refunds,
       db.notifications,
+      db.tenantServices,
     ],
     async () => {
       await Promise.all([
@@ -553,6 +570,7 @@ export async function clearLocalData(): Promise<void> {
         db.orderIssues.clear(),
         db.refunds.clear(),
         db.notifications.clear(),
+        db.tenantServices.clear(),
       ])
     },
   )

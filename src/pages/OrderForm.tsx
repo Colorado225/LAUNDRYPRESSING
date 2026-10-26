@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,6 +8,7 @@ import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/o
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
+import { fetchTenantServices, type TenantServiceOffering } from '@/services/tenantServices'
 
 /** Formulaire local-first de création d'une commande en trois étapes. */
 interface OrderItemDraft extends OrderItemInput {
@@ -25,6 +26,7 @@ const createEmptyItem = (): OrderItemDraft => ({
   billingUnit: 'PIECE',
   pricingMode: 'FIXED',
   priceStatus: 'CONFIRMED',
+  serviceName: '',
 })
 
 type Paiement = 'plus-tard' | 'especes'
@@ -40,8 +42,14 @@ export default function OrderForm() {
   const createOrder = useCreateOrder()
   const localOrders = useLocalOrders()
   const role = useTenantStore((state) => state.role)
+  const tenantId = useTenantStore((state) => state.tenantId)
   const canCreate = can(role, 'orders.create')
 
+  const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
+  const suggestionsPrestations = useMemo(
+    () => [...new Set(prestations.map((service) => service.serviceName))],
+    [prestations],
+  )
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -50,6 +58,19 @@ export default function OrderForm() {
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
   const [errors, setErrors] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!tenantId) return
+    let active = true
+    void fetchTenantServices(tenantId)
+      .then((rows) => {
+        if (active) setPrestations(rows)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [tenantId])
 
   const total = items.reduce((sum, item) => sum + item.price, 0)
 
@@ -198,7 +219,11 @@ export default function OrderForm() {
                     </label>
                     <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
+                      <input list="prestations-pressing" value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                    </label>
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">Type de tissu <span className="font-normal">(facultatif)</span></span>
                       <input value={item.fabricType ?? ''} onChange={(event) => updateItem(index, { fabricType: event.target.value })} placeholder="Ex. Bazin, Wax" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
@@ -212,6 +237,12 @@ export default function OrderForm() {
                 </fieldset>
               ))}
             </div>
+            <datalist id="prestations-pressing">
+              {suggestionsPrestations.map((name) => <option key={name} value={name} />)}
+            </datalist>
+            {suggestionsPrestations.length === 0 && (
+              <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée ; vous pouvez saisir librement le libellé.</p>
+            )}
 
             <div className="rounded-xl bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-600">Total de la commande</p>

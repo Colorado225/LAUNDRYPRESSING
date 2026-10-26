@@ -23,6 +23,7 @@ const SRC_DIR = join(process.cwd(), 'src')
 const TABLES = [
   'tenants',
   'tenant_users',
+  'tenant_services',
   'orders',
   'order_items',
   'order_status_history',

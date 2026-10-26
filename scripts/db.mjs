@@ -61,6 +61,7 @@ export const FICHIERS_SCHEMA = [
   'supabase/migrations/017_laundry_model_order_lines.sql',
   'supabase/migrations/018_stock_consumption_costs.sql',
   'supabase/seed.sql',
+  'supabase/migrations/021_tenant_onboarding_services.sql',
 ]
 
 /** Tests SQL rejoués par `db:verifier`, après le schéma. */
@@ -82,6 +83,7 @@ export const FICHIERS_TESTS = [
   'supabase/tests/catalogue_reference_lifecycle.sql',
   'supabase/tests/laundry_models.sql',
   'supabase/tests/stock_consumption_costs.sql',
+  'supabase/tests/tenant_onboarding_services.sql',
 ]
 
 /** Table de suivi : une ligne par fichier déjà appliqué. */

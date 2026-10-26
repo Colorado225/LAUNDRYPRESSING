@@ -18,6 +18,17 @@ export type Json =
 /** Rôles autorisés dans un pressing (voir contrainte SQL sur `tenant_users.role`). */
 export type TenantRole = 'owner' | 'receptionist' | 'artisan'
 
+/** Activités que chaque pressing peut activer et personnaliser. */
+export type TenantActivityCode =
+  | 'pressing'
+  | 'blanchisserie'
+  | 'nettoyage_sec'
+  | 'repassage'
+  | 'retouches'
+  | 'collecte_livraison'
+  | 'tapis_moquettes'
+  | 'cuir'
+
 /**
  * Cycle de vie d'une commande (palier 2).
  *
@@ -47,6 +58,16 @@ export type TenantRow = {
   id: string
   name: string
   phone: string | null
+  created_at: string
+  onboarding_completed_at: string | null
+}
+
+export type TenantServiceRow = {
+  id: string
+  tenant_id: string
+  activity_code: TenantActivityCode
+  service_name: string
+  sort_order: number
   created_at: string
 }
 
@@ -704,8 +725,14 @@ export interface Database {
     Tables: {
       tenants: {
         Row: TenantRow
-        Insert: InsertOf<TenantRow, 'id' | 'phone' | 'created_at'>
+        Insert: InsertOf<TenantRow, 'id' | 'phone' | 'created_at' | 'onboarding_completed_at'>
         Update: Partial<Omit<TenantRow, 'id'>>
+        Relationships: []
+      }
+      tenant_services: {
+        Row: TenantServiceRow
+        Insert: InsertOf<TenantServiceRow, 'id' | 'sort_order' | 'created_at'>
+        Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id'>>
         Relationships: []
       }
       tenant_users: {
@@ -948,6 +975,10 @@ export interface Database {
       }
     }
     Functions: {
+      save_tenant_services: {
+        Args: { p_services: Json }
+        Returns: string
+      }
       report_stock_consumption_costs: {
         Args: { p_order_item_ids: string[] }
         Returns: { order_item_id: string; cost_amount: number; missing_cost_movements: number }[]

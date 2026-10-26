@@ -119,6 +119,8 @@ FICHIERS=(
   "supabase/tests/catalogue_commercial_models.sql"
   "supabase/migrations/020_suppression_tarification_et_laundry_models.sql"
   "supabase/tests/suppression_tarification.sql"
+  "supabase/migrations/021_tenant_onboarding_services.sql"
+  "supabase/tests/tenant_onboarding_services.sql"
 )
 
 ECHECS=0
