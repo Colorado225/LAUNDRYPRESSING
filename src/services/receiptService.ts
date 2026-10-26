@@ -1,6 +1,25 @@
 import type { LocalOrder, LocalOrderItem } from "@/db/localDb";
 
 /**
+ * Échappe une valeur saisie (nom du client, libellé d'article, nom du
+ * pressing) avant interpolation dans le HTML d'impression.
+ *
+ * Le reçu est écrit par `document.write` dans une fenêtre de même origine :
+ * sans échappement, un libellé contenant du HTML serait interprété comme du
+ * balisage (au mieux un reçu cassé, au pire du script exécuté avec accès à la
+ * fenêtre parente). Les autres documents (reçu, facture, étiquette) passent
+ * par React, qui échappe par défaut ; ce générateur-ci doit le faire à la main.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Génère le texte du reçu formaté pour WhatsApp (avec emojis et markdown)
  */
 export function generateReceiptText(
@@ -98,7 +117,7 @@ export function generatePrintableReceipt(
     .map(
       (item) => `
       <tr>
-        <td style="text-align: left; padding: 2px 0; font-size: 11px;">${item.label} (${item.quantity}x)</td>
+        <td style="text-align: left; padding: 2px 0; font-size: 11px;">${escapeHtml(item.label)} (${item.quantity}x)</td>
         <td style="text-align: right; padding: 2px 0; font-size: 11px;">${item.price.toLocaleString("fr-FR")}</td>
       </tr>`,
     )
@@ -109,7 +128,7 @@ export function generatePrintableReceipt(
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Reçu - ${order.qrCode}</title>
+  <title>Reçu - ${escapeHtml(order.qrCode)}</title>
   <style>
     @media print {
       body { margin: 0; padding: 0; width: 300px; font-family: monospace; }
@@ -127,13 +146,13 @@ export function generatePrintableReceipt(
 <body>
   <div class="receipt">
     <div class="header">
-      <h2 style="margin: 0; font-size: 14px;">${tenantName}</h2>
+      <h2 style="margin: 0; font-size: 14px;">${escapeHtml(tenantName)}</h2>
       <p style="margin: 5px 0 0; font-size: 10px;">REÇU DE COMMANDE</p>
     </div>
 
     <div class="info-row">
       <span>N° commande:</span>
-      <span>${order.qrCode}</span>
+      <span>${escapeHtml(order.qrCode)}</span>
     </div>
     <div class="info-row">
       <span>Dépôt:</span>
@@ -148,11 +167,11 @@ export function generatePrintableReceipt(
 
     <div class="info-row">
       <span>Client:</span>
-      <span>${order.customerName}</span>
+      <span>${escapeHtml(order.customerName)}</span>
     </div>
     <div class="info-row">
       <span>Tél:</span>
-      <span>${order.customerPhone}</span>
+      <span>${escapeHtml(order.customerPhone)}</span>
     </div>
 
     <div class="divider"></div>
