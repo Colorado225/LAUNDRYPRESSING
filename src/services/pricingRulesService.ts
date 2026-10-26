@@ -40,7 +40,6 @@ export async function fetchPricingRules(tenantId: string): Promise<LocalPricingR
     supabase
       .from('pricing_rule_tiers')
       .select('pricing_rule_id, min_kg, max_kg, price_per_kg_xof')
-      .eq('tenant_id', tenantId)
       .order('min_kg'),
   ])
   if (rulesResult.error) throw rulesResult.error

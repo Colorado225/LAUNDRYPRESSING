@@ -172,7 +172,6 @@ export type PricingRuleRow = {
 
 export type PricingRuleTierRow = {
   id: string
-  tenant_id: string
   pricing_rule_id: string
   min_kg: number
   max_kg: number | null
@@ -929,7 +928,7 @@ export interface Database {
       }
       pricing_rule_tiers: {
         Row: PricingRuleTierRow
-        Insert: InsertOf<PricingRuleTierRow, 'id' | 'tenant_id' | 'max_kg'>
+        Insert: InsertOf<PricingRuleTierRow, 'id' | 'max_kg'>
         Update: Partial<Omit<PricingRuleTierRow, 'id'>>
         Relationships: []
       }
