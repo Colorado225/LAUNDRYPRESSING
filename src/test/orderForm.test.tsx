@@ -138,33 +138,49 @@ describe('navigation du formulaire de commande', () => {
     demonter()
   })
 
-  it('affiche le motif quand le numéro est incomplet et ne change pas d’étape', async () => {
+  it('avance toujours, même avec un numéro incomplet, et signale le défaut', async () => {
     await monter()
 
     await saisir(champ('Nom du client'), 'Awa Koné')
     await saisir(champ('Téléphone'), '0700')
     await cliquer(bouton('Suivant'))
 
-    expect(hote.textContent).toContain('10 chiffres attendus')
-    expect(hote.textContent).not.toContain('Vêtements et prestations')
+    // La navigation ne doit jamais paraître cassée…
+    expect(hote.textContent).toContain('Vêtements et prestations')
+    // … mais le défaut est annoncé et reste rattrapé à l'enregistrement.
+    expect(vi.mocked(toast.error)).toHaveBeenCalled()
+
+    await cliquer(bouton('Précédent'))
+    expect(hote.textContent).toContain('Informations client')
 
     demonter()
   })
 
-  it('un « Suivant » refusé n’est jamais muet : message, toast et champ marqué', async () => {
-    vi.mocked(toast.error).mockClear()
+  it('avance aussi avec des champs vides : aucun clic muet', async () => {
     await monter()
 
     await cliquer(bouton('Suivant'))
+    expect(hote.textContent).toContain('Vêtements et prestations')
+    expect(vi.mocked(toast.error)).toHaveBeenCalled()
+    expect(hote.querySelector('[aria-invalid="true"]')).toBeNull()
 
-    // Le premier motif est annoncé en toast, et la liste complète reste dans
-    // le bloc d'erreurs de l'étape.
+    demonter()
+  })
+
+  it('un champ fautif est annoncé, marqué, et reste visible au retour', async () => {
+    vi.mocked(toast.error).mockClear()
+    await monter()
+
+    // Un clic sur « Suivant » ne bloque plus, mais il parle : toast immédiat.
+    await cliquer(bouton('Suivant'))
     expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
     expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toBe('Le nom du client est obligatoire')
 
-    const alertes = hote.querySelector('[role="alert"]')?.textContent ?? ''
-    expect(alertes).toContain('Le nom du client est obligatoire')
-    expect(alertes).toContain('Le numéro de téléphone est obligatoire')
+    // De retour sur l'étape client, la liste complète et le marquage sont là.
+    await cliquer(bouton('1. Client'))
+    expect(hote.querySelector('[role="alert"]')?.textContent).toContain(
+      'Le nom du client est obligatoire',
+    )
 
     const telephone = champ('Téléphone')
     expect(telephone.getAttribute('aria-invalid')).toBe('true')
@@ -172,14 +188,31 @@ describe('navigation du formulaire de commande', () => {
     demonter()
   })
 
+  it('un enregistrement invalide ramène sur l’étape du champ fautif', async () => {
+    await monter()
+
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Suivant'))
+    expect(hote.textContent).toContain('Règlement')
+
+    await cliquer(bouton('Enregistrer la commande'))
+
+    expect(hote.textContent).toContain('Informations client')
+    expect(hote.querySelector('[role="alert"]')?.textContent).toContain(
+      'Le nom du client est obligatoire',
+    )
+
+    demonter()
+  })
+
   it('l’onglet « Vêtements » est cliquable et valide l’étape en cours', async () => {
     await monter()
 
-    // Sans informations client, l'onglet refuse d'avancer…
+    // L'onglet répond immédiatement, champs remplis ou non.
     await cliquer(bouton('2. Vêtements'))
-    expect(hote.textContent).not.toContain('Vêtements et prestations')
+    expect(hote.textContent).toContain('Vêtements et prestations')
 
-    // … et l'accepte dès qu'elles sont valides.
+    await cliquer(bouton('1. Client'))
     await saisir(champ('Nom du client'), 'Awa Koné')
     await saisir(champ('Téléphone'), '+225 07 00 00 00 00')
     await cliquer(bouton('2. Vêtements'))

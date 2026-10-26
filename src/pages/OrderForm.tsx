@@ -171,9 +171,17 @@ export default function OrderForm() {
     })
   }
 
-  const validateStep = (step: number): boolean => {
-    setErrors([])
-    setChampsInvalides([])
+  /**
+   * Contrôle l'étape en cours **sans jamais bloquer la navigation**.
+   *
+   * Choix assumé après un retour de terrain : le bouton « Suivant » d'un
+   * formulaire en trois étapes doit toujours produire quelque chose. Une
+   * validation qui refuse d'avancer laisse l'écran identique, ce qui se
+   * confond avec un bouton cassé. On signale donc les champs à corriger
+   * (message, toast, champ surligné) et on laisse l'utilisateur circuler ;
+   * l'enregistrement, lui, reste strict et ramène sur l'étape fautive.
+   */
+  const controlerEtape = (step: number): boolean => {
     const parsed = step === 0
       ? createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
           customerName,
@@ -182,16 +190,15 @@ export default function OrderForm() {
         })
       : createOrderSchema.pick({ items: true }).safeParse({ items })
 
-    if (!parsed.success) {
-      const messages = zodMessages(parsed.error)
-      setErrors(messages)
-      setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
-      // Le motif est aussi annoncé par un toast : sur une tablette au comptoir,
-      // un blocage de validation hors du champ de vision passait pour un bug.
-      toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
-      return false
+    if (parsed.success) {
+      return true
     }
-    return true
+
+    const messages = zodMessages(parsed.error)
+    setErrors(messages)
+    setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
+    toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
+    return false
   }
 
   /**
@@ -211,26 +218,33 @@ export default function OrderForm() {
   }
 
   /**
-   * Change d'étape. Les onglets d'étape et le bouton « Suivant » passent tous
-   * par ici : en avant, chaque étape intermédiaire est validée ; en arrière, on
-   * ne redemande rien. Un refus laisse l'étape en place mais affiche toujours
-   * le motif et place le focus.
+   * Change d'étape. Les onglets d'étape, « Suivant » et « Précédent » passent
+   * tous par ici : la navigation est **toujours** possible, dans les deux sens.
+   * Avancer déclenche seulement un contrôle d'affichage des champs de l'étape
+   * quittée (sans jamais retenir l'utilisateur). Un défaut réellement bloquant
+   * est arrêté au moment d'enregistrer.
    */
   const changerEtape = (cible: number) => {
     if (submitting || cible === etape || cible < 0 || cible >= ETAPES.length) return
 
+    // En avant : on contrôle les étapes traversées. En arrière : on ne touche à
+    // rien, pour que le champ fautif reste surligné et son motif lisible.
     if (cible > etape) {
+      let toutValide = true
       for (let index = etape; index < cible; index += 1) {
-        if (!validateStep(index)) {
-          signalerBlocage()
-          return
+        if (!controlerEtape(index)) {
+          toutValide = false
+          break
         }
+      }
+      if (toutValide) {
+        setErrors([])
+        setChampsInvalides([])
       }
     }
 
-    setErrors([])
-    setChampsInvalides([])
     setEtape(cible)
+    window.scrollTo?.({ top: 0, behavior: 'smooth' })
   }
 
   const submit = async () => {
@@ -249,7 +263,16 @@ export default function OrderForm() {
         dueDate: dueDate || undefined,
       })
       if (!parsed.success) {
-        setErrors(zodMessages(parsed.error))
+        const messages = zodMessages(parsed.error)
+        setErrors(messages)
+        setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
+        toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
+
+        // Retour sur l'étape qui contient la première erreur : au comptoir, un
+        // message affiché sur une autre étape n'est jamais lu.
+        const premiere = String(parsed.error.issues[0]?.path[0] ?? '')
+        setEtape(premiere === 'items' ? 1 : 0)
+        window.setTimeout(signalerBlocage, 0)
         return
       }
 

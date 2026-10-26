@@ -20,7 +20,7 @@ Les droits déterminants sont aussi vérifiés côté serveur ; l’interface ne
 
 ## 3. Créer une commande
 
-Le formulaire se déroule en trois étapes — **Client**, **Vêtements**, **Paiement**. Les trois pastilles d'étape en haut sont cliquables : elles permettent de revenir sur une étape déjà remplie ou d'avancer dès que l'étape en cours est valide. Si le formulaire refuse d'avancer, la raison est affichée sous les champs, un message apparaît en haut de l'écran et le champ fautif est surligné et sélectionné.
+Le formulaire se déroule en trois étapes — **Client**, **Vêtements**, **Paiement**. Les trois pastilles d'étape en haut sont cliquables, dans les deux sens : elles permettent de revenir sur une étape ou d'aller directement à une autre. Un défaut de saisie est signalé sans bloquer la circulation (message sous les champs, notification, champ surligné) ; c'est **Enregistrer la commande** qui vérifie tout et ramène sur l'étape du champ à corriger.
 
 Dans **Commandes**, choisir **Nouvelle commande**. Le formulaire comporte trois étapes.
 

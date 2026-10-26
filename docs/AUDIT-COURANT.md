@@ -18,7 +18,7 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 |---|---|
 | `npm run typecheck` | Réussi |
 | `npm run lint` | Réussi |
-| `npm test` | **637 tests réussis / 637**, 60 fichiers |
+| `npm test` | **639 tests réussis / 639**, 60 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
 | CI PostgreSQL 16 | Réussie sur la PR #8 : migrations 001→025 et 19 contrôles CRUD passés |
@@ -43,7 +43,7 @@ protection (fiches clients, stock et fournisseurs, suppression de commande) et s
 fonctions `security definer` contrôlées par le rôle. Le détail de la matrice et les règles métier sont
 dans [`CRUD-COMPLET.md`](CRUD-COMPLET.md).
 
-Contrôles rejoués : typecheck, lint, build et suite Vitest (637 tests / 60
+Contrôles rejoués : typecheck, lint, build et suite Vitest (639 tests / 60
 fichiers). La chaîne complète des migrations et des tests SQL, y compris
 `supabase/tests/crud_complet.sql` (19 contrôles), a été exécutée avec succès sur
 PostgreSQL via PGlite, puis confirmée par la CI sur PostgreSQL 16 réel

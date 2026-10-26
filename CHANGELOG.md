@@ -46,12 +46,13 @@ va avec.
 
 ### Corrigé
 
-- **Nouvelle commande** — le bouton « Suivant » et les onglets d'étape ne
-  restent plus sans effet : les trois étapes (`Client`, `Vêtements`,
-  `Paiement`) sont désormais de vrais boutons, et un refus de validation
-  affiche un toast, colore le champ fautif (`aria-invalid`) et amène
-  l'utilisateur dessus. Auparavant, un numéro mal saisi laissait simplement
-  l'écran inchangé au comptoir.
+- **Nouvelle commande** — « Suivant » et les onglets d'étape changent
+  désormais **toujours** d'étape : la navigation n'est plus conditionnée à la
+  validation. Les trois étapes (`Client`, `Vêtements`, `Paiement`) sont de vrais
+  boutons, un défaut de saisie est annoncé (toast + message + champ surligné
+  `aria-invalid`) sans retenir l'utilisateur, et l'enregistrement reste strict :
+  il ramène sur l'étape du premier champ fautif. Auparavant, un numéro mal saisi
+  laissait l'écran identique, ce qui se confondait avec un bouton cassé.
 - **Téléphone** — la normalisation ne conserve plus que les chiffres : un numéro
   collé depuis un carnet de contacts (espaces insécables, espaces de largeur
   nulle, tirets, points, `+225`/`00225`) est accepté au lieu d'être refusé.
@@ -72,7 +73,7 @@ va avec.
 
 ### Vérifié
 
-- 637 tests sur 60 fichiers Vitest ; typecheck, lint et build réussis.
+- 639 tests sur 60 fichiers Vitest ; typecheck, lint et build réussis.
 - `supabase/tests/crud_complet.sql` : 19 contrôles RLS et déclencheurs, rejoués
   avec toute la chaîne de migrations sur PostgreSQL (PGlite, `pgcrypto` omis)
   puis par la CI sur PostgreSQL 16 réel (`npm run sql:verify`, PR #8) : tout
