@@ -129,6 +129,7 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     laundryBillingIncrementKgSnapshot: null,
     laundryMinimumChargeSnapshot: null,
     familyPackageSnapshot: null,
+    garmentDetails: item.garment_details ?? [],
   }))
 
   const localOrder: LocalOrder = {

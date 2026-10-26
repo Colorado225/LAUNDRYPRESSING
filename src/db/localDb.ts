@@ -8,11 +8,13 @@ import type {
   LaundryModelServiceMode,
   LaundryModelType,
   FamilyPackageSnapshot,
+  OrderGarmentDetail,
   OrderItemPriceStatus,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
   TenantActivityCode,
+  TenantServiceBillingUnit,
 } from '@/types/database'
 
 /**
@@ -120,6 +122,8 @@ export interface LocalOrderItem {
   laundryMinimumChargeSnapshot?: number | null
   /** Composition issue des anciennes données locales ; elle n’est plus envoyée au serveur. */
   familyPackageSnapshot?: FamilyPackageSnapshot | null
+  /** Vêtements détaillés pour une prestation au kilo. */
+  garmentDetails?: OrderGarmentDetail[]
 }
 
 /** Prestation configurée pour un pressing (cache hors ligne du référentiel). */
@@ -138,6 +142,8 @@ export interface LocalTenantService {
   /** Identifiant historique conservé uniquement pour les lignes migrées. */
   activityCode: TenantActivityCode | null
   serviceName: string
+  billingUnit: TenantServiceBillingUnit
+  unitPrice: number | null
   sortOrder: number
 }
 
@@ -551,6 +557,19 @@ export class PressingDatabase extends Dexie {
       tenantActivities: 'id, tenantId, [tenantId+name]',
       tenantServices: 'id, tenantId, activityId, activityCode, [tenantId+activityId]',
     })
+
+    // v14 : tarif optionnel au kilo et détail de la composition des lots pesés.
+    this.version(14)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.garmentDetails === undefined) item.garmentDetails = []
+        })
+        await tx.table('tenantServices').toCollection().modify((service: LocalTenantService & Record<string, unknown>) => {
+          if (service.billingUnit === undefined) service.billingUnit = 'PIECE'
+          if (service.unitPrice === undefined) service.unitPrice = null
+        })
+      })
   }
 }
 

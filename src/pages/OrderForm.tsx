@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -9,12 +9,19 @@ import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import { fetchTenantServices, type TenantServiceOffering } from '@/services/tenantServices'
+import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
+import type { OrderGarmentDetail, OrderGarmentType } from '@/types/database'
 
 /** Formulaire local-first de création d'une commande en trois étapes. */
-interface OrderItemDraft extends OrderItemInput {
+interface OrderItemDraft extends Omit<OrderItemInput, 'garmentDetails'> {
   quantity: number
   unitPrice: number
+  selectedOfferingId: string
+  garmentDetails: Array<{ type: OrderGarmentType | ''; quantity: number }>
 }
+
+const formatDraftComposition = (details: OrderItemDraft['garmentDetails']) =>
+  formatGarmentComposition(details.filter((detail): detail is OrderGarmentDetail => detail.type !== ''))
 
 const createEmptyItem = (): OrderItemDraft => ({
   label: '',
@@ -27,6 +34,8 @@ const createEmptyItem = (): OrderItemDraft => ({
   pricingMode: 'FIXED',
   priceStatus: 'CONFIRMED',
   serviceName: '',
+  selectedOfferingId: '',
+  garmentDetails: [],
 })
 
 type Paiement = 'plus-tard' | 'especes'
@@ -46,10 +55,6 @@ export default function OrderForm() {
   const canCreate = can(role, 'orders.create')
 
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
-  const suggestionsPrestations = useMemo(
-    () => [...new Set(prestations.map((service) => service.serviceName))],
-    [prestations],
-  )
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -81,6 +86,42 @@ export default function OrderForm() {
       updated.price = Math.round(updated.quantity * updated.unitPrice)
       return updated
     }))
+  }
+
+  const choisirPrestation = (index: number, offeringId: string) => {
+    if (offeringId === '__free__') {
+      updateItem(index, {
+        selectedOfferingId: offeringId,
+        serviceName: '',
+        billingUnit: 'PIECE',
+        quantity: 1,
+        unitPrice: 0,
+        garmentDetails: [],
+      })
+      return
+    }
+    const offering = prestations.find((service) => service.id === offeringId)
+    if (!offering) {
+      updateItem(index, {
+        selectedOfferingId: '',
+        serviceName: '',
+        billingUnit: 'PIECE',
+        quantity: 1,
+        unitPrice: 0,
+        garmentDetails: [],
+      })
+      return
+    }
+    const auKilo = offering.billingUnit === 'KG'
+    updateItem(index, {
+      selectedOfferingId: offering.id,
+      serviceName: offering.serviceName,
+      label: auKilo ? offering.serviceName : '',
+      billingUnit: offering.billingUnit,
+      quantity: 1,
+      unitPrice: offering.unitPrice ?? 0,
+      garmentDetails: auKilo ? [{ type: '', quantity: 1 }] : [],
+    })
   }
 
   const validateStep = (step: number): boolean => {
@@ -195,7 +236,7 @@ export default function OrderForm() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">Vêtements et prestations</h2>
-                <p className="text-sm text-slate-500">Saisissez le prix convenu pour chaque ligne.</p>
+                <p className="text-sm text-slate-500">Pour une prestation au kilo, énumérez les vêtements, pesez le lot et confirmez le tarif par kilo.</p>
               </div>
               <button type="button" onClick={() => setItems((current) => [...current, createEmptyItem()])} disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"><Plus size={17} aria-hidden /> Ajouter une ligne</button>
             </div>
@@ -204,44 +245,95 @@ export default function OrderForm() {
               {items.map((item, index) => (
                 <fieldset key={index} className="rounded-xl border border-slate-200 p-3 sm:p-4">
                   <legend className="px-1 text-sm font-semibold text-slate-600">Ligne {index + 1}</legend>
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px_150px_44px]">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_170px_44px]">
+                    {item.billingUnit === 'KG' ? (
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
+                        <p className="min-h-11 rounded-lg bg-slate-50 px-3 py-2.5 font-semibold text-slate-800">{item.serviceName || 'Lavage au kilo'}</p>
+                      </div>
+                    ) : (
+                      <label className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Article / vêtement</span>
+                        <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      </label>
+                    )}
                     <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Article / vêtement</span>
-                      <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Poids total (kg)' : 'Quantité'}</span>
+                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => updateItem(index, { quantity: item.billingUnit === 'KG' ? Math.max(0, Number(event.target.value) || 0) : Math.max(1, Number(event.target.value) || 1) })} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Quantité</span>
-                      <input type="number" min="1" step="1" value={item.quantity} onChange={(event) => updateItem(index, { quantity: Math.max(1, Number(event.target.value) || 1) })} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Prix unitaire (FCFA)</span>
-                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Tarif/kg (FCFA)' : 'Prix unitaire (FCFA)'}</span>
+                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                     </label>
                     <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
-                      <input list="prestations-pressing" value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      <select value={item.selectedOfferingId} onChange={(event) => choisirPrestation(index, event.target.value)} aria-label={`Prestation de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
+                        <option value="">Sans prestation configurée</option>
+                        <option value="__free__">Saisir une prestation libre</option>
+                        {prestations.map((service) => <option key={service.id} value={service.id}>{service.activityName} · {service.serviceName}{service.billingUnit === 'KG' ? ' — au kilo' : ''}</option>)}
+                      </select>
+                      {item.selectedOfferingId === '__free__' && (
+                        <input value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" aria-label={`Libellé de la prestation libre ${index + 1}`} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      )}
                     </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Type de tissu <span className="font-normal">(facultatif)</span></span>
-                      <input value={item.fabricType ?? ''} onChange={(event) => updateItem(index, { fabricType: event.target.value })} placeholder="Ex. Bazin, Wax" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
+                    {item.billingUnit !== 'KG' && (
+                      <label className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Type de tissu <span className="font-normal">(facultatif)</span></span>
+                        <input value={item.fabricType ?? ''} onChange={(event) => updateItem(index, { fabricType: event.target.value })} placeholder="Ex. Bazin, Wax" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      </label>
+                    )}
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">Instructions <span className="font-normal">(facultatif)</span></span>
                       <input value={item.specialInstructions ?? ''} onChange={(event) => updateItem(index, { specialInstructions: event.target.value })} placeholder="Ex. Empèsage fort" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                     </label>
                   </div>
+                  {item.billingUnit === 'KG' && (
+                    <div className="mt-4 rounded-xl border border-brand-teal/20 bg-teal-50/40 p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800">Vêtements dans le lot</h3>
+                          <p className="text-xs text-slate-500">Le tarif est calculé sur le poids total; ce détail sert au suivi du linge.</p>
+                        </div>
+                        <button type="button" onClick={() => updateItem(index, { garmentDetails: [...item.garmentDetails, { type: '', quantity: 1 }] })} className="min-h-9 rounded-lg border border-brand-teal/40 px-3 text-xs font-bold text-brand-navy hover:bg-white">+ Ajouter un type</button>
+                      </div>
+                      {item.garmentDetails.map((garment, garmentIndex) => (
+                        <div key={`${index}-garment-${garmentIndex}`} className="mb-2 grid grid-cols-[minmax(0,1fr)_90px_40px] gap-2 last:mb-0">
+                          <label className="space-y-1">
+                            <span className="sr-only">Type de vêtement {garmentIndex + 1}</span>
+                            <select value={garment.type} onChange={(event) => {
+                              const garmentDetails = [...item.garmentDetails]
+                              garmentDetails[garmentIndex] = { ...garment, type: event.target.value as OrderGarmentType | '' }
+                              updateItem(index, { garmentDetails })
+                            }} aria-label={`Type de vêtement ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal">
+                              <option value="">Sélectionner un type</option>
+                              {GARMENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                            </select>
+                          </label>
+                          <label className="space-y-1">
+                            <span className="sr-only">Nombre d’articles {garmentIndex + 1}</span>
+                            <input type="number" min="1" max="1000" step="1" value={garment.quantity} onChange={(event) => {
+                              const garmentDetails = [...item.garmentDetails]
+                              garmentDetails[garmentIndex] = { ...garment, quantity: Math.min(1000, Math.max(1, Math.floor(Number(event.target.value) || 1))) }
+                              updateItem(index, { garmentDetails })
+                            }} aria-label={`Nombre d’articles ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm outline-none focus:border-brand-teal" />
+                          </label>
+                          <button type="button" onClick={() => updateItem(index, { garmentDetails: item.garmentDetails.filter((_, detailIndex) => detailIndex !== garmentIndex) })} aria-label={`Supprimer le type de vêtement ${garmentIndex + 1}`} className="flex min-h-10 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={16} aria-hidden /></button>
+                        </div>
+                      ))}
+                      {formatDraftComposition(item.garmentDetails) && (
+                        <p className="mt-2 text-xs font-medium text-slate-700">Composition : {formatDraftComposition(item.garmentDetails)}</p>
+                      )}
+                    </div>
+                  )}
                   <p className="mt-3 text-right text-sm font-semibold text-slate-700">Total de la ligne : {formatFcfa(item.price)}</p>
                 </fieldset>
               ))}
             </div>
-            <datalist id="prestations-pressing">
-              {suggestionsPrestations.map((name) => <option key={name} value={name} />)}
-            </datalist>
-            {suggestionsPrestations.length === 0 && (
-              <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée ; vous pouvez saisir librement le libellé.</p>
+            {prestations.length === 0 && (
+              <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée. Vous pouvez laisser la ligne sans prestation ou en saisir une librement.</p>
             )}
 
             <div className="rounded-xl bg-slate-50 p-4">

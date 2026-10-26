@@ -3,6 +3,7 @@ import {
   type LocalTenantActivity,
   type LocalTenantService,
 } from '@/db/localDb'
+import type { TenantServiceBillingUnit } from '@/types/database'
 import { isSupabaseConfigured } from '@/lib/env'
 import { labelActivite } from '@/lib/tenantActivities'
 import { getSupabaseClient } from '@/lib/supabaseClient'
@@ -20,6 +21,8 @@ export interface TenantServiceOffering {
   activityId: string
   activityName: string
   serviceName: string
+  billingUnit: TenantServiceBillingUnit
+  unitPrice: number | null
   sortOrder: number
 }
 
@@ -40,6 +43,8 @@ function fromLocalService(row: LocalTenantService): TenantServiceOffering {
     activityId: row.activityId || `legacy:${code ?? 'unknown'}`,
     activityName: row.activityName || (code ? labelActivite(code) : 'Activité'),
     serviceName: row.serviceName,
+    billingUnit: row.billingUnit ?? 'PIECE',
+    unitPrice: row.unitPrice ?? null,
     sortOrder: row.sortOrder,
   }
 }
@@ -117,7 +122,7 @@ export async function fetchTenantServiceConfiguration(
       .order('sort_order'),
     supabase
       .from('tenant_services')
-      .select('id, tenant_id, activity_id, activity_code, service_name, sort_order')
+      .select('id, tenant_id, activity_id, activity_code, service_name, billing_unit, unit_price, sort_order')
       .eq('tenant_id', tenantId)
       .order('sort_order'),
   ])
@@ -138,6 +143,8 @@ export async function fetchTenantServiceConfiguration(
     activityId: row.activity_id,
     activityName: activityNames.get(row.activity_id) ?? 'Activité',
     serviceName: row.service_name,
+    billingUnit: row.billing_unit,
+    unitPrice: row.unit_price,
     sortOrder: row.sort_order,
   }))
 
@@ -245,13 +252,30 @@ export async function deleteTenantActivity(tenantId: string, activityId: string)
   })
 }
 
+function normalizeTenantServicePricing(
+  billingUnit: TenantServiceBillingUnit,
+  unitPrice: number | null,
+): { billingUnit: TenantServiceBillingUnit; unitPrice: number | null } {
+  if (billingUnit !== 'PIECE' && billingUnit !== 'KG') {
+    throw new Error('Unité de facturation invalide.')
+  }
+  if (billingUnit === 'PIECE') return { billingUnit, unitPrice: null }
+  if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1 || unitPrice > 10_000_000)) {
+    throw new Error('Le tarif au kilo doit être un montant entier entre 1 et 10 000 000 FCFA.')
+  }
+  return { billingUnit, unitPrice }
+}
+
 export async function createTenantService(
   tenantId: string,
   activityId: string,
   serviceName: string,
+  billingUnit: TenantServiceBillingUnit = 'PIECE',
+  unitPrice: number | null = null,
 ): Promise<void> {
   const clean = serviceName.trim()
   if (clean.length < 2 || clean.length > 80) throw new Error('Le nom de la prestation doit contenir entre 2 et 80 caractères.')
+  const pricing = normalizeTenantServicePricing(billingUnit, unitPrice)
   requireOnlineConfiguration()
 
   if (isSupabaseConfigured) {
@@ -259,6 +283,8 @@ export async function createTenantService(
       tenant_id: tenantId,
       activity_id: activityId,
       service_name: clean,
+      billing_unit: pricing.billingUnit,
+      unit_price: pricing.unitPrice,
     })
     if (error) throw error
     await refreshConfiguration(tenantId)
@@ -273,7 +299,7 @@ export async function createTenantService(
   if (!activity || activity.tenantId !== tenantId) throw new Error('Activité introuvable.')
   await db.tenantServices.add({
     id: localId(), tenantId, activityId, activityName: activity.name,
-    activityCode: null, serviceName: clean, sortOrder: services.length,
+    activityCode: null, serviceName: clean, ...pricing, sortOrder: services.length,
   })
 }
 
@@ -282,15 +308,23 @@ export async function updateTenantService(
   serviceId: string,
   activityId: string,
   serviceName: string,
+  billingUnit: TenantServiceBillingUnit = 'PIECE',
+  unitPrice: number | null = null,
 ): Promise<void> {
   const clean = serviceName.trim()
   if (clean.length < 2 || clean.length > 80) throw new Error('Le nom de la prestation doit contenir entre 2 et 80 caractères.')
+  const pricing = normalizeTenantServicePricing(billingUnit, unitPrice)
   requireOnlineConfiguration()
 
   if (isSupabaseConfigured) {
     const { data, error } = await getSupabaseClient()
       .from('tenant_services')
-      .update({ activity_id: activityId, service_name: clean })
+      .update({
+        activity_id: activityId,
+        service_name: clean,
+        billing_unit: pricing.billingUnit,
+        unit_price: pricing.unitPrice,
+      })
       .eq('tenant_id', tenantId)
       .eq('id', serviceId)
       .select('id')
@@ -304,7 +338,7 @@ export async function updateTenantService(
   const activity = await db.tenantActivities.get(activityId)
   if (!activity || activity.tenantId !== tenantId) throw new Error('Activité introuvable.')
   await db.tenantServices.update(serviceId, {
-    activityId, activityName: activity.name, serviceName: clean,
+    activityId, activityName: activity.name, serviceName: clean, ...pricing,
   })
 }
 

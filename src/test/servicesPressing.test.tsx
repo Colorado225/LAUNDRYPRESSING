@@ -55,6 +55,22 @@ function input(label: string): HTMLInputElement {
   return result
 }
 
+function select(label: string): HTMLSelectElement {
+  const result = [...host.querySelectorAll('select')].find((element) =>
+    element.getAttribute('aria-label') === label,
+  )
+  if (!result) throw new Error(`Sélecteur « ${label} » introuvable`)
+  return result
+}
+
+async function choisir(selecteur: HTMLSelectElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(selecteur, value)
+    selecteur.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
 async function saisir(champ: HTMLInputElement, value: string) {
   await act(async () => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
@@ -101,17 +117,30 @@ beforeEach(() => {
     configuration.activities = configuration.activities.filter((activity) => activity.id !== id)
     configuration.services = configuration.services.filter((service) => service.activityId !== id)
   })
-  serviceMocks.createTenantService.mockReset().mockImplementation(async (_tenantId: string, activityId: string, serviceName: string) => {
+  serviceMocks.createTenantService.mockReset().mockImplementation(async (
+    _tenantId: string,
+    activityId: string,
+    serviceName: string,
+    billingUnit: 'PIECE' | 'KG',
+    unitPrice: number | null,
+  ) => {
     const activity = configuration.activities.find((entry) => entry.id === activityId)
     if (!activity) return
     configuration.services.push({
-      id: 'service-1', tenantId: 'tenant-new', activityId, activityName: activity.name, serviceName, sortOrder: 0,
+      id: 'service-1', tenantId: 'tenant-new', activityId, activityName: activity.name, serviceName, billingUnit, unitPrice, sortOrder: 0,
     })
   })
-  serviceMocks.updateTenantService.mockReset().mockImplementation(async (_tenantId: string, id: string, activityId: string, name: string) => {
+  serviceMocks.updateTenantService.mockReset().mockImplementation(async (
+    _tenantId: string,
+    id: string,
+    activityId: string,
+    name: string,
+    billingUnit: 'PIECE' | 'KG',
+    unitPrice: number | null,
+  ) => {
     const activity = configuration.activities.find((entry) => entry.id === activityId)
     configuration.services = configuration.services.map((service) => service.id === id
-      ? { ...service, activityId, activityName: activity?.name ?? '', serviceName: name }
+      ? { ...service, activityId, activityName: activity?.name ?? '', serviceName: name, billingUnit, unitPrice }
       : service)
   })
   serviceMocks.deleteTenantService.mockReset().mockImplementation(async (_tenantId: string, id: string) => {
@@ -136,7 +165,7 @@ describe('CRUD des activités et prestations du pressing', () => {
     await act(async () => button('Prestations').click())
     await saisir(input('Nom de la nouvelle prestation'), 'Tapis grand format')
     await act(async () => button('Ajouter la prestation').click())
-    expect(serviceMocks.createTenantService).toHaveBeenCalledWith('tenant-new', 'activity-1', 'Tapis grand format')
+    expect(serviceMocks.createTenantService).toHaveBeenCalledWith('tenant-new', 'activity-1', 'Tapis grand format', 'PIECE', null)
 
     await act(async () => button('Terminer la configuration').click())
     expect(serviceMocks.completeTenantOnboarding).toHaveBeenCalledWith('tenant-new')
@@ -156,6 +185,21 @@ describe('CRUD des activités et prestations du pressing', () => {
 
     await act(async () => button('Supprimer').click())
     expect(serviceMocks.deleteTenantActivity).toHaveBeenCalledWith('tenant-new', 'activity-1')
+    unmount()
+  })
+
+  it('configure une prestation au kilo avec un tarif personnalisé optionnel', async () => {
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0 }]
+    await mount()
+    await act(async () => button('Prestations').click())
+    await saisir(input('Nom de la nouvelle prestation'), 'Lavage et repassage au kilo')
+    await choisir(select('Mode de facturation de la nouvelle prestation'), 'KG')
+    await saisir(input('Tarif au kilo de la nouvelle prestation'), '1500')
+    await act(async () => button('Ajouter la prestation').click())
+
+    expect(serviceMocks.createTenantService).toHaveBeenCalledWith(
+      'tenant-new', 'activity-1', 'Lavage et repassage au kilo', 'KG', 1500,
+    )
     unmount()
   })
 })

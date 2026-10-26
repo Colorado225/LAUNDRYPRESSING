@@ -62,6 +62,26 @@ export type TenantRow = {
   onboarding_completed_at: string | null
 }
 
+export type TenantServiceBillingUnit = 'PIECE' | 'KG'
+export type OrderGarmentType =
+  | 'CHEMISE'
+  | 'T_SHIRT'
+  | 'PANTALON'
+  | 'JEAN'
+  | 'ROBE'
+  | 'JUPE'
+  | 'VESTE'
+  | 'COSTUME'
+  | 'BOUBOU'
+  | 'DRAP'
+  | 'SERVIETTE'
+  | 'AUTRE'
+
+export type OrderGarmentDetail = {
+  type: OrderGarmentType
+  quantity: number
+}
+
 export type TenantActivityRow = {
   id: string
   tenant_id: string
@@ -78,6 +98,8 @@ export type TenantServiceRow = {
   activity_id: string
   activity_code: TenantActivityCode | null
   service_name: string
+  billing_unit: TenantServiceBillingUnit
+  unit_price: number | null
   sort_order: number
   created_at: string
 }
@@ -149,6 +171,8 @@ export type OrderItemRow = {
   conditions_snapshot: string | null
   /** Motif d'un écart de tarif ou d'une ligne libre. */
   price_reason: string | null
+  /** Composition des vêtements d'une ligne au kilo, figée à la réception. */
+  garment_details: OrderGarmentDetail[]
   /** Modèle commercial et conditions tarifaires figés à la réception. */
 }
 
@@ -748,7 +772,7 @@ export interface Database {
       }
       tenant_services: {
         Row: TenantServiceRow
-        Insert: InsertOf<TenantServiceRow, 'id' | 'activity_code' | 'sort_order' | 'created_at'>
+        Insert: InsertOf<TenantServiceRow, 'id' | 'activity_code' | 'billing_unit' | 'unit_price' | 'sort_order' | 'created_at'>
         Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
@@ -801,6 +825,7 @@ export interface Database {
           | 'billing_increment_snapshot'
           | 'minimum_charge_snapshot'
           | 'conditions_snapshot'
+          | 'garment_details'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
         Relationships: []

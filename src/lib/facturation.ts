@@ -1,6 +1,7 @@
 import { ORDER_STATUSES, PAYMENT_METHOD_LABELS } from '@/constants/orders'
 import type { LocalCashPayment, LocalOrder, LocalOrderItem } from '@/db/localDb'
 import { computeBalance } from '@/services/cashService'
+import { formatGarmentComposition } from '@/constants/garmentTypes'
 
 /**
  * Facturation (écran facture A4).
@@ -32,6 +33,7 @@ export interface LigneFacture {
   poidsKg?: number
   detailCommercial?: string
   prestationsCommerciales?: string
+  compositionVetements?: string
 }
 
 export interface AcompteFacture {
@@ -104,9 +106,10 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
     const unite = item.billingUnit ?? 'PIECE'
     const prixStatut = item.priceStatus ?? 'CONFIRMED'
     const prixUnitaire = item.unitPrice ?? item.price
+    const compositionVetements = formatGarmentComposition(item.garmentDetails)
     // Ne regroupe que des saisies aux quantités, tarifs, statuts et totaux
     // identiques : le minimum facturable peut rendre le total non multiplicatif.
-    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${item.laundryModelId ? item.id : ''}`
+    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${compositionVetements ?? ''}|${item.laundryModelId ? item.id : ''}`
 
     const existante = parCle.get(cle)
     if (existante) {
@@ -122,6 +125,7 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
         prixStatut,
         prixUnitaire,
         total: item.price,
+        ...(compositionVetements ? { compositionVetements } : {}),
         ...(item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined
           ? {
               poidsKg: item.laundryWeightKg,

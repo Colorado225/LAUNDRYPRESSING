@@ -146,6 +146,9 @@ export default function Facture() {
             <tr key={`${ligne.libelle}-${ligne.poidsKg ?? ''}-${ligne.prixUnitaire}-${index}`} className="border-b border-slate-100">
               <td className="py-2 pr-2">
                 {ligne.libelle}
+                {ligne.compositionVetements && (
+                  <span className="block text-[8px] text-slate-500">Vêtements : {ligne.compositionVetements}</span>
+                )}
                 {ligne.prixStatut === 'ESTIMATED' && (
                   <span className="block text-[8px] font-semibold uppercase text-amber-700">
                     Quantité estimée — à confirmer

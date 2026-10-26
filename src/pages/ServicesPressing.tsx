@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { useTenantOnboarding } from '@/lib/tenantOnboarding'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
+import type { TenantServiceBillingUnit } from '@/types/database'
 import {
   completeTenantOnboarding,
   createTenantActivity,
@@ -51,7 +52,15 @@ export default function ServicesPressing() {
   const [editionActivite, setEditionActivite] = useState<{ id: string; name: string } | null>(null)
   const [activiteActive, setActiviteActive] = useState('')
   const [nouvellePrestation, setNouvellePrestation] = useState('')
-  const [editionPrestation, setEditionPrestation] = useState<{ id: string; name: string; activityId: string } | null>(null)
+  const [nouvelleUnite, setNouvelleUnite] = useState<TenantServiceBillingUnit>('PIECE')
+  const [nouveauTarifKg, setNouveauTarifKg] = useState('')
+  const [editionPrestation, setEditionPrestation] = useState<{
+    id: string
+    name: string
+    activityId: string
+    billingUnit: TenantServiceBillingUnit
+    unitPrice: string
+  } | null>(null)
 
   const charger = useCallback(async () => {
     if (!tenantId) {
@@ -138,17 +147,40 @@ export default function ServicesPressing() {
     if (!tenantId || !activiteActive) return
     const name = nouvellePrestation.trim()
     if (!name) return
+    const unitPrice = nouvelleUnite === 'KG' && nouveauTarifKg.trim()
+      ? Number(nouveauTarifKg)
+      : null
+    if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1)) {
+      setErreur('Le tarif au kilo doit être un nombre entier de FCFA supérieur à zéro.')
+      return
+    }
     await runAction(async () => {
-      await createTenantService(tenantId, activiteActive, name)
+      await createTenantService(tenantId, activiteActive, name, nouvelleUnite, unitPrice)
       setNouvellePrestation('')
+      setNouvelleUnite('PIECE')
+      setNouveauTarifKg('')
     }, 'Prestation ajoutée à l’activité.')
   }
 
   const enregistrerPrestation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!tenantId || !editionPrestation) return
+    const unitPrice = editionPrestation.billingUnit === 'KG' && editionPrestation.unitPrice.trim()
+      ? Number(editionPrestation.unitPrice)
+      : null
+    if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1)) {
+      setErreur('Le tarif au kilo doit être un nombre entier de FCFA supérieur à zéro.')
+      return
+    }
     await runAction(async () => {
-      await updateTenantService(tenantId, editionPrestation.id, editionPrestation.activityId, editionPrestation.name)
+      await updateTenantService(
+        tenantId,
+        editionPrestation.id,
+        editionPrestation.activityId,
+        editionPrestation.name,
+        editionPrestation.billingUnit,
+        unitPrice,
+      )
       setEditionPrestation(null)
     }, 'Prestation mise à jour.')
   }
@@ -274,7 +306,7 @@ export default function ServicesPressing() {
             <section role="tabpanel" aria-label="Prestations" className="space-y-4">
               <div>
                 <h2 className="text-lg font-bold text-brand-navy">Prestations par activité</h2>
-                <p className="mt-1 text-sm text-slate-500">Chaque prestation est enregistrée avec son activité parente. Les tarifs restent fixés lors de la commande.</p>
+                <p className="mt-1 text-sm text-slate-500">Chaque prestation est rattachée à une activité. Les prestations au kilo peuvent recevoir un tarif propre au pressing; il sera proposé puis confirmé à la commande.</p>
               </div>
 
               {configuration.activities.length === 0 ? (
@@ -291,11 +323,26 @@ export default function ServicesPressing() {
                     </select>
                   </label>
 
-                  <form onSubmit={(event) => void ajouterPrestation(event)} className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row">
-                    <input value={nouvellePrestation} onChange={(event) => setNouvellePrestation(event.target.value)} maxLength={80} placeholder="Ex. Lavage et repassage" aria-label="Nom de la nouvelle prestation" className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
-                    <button type="submit" disabled={enregistrement || !activiteActive || nouvellePrestation.trim().length < 2} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-teal px-5 font-bold text-white hover:bg-brand-teal/90 disabled:cursor-not-allowed disabled:opacity-50">
-                      <Plus size={17} aria-hidden /> Ajouter la prestation
-                    </button>
+                  <form onSubmit={(event) => void ajouterPrestation(event)} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
+                    <input value={nouvellePrestation} onChange={(event) => setNouvellePrestation(event.target.value)} maxLength={80} placeholder="Ex. Lavage et repassage au kilo" aria-label="Nom de la nouvelle prestation" className="min-h-12 min-w-0 rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-600">Mode de facturation</span>
+                      <select value={nouvelleUnite} onChange={(event) => setNouvelleUnite(event.target.value as TenantServiceBillingUnit)} aria-label="Mode de facturation de la nouvelle prestation" className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:border-brand-teal">
+                        <option value="PIECE">À la pièce</option>
+                        <option value="KG">Au kilo (poids total)</option>
+                      </select>
+                    </label>
+                    {nouvelleUnite === 'KG' && (
+                      <label className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Tarif personnalisé par kilo (FCFA, facultatif)</span>
+                        <input type="number" min="1" step="1" value={nouveauTarifKg} onChange={(event) => setNouveauTarifKg(event.target.value)} placeholder="Ex. 1 500" aria-label="Tarif au kilo de la nouvelle prestation" className="min-h-12 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
+                      </label>
+                    )}
+                    <div className="flex items-end sm:justify-end">
+                      <button type="submit" disabled={enregistrement || !activiteActive || nouvellePrestation.trim().length < 2} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-teal px-5 font-bold text-white hover:bg-brand-teal/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
+                        <Plus size={17} aria-hidden /> Ajouter la prestation
+                      </button>
+                    </div>
                   </form>
 
                   {servicesActifs.length === 0 ? (
@@ -307,22 +354,40 @@ export default function ServicesPressing() {
                         return (
                           <li key={service.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                             {editing ? (
-                              <form onSubmit={(event) => void enregistrerPrestation(event)} className="flex flex-col gap-2 sm:flex-row">
-                                <input autoFocus value={editionPrestation.name} onChange={(event) => setEditionPrestation({ ...editionPrestation, name: event.target.value })} maxLength={80} aria-label={`Modifier ${service.serviceName}`} className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
+                              <form onSubmit={(event) => void enregistrerPrestation(event)} className="grid gap-3 sm:grid-cols-2">
+                                <input autoFocus value={editionPrestation.name} onChange={(event) => setEditionPrestation({ ...editionPrestation, name: event.target.value })} maxLength={80} aria-label={`Modifier ${service.serviceName}`} className="min-h-11 min-w-0 rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
                                 <select value={editionPrestation.activityId} onChange={(event) => setEditionPrestation({ ...editionPrestation, activityId: event.target.value })} aria-label="Activité de la prestation" className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 outline-none focus:border-brand-teal">
                                   {configuration.activities.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
                                 </select>
-                                <button type="submit" disabled={enregistrement || editionPrestation.name.trim().length < 2} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white disabled:opacity-50"><Check size={16} aria-hidden /> Enregistrer</button>
-                                <button type="button" onClick={() => setEditionPrestation(null)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"><X size={16} aria-hidden /> Annuler</button>
+                                <label className="space-y-1">
+                                  <span className="text-xs font-semibold text-slate-600">Mode de facturation</span>
+                                  <select value={editionPrestation.billingUnit} onChange={(event) => setEditionPrestation({ ...editionPrestation, billingUnit: event.target.value as TenantServiceBillingUnit })} aria-label={`Unité de ${service.serviceName}`} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:border-brand-teal">
+                                    <option value="PIECE">À la pièce</option>
+                                    <option value="KG">Au kilo (poids total)</option>
+                                  </select>
+                                </label>
+                                {editionPrestation.billingUnit === 'KG' && (
+                                  <label className="space-y-1">
+                                    <span className="text-xs font-semibold text-slate-600">Tarif personnalisé par kilo (FCFA, facultatif)</span>
+                                    <input type="number" min="1" step="1" value={editionPrestation.unitPrice} onChange={(event) => setEditionPrestation({ ...editionPrestation, unitPrice: event.target.value })} aria-label={`Tarif au kilo de ${service.serviceName}`} placeholder="Ex. 1 500" className="min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
+                                  </label>
+                                )}
+                                <div className="flex flex-wrap gap-2 sm:col-span-2">
+                                  <button type="submit" disabled={enregistrement || editionPrestation.name.trim().length < 2} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white disabled:opacity-50"><Check size={16} aria-hidden /> Enregistrer</button>
+                                  <button type="button" onClick={() => setEditionPrestation(null)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"><X size={16} aria-hidden /> Annuler</button>
+                                </div>
                               </form>
                             ) : (
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="min-w-0">
                                   <h3 className="font-bold text-slate-800">{service.serviceName}</h3>
-                                  <p className="mt-1 text-xs text-slate-500">Activité : {service.activityName}</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    Activité : {service.activityName} · {service.billingUnit === 'KG' ? 'Au kilo' : 'À la pièce'}
+                                    {service.billingUnit === 'KG' && service.unitPrice !== null ? ` · ${service.unitPrice.toLocaleString('fr-FR')} FCFA/kg` : ''}
+                                  </p>
                                 </div>
                                 <div className="flex gap-2">
-                                  <button type="button" onClick={() => setEditionPrestation({ id: service.id, name: service.serviceName, activityId: service.activityId })} aria-label={`Modifier la prestation ${service.serviceName}`} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Pencil size={15} aria-hidden /> Modifier</button>
+                                  <button type="button" onClick={() => setEditionPrestation({ id: service.id, name: service.serviceName, activityId: service.activityId, billingUnit: service.billingUnit, unitPrice: service.unitPrice?.toString() ?? '' })} aria-label={`Modifier la prestation ${service.serviceName}`} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Pencil size={15} aria-hidden /> Modifier</button>
                                   <button type="button" onClick={() => void supprimerPrestation(service)} aria-label={`Supprimer la prestation ${service.serviceName}`} disabled={enregistrement} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"><Trash2 size={15} aria-hidden /> Supprimer</button>
                                 </div>
                               </div>

@@ -39,6 +39,14 @@ export const orderItemInputSchema = z.object({
   catalogEntryId: z.string().uuid("Référence de catalogue invalide").optional(),
   articleName: z.string().trim().max(60).optional(),
   serviceName: z.string().trim().max(60).optional(),
+  /** Types et quantités énumérés pour une ligne de prestation au kilo. */
+  garmentDetails: z.array(z.object({
+    type: z.enum([
+      'CHEMISE', 'T_SHIRT', 'PANTALON', 'JEAN', 'ROBE', 'JUPE',
+      'VESTE', 'COSTUME', 'BOUBOU', 'DRAP', 'SERVIETTE', 'AUTRE',
+    ]),
+    quantity: z.number().int().min(1).max(1000),
+  })).max(100).optional(),
   /** Quantité réellement pesée/mesurée ; 1 par défaut pour les anciennes lignes. */
   quantity: z
     .number()
@@ -147,6 +155,27 @@ export const orderItemInputSchema = z.object({
     item.laundryModelNameSnapshot != null || item.laundryModelTypeSnapshot != null || item.laundryWeightKg != null || item.familyPackageSnapshot != null
   ) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'La référence du modèle commercial est manquante.' })
+  }
+  if (unite === 'KG' && (item.unitPrice ?? 0) <= 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['unitPrice'],
+      message: 'Indiquez un tarif au kilo supérieur à zéro.',
+    })
+  }
+  if (unite === 'KG' && item.garmentDetails !== undefined && item.garmentDetails.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['garmentDetails'],
+      message: 'Énumérez au moins un type de vêtement pour cette prestation au kilo.',
+    })
+  }
+  if (unite !== 'KG' && item.garmentDetails?.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['garmentDetails'],
+      message: 'Le détail des vêtements ne s’applique qu’à une prestation au kilo.',
+    })
   }
   if (['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(unite) && !Number.isInteger(quantite)) {
     context.addIssue({
