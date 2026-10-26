@@ -46,6 +46,15 @@ va avec.
 
 ### Corrigé
 
+- **Nouvelle commande** — le bouton « Suivant » et les onglets d'étape ne
+  restent plus sans effet : les trois étapes (`Client`, `Vêtements`,
+  `Paiement`) sont désormais de vrais boutons, et un refus de validation
+  affiche un toast, colore le champ fautif (`aria-invalid`) et amène
+  l'utilisateur dessus. Auparavant, un numéro mal saisi laissait simplement
+  l'écran inchangé au comptoir.
+- **Téléphone** — la normalisation ne conserve plus que les chiffres : un numéro
+  collé depuis un carnet de contacts (espaces insécables, espaces de largeur
+  nulle, tirets, points, `+225`/`00225`) est accepté au lieu d'être refusé.
 - **Synchronisation** — `pushOrder` transmet désormais `assigned_to`,
   `assigned_at` et `status_reason` : l'attribution faite hors ligne et le motif
   d'annulation atteignent enfin le serveur (ils étaient silencieusement perdus,
@@ -63,7 +72,7 @@ va avec.
 
 ### Vérifié
 
-- 634 tests sur 60 fichiers Vitest ; typecheck, lint et build réussis.
+- 637 tests sur 60 fichiers Vitest ; typecheck, lint et build réussis.
 - `supabase/tests/crud_complet.sql` : 19 contrôles RLS et déclencheurs, rejoués
   avec toute la chaîne de migrations sur PostgreSQL (PGlite, `pgcrypto` omis)
   puis par la CI sur PostgreSQL 16 réel (`npm run sql:verify`, PR #8) : tout

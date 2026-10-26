@@ -8,15 +8,35 @@ import { z } from 'zod'
  * remplace jamais les contraintes serveur.
  */
 
+/**
+ * Normalise un numéro ivoirien saisi au comptoir.
+ *
+ * On ne garde que les chiffres : un numéro collé depuis un carnet de contacts
+ * arrive souvent avec des espaces insécables, des tirets, des points ou même
+ * une espace de largeur nulle — autant de caractères qu'un simple
+ * `replace(/[\s.-]/g, '')` laissait passer et qui faisaient échouer la
+ * validation sans que le guichetier comprenne pourquoi.
+ * L'indicatif pays (+225, 00225) est retiré pour ne conserver que les 10
+ * chiffres locaux, identiques à ce que calcule `normalize_phone` en base.
+ */
+export function normalizePhoneCi(value: string): string {
+  const chiffres = value.replace(/\D/g, '')
+
+  if (chiffres.startsWith('00225')) return chiffres.slice(5)
+  if (chiffres.startsWith('225') && chiffres.length > 10) return chiffres.slice(3)
+
+  return chiffres
+}
+
 /** Numéro ivoirien : 10 chiffres, avec ou sans indicatif +225 / 00225. */
 export const phoneCiSchema = z
   .string()
   .trim()
   .min(1, 'Le numéro de téléphone est obligatoire')
-  .refine((value) => {
-    const digits = value.replace(/[\s.-]/g, '').replace(/^(\+225|00225)/, '')
-    return /^\d{10}$/.test(digits)
-  }, 'Numéro invalide : 10 chiffres attendus (ex. 07 00 00 00 00)')
+  .refine(
+    (value) => /^\d{10}$/.test(normalizePhoneCi(value)),
+    'Numéro invalide : 10 chiffres attendus (ex. 07 00 00 00 00)',
+  )
 
 export const orderItemInputSchema = z.object({
   label: z
