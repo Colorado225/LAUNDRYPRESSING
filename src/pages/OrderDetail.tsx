@@ -6,8 +6,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Printer,
   RefreshCw,
   Trash2,
+  MessageCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatGarmentComposition } from '@/constants/garmentTypes'
@@ -40,6 +42,12 @@ import NotifyPanel from '@/components/NotifyPanel'
 import { useState } from 'react'
 import { checkOrderDeletion, deleteOrderEverywhere } from '@/services/orderAdminService'
 import { syncOrderNow } from '@/sync/syncEngine'
+import {
+  generateReceiptText,
+  generateWhatsAppUrl,
+  generatePrintableReceipt,
+  printReceipt,
+} from '@/services/receiptService'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
@@ -296,11 +304,10 @@ export default function OrderDetail() {
 
       {/* Synchronisation */}
       <section
-        className={`rounded-2xl border p-4 ${
-          order.synced === 1
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-            : 'border-amber-200 bg-amber-50 text-amber-900'
-        }`}
+        className={`rounded-2xl border p-4 ${order.synced === 1
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
       >
         <p className="flex items-center gap-2 text-sm font-semibold">
           {order.synced === 1 ? (
@@ -354,10 +361,10 @@ export default function OrderDetail() {
                   {item.familyPackageSnapshot
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
                     : item.laundryModelId
-                    ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
-                    : item.billingUnit === 'FLAT'
-                      ? `Forfait · ${formatFcfa(item.unitPrice)}`
-                      : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                      ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
+                      : item.billingUnit === 'FLAT'
+                        ? `Forfait · ${formatFcfa(item.unitPrice)}`
+                        : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ — à confirmer' : ''}
                 </p>
                 <p className="text-xs text-slate-500">
@@ -421,6 +428,39 @@ export default function OrderDetail() {
       {/* Étiquette QR — impression 80 mm */}
       <QrCodeDisplay order={order} items={items} tenantName={tenantName} />
 
+      {/* Panneau de partage du reçu */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Partager le reçu</h2>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <a
+            href={generateWhatsAppUrl(
+              order.customerPhone,
+              generateReceiptText(order, items, tenantName)
+            )}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-600"
+          >
+            <MessageCircle size={18} />
+            Envoyer par WhatsApp
+          </a>
+          <button
+            onClick={() => {
+              try {
+                const receiptHtml = generatePrintableReceipt(order, items, tenantName)
+                printReceipt(receiptHtml)
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Impression impossible")
+              }
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+          >
+            <Printer size={18} />
+            Imprimer le reçu
+          </button>
+        </div>
+      </section>
+
       {/* Progression */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Avancement</h2>
@@ -432,9 +472,8 @@ export default function OrderDetail() {
             return (
               <li key={status}>
                 <span
-                  className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-semibold ${
-                    isCurrent ? meta.badgeClass : 'border-slate-200 bg-white text-slate-500'
-                  }`}
+                  className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-semibold ${isCurrent ? meta.badgeClass : 'border-slate-200 bg-white text-slate-500'
+                    }`}
                 >
                   {meta.label}
                 </span>
