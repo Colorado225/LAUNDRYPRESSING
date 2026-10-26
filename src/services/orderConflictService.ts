@@ -110,6 +110,11 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     serviceName: item.service_name ?? null,
     tenantServiceId: item.tenant_service_id ?? null,
     activityNameSnapshot: item.activity_name_snapshot ?? null,
+    // Les références catalogue/forfait font partie de l'état serveur : sans
+    // elles, une ligne porteuse ou incluse perdrait son lien après arbitrage.
+    garmentTypeId: item.garment_type_id ?? null,
+    commercialPackageId: item.commercial_package_id ?? null,
+    packageLineId: item.package_line_id ?? null,
     familyNameSnapshot: item.family_name_snapshot ?? null,
     catalogUnitPriceSnapshot: item.catalog_unit_price_snapshot ?? null,
     minimumQuantitySnapshot: item.minimum_quantity_snapshot ?? null,

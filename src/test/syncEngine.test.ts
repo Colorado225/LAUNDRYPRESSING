@@ -599,6 +599,52 @@ describe('syncPendingOrders — conflits', () => {
     })
   })
 
+  it('prendre la version du serveur conserve les liens catalogue et forfait des lignes', async () => {
+    const ARTICLE_ID = '33333333-3333-4333-8333-333333333333'
+    const FORFAIT_ID = '44444444-4444-4444-8444-444444444444'
+    const DETAIL_ID = '55555555-5555-4555-8555-555555555555'
+    const { order, item, syncResult } = await preparerConflitDeMesure()
+    expect(syncResult.conflicts).toBe(1)
+    const commandeEnConflit = (await db.orders.get(order.id))!
+
+    // Le serveur détient une porteuse de forfait et un détail inclus à 0 FCFA.
+    const ligneServeur = remote.serverItems[0] as Record<string, unknown>
+    remote.serverItems = [
+      {
+        ...ligneServeur,
+        garment_type_id: null,
+        commercial_package_id: FORFAIT_ID,
+        package_line_id: null,
+      },
+      {
+        ...ligneServeur,
+        id: DETAIL_ID,
+        label: 'Chemise incluse',
+        garment_type_id: ARTICLE_ID,
+        commercial_package_id: null,
+        package_line_id: item.id,
+        quantity: 2,
+        billed_quantity: 2,
+        unit_price: 0,
+        price: 0,
+      },
+    ]
+
+    await takeServerVersion(commandeEnConflit)
+
+    expect(await db.orderItems.get(item.id)).toMatchObject({
+      garmentTypeId: null,
+      commercialPackageId: FORFAIT_ID,
+      packageLineId: null,
+    })
+    expect(await db.orderItems.get(DETAIL_ID)).toMatchObject({
+      garmentTypeId: ARTICLE_ID,
+      commercialPackageId: null,
+      packageLineId: item.id,
+      price: 0,
+    })
+  })
+
   it('ne renvoie plus une commande en conflit tant qu’il n’est pas arbitré', async () => {
     const { order } = await seedOrder()
     await syncPendingOrders()
