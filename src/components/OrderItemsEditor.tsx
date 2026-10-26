@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAddOrderItem, useRemoveOrderItem } from '@/db/hooks'
-import type { LocalOrder, LocalOrderItem } from '@/db/localDb'
+import type { LocalCatalogGarment, LocalCatalogPrice, LocalOrder, LocalOrderItem } from '@/db/localDb'
 import { formatFcfa } from '@/lib/formatters'
+import { fetchCatalogConfiguration } from '@/services/catalogService'
+import { fetchTenantServices, type TenantServiceOffering } from '@/services/tenantServices'
+import { articlesParCategorie, indexerPrix, prixConfigure } from '@/lib/catalogue'
 
 interface Props {
   order: LocalOrder
@@ -14,7 +17,8 @@ interface Props {
  * Correction des articles d'une commande déjà déposée.
  *
  * Deux opérations, volontairement limitées au strict nécessaire au comptoir :
- *  - **ajouter** une pièce rapportée (ligne libre au prix fixé) ;
+ *  - **ajouter** une pièce rapportée (article du catalogue au tarif de
+ *    grille quand le catalogue est installé, ligne libre sinon) ;
  *  - **retirer** une ligne saisie par erreur.
  *
  * Les champs tarifaires figés (catalogue, forfaits, mesures) ne sont pas
@@ -32,35 +36,98 @@ export default function OrderItemsEditor({ order, items }: Props) {
   const [prix, setPrix] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const [ligneEnCours, setLigneEnCours] = useState<string | null>(null)
+  const [articles, setArticles] = useState<LocalCatalogGarment[]>([])
+  const [grille, setGrille] = useState<LocalCatalogPrice[]>([])
+  const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
+  const [articleId, setArticleId] = useState('')
+  const [prestationId, setPrestationId] = useState('')
+
+  useEffect(() => {
+    let actif = true
+    void fetchCatalogConfiguration(order.tenantId)
+      .then((cfg) => {
+        if (!actif) return
+        setArticles(cfg.garments)
+        setGrille(cfg.prices)
+      })
+      .catch(() => undefined)
+    void fetchTenantServices(order.tenantId)
+      .then((services) => {
+        if (actif) setPrestations(services)
+      })
+      .catch(() => undefined)
+    return () => {
+      actif = false
+    }
+  }, [order.tenantId])
+
+  const catalogueActif = articles.some((article) => article.isActive)
+  const groupes = useMemo(() => articlesParCategorie(articles), [articles])
+  const indexPrix = useMemo(() => indexerPrix(grille), [grille])
+  const tarifGrille = prixConfigure(indexPrix, prestationId || null, articleId || null)
+  const articleChoisi = articles.find((article) => article.id === articleId)
+  const prestationChoisie = prestations.find((service) => service.id === prestationId)
 
   const montant = Number(prix.replace(/\s/g, ''))
   const quantiteNombre = Number(quantite)
 
   const ajouter = async () => {
-    if (!libelle.trim()) {
-      toast.error('Indiquez le libellé de l’article.')
-      return
-    }
     if (!Number.isInteger(quantiteNombre) || quantiteNombre < 1) {
       toast.error('La quantité doit être un entier supérieur à zéro.')
       return
     }
-    if (!Number.isInteger(montant) || montant < 0 || prix.trim() === '') {
-      toast.error('Indiquez le prix unitaire, en FCFA.')
-      return
+    if (catalogueActif) {
+      if (!articleChoisi) {
+        toast.error('Choisissez un article du catalogue.')
+        return
+      }
+      if (!prestationChoisie) {
+        toast.error('Choisissez la prestation.')
+        return
+      }
+      if (tarifGrille === null) {
+        toast.error(
+          `Tarif non configuré : « ${articleChoisi.name} » × « ${prestationChoisie.serviceName} ». Définissez-le dans Catalogue → Tarifs.`,
+        )
+        return
+      }
+    } else {
+      if (!libelle.trim()) {
+        toast.error('Indiquez le libellé de l’article.')
+        return
+      }
+      if (!Number.isInteger(montant) || montant < 0 || prix.trim() === '') {
+        toast.error('Indiquez le prix unitaire, en FCFA.')
+        return
+      }
     }
 
     setEnvoi(true)
     try {
-      await ajouterLigne(order.id, {
-        label: libelle,
-        quantity: quantiteNombre,
-        unitPrice: montant,
-      })
+      await ajouterLigne(
+        order.id,
+        catalogueActif && articleChoisi && prestationChoisie && tarifGrille !== null
+          ? {
+              label: articleChoisi.name,
+              quantity: quantiteNombre,
+              unitPrice: tarifGrille,
+              garmentTypeId: articleChoisi.id,
+              tenantServiceId: prestationChoisie.id,
+              serviceName: prestationChoisie.serviceName,
+              activityNameSnapshot: prestationChoisie.activityName,
+            }
+          : {
+              label: libelle,
+              quantity: quantiteNombre,
+              unitPrice: montant,
+            },
+      )
       toast.success('Article ajouté à la commande', { icon: '🧺' })
       setLibelle('')
       setQuantite('1')
       setPrix('')
+      setArticleId('')
+      setPrestationId('')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Ajout impossible')
     } finally {
@@ -130,6 +197,78 @@ export default function OrderItemsEditor({ order, items }: Props) {
         ))}
       </ul>
 
+      {catalogueActif ? (
+        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_88px_auto]">
+          <label className="min-w-0">
+            <span className="sr-only">Article du catalogue</span>
+            <select
+              value={articleId}
+              onChange={(event) => setArticleId(event.target.value)}
+              aria-label="Article du catalogue à ajouter"
+              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+            >
+              <option value="">Article du catalogue</option>
+              {groupes.map((groupe) => (
+                <optgroup key={groupe.categoryCode} label={groupe.categoryName}>
+                  {groupe.articles.map((article) => (
+                    <option key={article.id} value={article.id}>
+                      {article.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label className="min-w-0">
+            <span className="sr-only">Prestation</span>
+            <select
+              value={prestationId}
+              onChange={(event) => setPrestationId(event.target.value)}
+              aria-label="Prestation de l’article ajouté"
+              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+            >
+              <option value="">Prestation</option>
+              {prestations
+                .filter((service) => service.billingUnit === 'PIECE')
+                .map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.serviceName}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Quantité</span>
+            <input
+              value={quantite}
+              onChange={(event) => setQuantite(event.target.value)}
+              inputMode="numeric"
+              aria-label="Quantité"
+              className="min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void ajouter()}
+            disabled={envoi}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+          >
+            {envoi ? (
+              <Loader2 className="animate-spin" size={15} aria-hidden />
+            ) : (
+              <Plus size={15} aria-hidden />
+            )}
+            Ajouter
+          </button>
+          <p className="text-xs text-slate-500 sm:col-span-4">
+            {articleChoisi && prestationChoisie
+              ? tarifGrille !== null
+                ? `Tarif catalogue : ${formatFcfa(tarifGrille)} par pièce.`
+                : 'Tarif non configuré pour ce couple article × prestation.'
+              : 'Le prix vient automatiquement de la grille du catalogue.'}
+          </p>
+        </div>
+      ) : (
       <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_88px_120px_auto]">
         <label className="min-w-0">
           <span className="sr-only">Libellé de l’article</span>
@@ -179,6 +318,7 @@ export default function OrderItemsEditor({ order, items }: Props) {
           Ajouter
         </button>
       </div>
+      )}
     </section>
   )
 }

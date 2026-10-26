@@ -102,6 +102,8 @@ export interface LocalOrderItem {
   /** Référence et nom de l’activité figés depuis la prestation configurée. */
   tenantServiceId?: string | null
   activityNameSnapshot?: string | null
+  /** Article du catalogue choisi au comptoir (null pour les lignes historiques/libres). */
+  garmentTypeId?: string | null
   familyNameSnapshot: string | null
   catalogUnitPriceSnapshot: number | null
   minimumQuantitySnapshot: number | null
@@ -148,6 +150,55 @@ export interface LocalTenantService {
   billingUnit: TenantServiceBillingUnit
   unitPrice: number | null
   sortOrder: number
+}
+
+/** Article du catalogue du pressing (cache hors ligne, rafraîchi depuis Supabase). */
+export interface LocalCatalogGarment {
+  id: string
+  tenantId: string
+  categoryId: string | null
+  /** Code et nom de catégorie dénormalisés pour grouper sans jointure locale. */
+  categoryCode: string
+  categoryName: string
+  code: string
+  name: string
+  iconKey: string
+  defaultUnit: CatalogBillingUnit
+  isDelicate: boolean
+  isActive: boolean
+  sortOrder: number
+}
+
+/** Prix courant d'une prestation pour un article (absence de ligne = non configuré). */
+/** Tranche d'une règle au kilo (embarquée dans la règle mise en cache). */
+export interface LocalPricingTier {
+  minKg: number
+  maxKg: number | null
+  pricePerKgXof: number
+}
+
+/** Règle de tarification au kilo d'une prestation (cache hors ligne). */
+export interface LocalPricingRule {
+  id: string
+  tenantId: string
+  tenantServiceId: string
+  ruleName: string
+  ruleMode: 'flat_rate' | 'progressive_tiers'
+  minBillableKg: number
+  stepKg: number
+  roundingMode: 'ceil' | 'nearest' | 'exact'
+  isActive: boolean
+  tiers: LocalPricingTier[]
+}
+
+export interface LocalCatalogPrice {
+  id: string
+  tenantId: string
+  tenantServiceId: string
+  garmentTypeId: string
+  /** Prix unitaire en FCFA entiers, toujours strictement positif. */
+  priceXof: number
+  isActive: boolean
 }
 
 /**
@@ -358,6 +409,9 @@ export class PressingDatabase extends Dexie {
   notifications!: Table<LocalNotification, string>
   tenantActivities!: Table<LocalTenantActivity, string>
   tenantServices!: Table<LocalTenantService, string>
+  catalogGarments!: Table<LocalCatalogGarment, string>
+  catalogPrices!: Table<LocalCatalogPrice, string>
+  catalogPricingRules!: Table<LocalPricingRule, string>
 
   constructor() {
     super('pressing-pro')
@@ -583,6 +637,24 @@ export class PressingDatabase extends Dexie {
           if (item.activityNameSnapshot === undefined) item.activityNameSnapshot = null
         })
       })
+
+    // v16 : cache hors ligne du catalogue (articles et prix par prestation).
+    this.version(16)
+      .stores({
+        catalogGarments: 'id, tenantId, categoryCode, [tenantId+isActive]',
+        catalogPrices: 'id, tenantId, tenantServiceId, garmentTypeId, [tenantServiceId+garmentTypeId]',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.garmentTypeId === undefined) item.garmentTypeId = null
+        })
+      })
+
+    // v17 : cache hors ligne des règles de tarification au kilo par tranches.
+    this.version(17).stores({
+      catalogPricingRules: 'id, tenantId, tenantServiceId, [tenantId+tenantServiceId]',
+    })
+
   }
 }
 
@@ -607,6 +679,8 @@ export async function clearLocalData(): Promise<void> {
       db.notifications,
       db.tenantActivities,
       db.tenantServices,
+      db.catalogGarments,
+      db.catalogPrices,
     ],
     async () => {
       await Promise.all([
@@ -622,6 +696,8 @@ export async function clearLocalData(): Promise<void> {
         db.notifications.clear(),
         db.tenantActivities.clear(),
         db.tenantServices.clear(),
+        db.catalogGarments.clear(),
+        db.catalogPrices.clear(),
       ])
     },
   )

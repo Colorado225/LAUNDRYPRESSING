@@ -150,6 +150,12 @@ describe('Requêtes Supabase — toutes portent un filtre de périmètre', () =>
         "lecture de la dernière transaction d'une commande (.eq('order_id')) ; la RLS restreint déjà au pressing courant.",
     },
     {
+      file: 'src/services/pricingRulesService.ts',
+      table: 'pricing_rule_tiers',
+      reason:
+        'les tranches n’ont pas de tenant_id propre : elles sont lues toutes, la RLS borne déjà aux règles du pressing courant (politiques « exists » sur la règle parente).',
+    },
+    {
       file: 'src/services/subscriptionService.ts',
       table: 'plans',
       reason:

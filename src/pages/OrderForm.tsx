@@ -16,6 +16,17 @@ import {
   type TenantServiceOffering,
 } from '@/services/tenantServices'
 import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
+import { fetchCatalogConfiguration } from '@/services/catalogService'
+import { fetchPricingRules } from '@/services/pricingRulesService'
+import { calculerPrixKilo, formaterDetailKilo } from '@/lib/prixKilo'
+import type { LocalPricingRule } from '@/db/localDb'
+import {
+  articlesParCategorie,
+  indexerPrix,
+  prixConfigure,
+  problemeLigneCatalogue,
+} from '@/lib/catalogue'
+import type { LocalCatalogGarment, LocalCatalogPrice } from '@/db/localDb'
 import type { OrderGarmentDetail, OrderGarmentType } from '@/types/database'
 
 /** Formulaire local-first de création d'une commande en trois étapes. */
@@ -42,6 +53,7 @@ const createEmptyItem = (): OrderItemDraft => ({
   priceStatus: 'CONFIRMED',
   serviceName: '',
   tenantServiceId: null,
+  garmentTypeId: null,
   activityNameSnapshot: null,
   selectedActivityId: '',
   selectedOfferingId: '',
@@ -73,6 +85,9 @@ export default function OrderForm() {
 
   const [activites, setActivites] = useState<TenantActivity[]>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
+  const [articlesCatalogue, setArticlesCatalogue] = useState<LocalCatalogGarment[]>([])
+  const [prixCatalogue, setPrixCatalogue] = useState<LocalCatalogPrice[]>([])
+  const [reglesKilo, setReglesKilo] = useState<LocalPricingRule[]>([])
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -98,6 +113,18 @@ export default function OrderForm() {
         setPrestations(configuration.services)
       })
       .catch(() => undefined)
+    void fetchCatalogConfiguration(tenantId)
+      .then((configuration) => {
+        if (!active) return
+        setArticlesCatalogue(configuration.garments)
+        setPrixCatalogue(configuration.prices)
+      })
+      .catch(() => undefined)
+    void fetchPricingRules(tenantId)
+      .then((regles) => {
+        if (active) setReglesKilo(regles)
+      })
+      .catch(() => undefined)
     return () => {
       active = false
     }
@@ -119,15 +146,68 @@ export default function OrderForm() {
 
   const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 
+  // Catalogue (Lot 1) : dès que le pressing a des articles actifs, chaque
+  // ligne à la pièce part d'un article et d'un tarif de la grille — le prix
+  // n'est plus tapé à la main. Avant installation, l'ancien flux libre reste
+  // disponible pour ne bloquer aucun pressing le jour du déploiement.
+  const indexPrixCatalogue = indexerPrix(prixCatalogue)
+  const catalogueActif = articlesCatalogue.some((article) => article.isActive)
+  const groupesCatalogue = articlesParCategorie(articlesCatalogue)
+
   const total = items.reduce((sum, item) => sum + item.price, 0)
 
   const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
     setItems((current) => current.map((item, itemIndex) => {
       if (itemIndex !== index) return item
       const updated = { ...item, ...patch }
-      updated.price = Math.round(updated.quantity * updated.unitPrice)
+      // Devis kilo par tranches : le total calculé prime sur le produit
+      // quantité × prix unitaire (non linéaire).
+      updated.price = updated.totalImpose ?? Math.round(updated.quantity * updated.unitPrice)
       return updated
     }))
+  }
+
+  const regleKiloPour = (serviceId: string): LocalPricingRule | undefined =>
+    reglesKilo.find((regle) => regle.tenantServiceId === serviceId && regle.isActive)
+
+  /** (Re)calcule le devis d'une ligne au kilo régie par des tranches. */
+  const appliquerDevisKilo = (index: number, poids: number, regle: LocalPricingRule) => {
+    const devis = calculerPrixKilo(
+      {
+        mode: regle.ruleMode,
+        minBillableKg: regle.minBillableKg,
+        stepKg: regle.stepKg,
+        rounding: regle.roundingMode,
+      },
+      regle.tiers.map((t) => ({ minKg: t.minKg, maxKg: t.maxKg, prixParKg: t.pricePerKgXof })),
+      poids,
+    )
+    if (!devis) {
+      updateItem(index, { quantity: poids, totalImpose: undefined, unitPrice: 0, conditionsSnapshot: null })
+      return
+    }
+    updateItem(index, {
+      quantity: poids,
+      totalImpose: devis.montant,
+      billedQuantity: devis.poidsFactureKg,
+      unitPrice: Math.max(1, Math.round(devis.montant / Math.max(devis.poidsFactureKg, 0.001))),
+      conditionsSnapshot: formaterDetailKilo(devis),
+    })
+  }
+
+  const majQuantite = (index: number, valeur: number) => {
+    const item = items[index]
+    if (item?.billingUnit === 'KG') {
+      const poids = Math.max(0, valeur || 0)
+      const regle = item.selectedOfferingId ? regleKiloPour(item.selectedOfferingId) : undefined
+      if (regle) {
+        appliquerDevisKilo(index, poids, regle)
+        return
+      }
+      updateItem(index, { quantity: poids, totalImpose: undefined, conditionsSnapshot: null })
+      return
+    }
+    updateItem(index, { quantity: Math.max(1, valeur || 1) })
   }
 
   const choisirActivite = (index: number, activityId: string) => {
@@ -143,6 +223,23 @@ export default function OrderForm() {
       quantity: 1,
       unitPrice: 0,
       garmentDetails: [],
+    })
+  }
+
+  const choisirArticle = (index: number, garmentTypeId: string) => {
+    const item = items[index]
+    const article = articlesCatalogue.find((garment) => garment.id === garmentTypeId)
+    if (!article) {
+      updateItem(index, { garmentTypeId: null, unitPrice: 0, catalogUnitPriceSnapshot: null })
+      return
+    }
+    const prix = prixConfigure(indexPrixCatalogue, item?.selectedOfferingId, article.id)
+    updateItem(index, {
+      garmentTypeId: article.id,
+      label: article.name,
+      articleName: article.name,
+      catalogUnitPriceSnapshot: prix,
+      unitPrice: prix ?? 0,
     })
   }
 
@@ -182,6 +279,9 @@ export default function OrderForm() {
     let label = item?.label ?? ''
     if (auKilo) label = offering.serviceName
     else if (item?.billingUnit === 'KG') label = ''
+    // À la pièce, le prix vient de la grille catalogue quand un article est
+    // déjà choisi ; au kilo, le tarif/kg de la prestation continue de s'appliquer.
+    const prixGrille = auKilo ? null : prixConfigure(indexPrixCatalogue, offering.id, item?.garmentTypeId)
     updateItem(index, {
       selectedOfferingId: offering.id,
       serviceName: offering.serviceName,
@@ -189,12 +289,24 @@ export default function OrderForm() {
         ? offering.id
         : null,
       activityNameSnapshot: offering.activityName,
+      garmentTypeId: auKilo ? null : item?.garmentTypeId ?? null,
+      catalogUnitPriceSnapshot: prixGrille,
+      totalImpose: undefined,
+      conditionsSnapshot: null,
       label,
       billingUnit: offering.billingUnit,
       quantity: 1,
-      unitPrice: offering.unitPrice ?? 0,
+      unitPrice: prixGrille ?? offering.unitPrice ?? 0,
       garmentDetails: auKilo ? [{ type: '', quantity: 1 }] : [],
     })
+    if (auKilo) {
+      const regle = regleKiloPour(offering.id)
+      if (regle) {
+        // Ligne fraîchement basculée au kilo : devis initial pour 1 kg,
+        // recalculé à chaque pesée via majQuantite.
+        setTimeout(() => appliquerDevisKilo(index, 1, regle), 0)
+      }
+    }
   }
 
   /**
@@ -215,6 +327,19 @@ export default function OrderForm() {
    */
   const problemesTarifaires = (): string[] =>
     items.flatMap((item) => {
+      if (catalogueActif && item.billingUnit !== 'KG') {
+        const problemeCatalogue = problemeLigneCatalogue({
+          garmentTypeId: item.garmentTypeId,
+          garmentName: item.label,
+          tenantServiceId:
+            item.selectedOfferingId && item.selectedOfferingId !== '__free__'
+              ? item.selectedOfferingId
+              : item.tenantServiceId,
+          serviceName: item.serviceName,
+          prix: prixConfigure(indexPrixCatalogue, item.selectedOfferingId, item.garmentTypeId),
+        })
+        if (problemeCatalogue) return [problemeCatalogue]
+      }
       const probleme = problemeTarifaire({
         label: item.label,
         unitPrice: item.unitPrice,
@@ -548,17 +673,30 @@ export default function OrderForm() {
                       </div>
                     ) : (
                       <label className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Article / vêtement</span>
-                        <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                        <span className="text-xs font-semibold text-slate-600">Article / vêtement{catalogueActif ? ' (catalogue)' : ''}</span>
+                        {catalogueActif ? (
+                          <select value={item.garmentTypeId ?? ''} onChange={(event) => choisirArticle(index, event.target.value)} aria-label={`Article de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
+                            <option value="">Choisir un article du catalogue</option>
+                            {groupesCatalogue.map((groupe) => (
+                              <optgroup key={groupe.categoryCode} label={groupe.categoryName}>
+                                {groupe.articles.map((article) => (
+                                  <option key={article.id} value={article.id}>{article.name}</option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        ) : (
+                          <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                        )}
                       </label>
                     )}
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Poids total (kg)' : 'Quantité'}</span>
-                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => updateItem(index, { quantity: item.billingUnit === 'KG' ? Math.max(0, Number(event.target.value) || 0) : Math.max(1, Number(event.target.value) || 1) })} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => majQuantite(index, Number(event.target.value))} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Tarif/kg (FCFA)' : 'Prix unitaire (FCFA)'}</span>
-                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} readOnly={(catalogueActif && Boolean(item.garmentTypeId)) || item.totalImpose !== undefined} title={item.totalImpose !== undefined ? 'Total calculé par la règle au kilo (Catalogue → Au kilo)' : catalogueActif && item.garmentTypeId ? 'Prix de la grille catalogue (modifiable dans Catalogue → Tarifs)' : undefined} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal read-only:bg-slate-50" />
                     </label>
                     <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
                   </div>
@@ -571,10 +709,10 @@ export default function OrderForm() {
                       </select>
                     </label>
                     <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
+                      <span className="text-xs font-semibold text-slate-600">Prestation {!catalogueActif && <span className="font-normal">(facultatif)</span>}</span>
                       <select value={item.selectedOfferingId} onChange={(event) => choisirPrestation(index, event.target.value)} aria-label={`Prestation de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
                         <option value="">Choisir une prestation</option>
-                        <option value="__free__">Saisir une prestation libre</option>
+                        {!catalogueActif && <option value="__free__">Saisir une prestation libre</option>}
                         {prestations.filter((service) => service.activityId === item.selectedActivityId).map((service) => <option key={service.id} value={service.id}>{service.serviceName}{service.billingUnit === 'KG' ? ' — au kilo' : ''}</option>)}
                       </select>
                       {item.selectedOfferingId === '__free__' && (
@@ -630,12 +768,28 @@ export default function OrderForm() {
                       )}
                     </div>
                   )}
+                  {item.totalImpose !== undefined && item.conditionsSnapshot && (
+                    <p className="mt-2 text-right text-xs font-medium text-slate-500">{item.conditionsSnapshot}</p>
+                  )}
                   <p className="mt-3 text-right text-sm font-semibold text-slate-700">Total de la ligne : {formatFcfa(item.price)}</p>
                 </fieldset>
               ))}
             </div>
-            {prestations.length === 0 && (
+            {prestations.length === 0 && !catalogueActif && (
               <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée. Vous pouvez laisser la ligne sans prestation ou en saisir une librement.</p>
+            )}
+            {!catalogueActif && (
+              <p className="text-xs text-slate-500">
+                Catalogue non installé : la saisie libre reste possible. Le propriétaire peut
+                installer le catalogue de référence et ses tarifs via le menu « Catalogue &amp; tarifs » ;
+                les prix viendront ensuite automatiquement de la grille.
+              </p>
+            )}
+            {catalogueActif && (
+              <p className="text-xs text-slate-500">
+                Prix issus de la grille du catalogue. Un couple article × prestation sans tarif
+                (« non configuré ») bloque l’enregistrement : définissez-le dans Catalogue → Tarifs.
+              </p>
             )}
 
             <div className="rounded-xl bg-slate-50 p-4">

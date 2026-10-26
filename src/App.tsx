@@ -48,6 +48,7 @@ const Parametres = lazy(() => import('@/pages/Parametres'))
 const Audit = lazy(() => import('@/pages/Audit'))
 const Reinitialisation = lazy(() => import('@/pages/Reinitialisation'))
 const ServicesPressing = lazy(() => import('@/pages/ServicesPressing'))
+const Catalogue = lazy(() => import('@/pages/Catalogue'))
 
 export default function App() {
   useEffect(() => {
@@ -105,6 +106,7 @@ function RootRoutes() {
                 <Route path="/" element={<Accueil />} />
                 <Route path="/bienvenue" element={<ServicesPressing />} />
                 <Route path="/prestations" element={<ServicesPressing />} />
+                <Route path="/catalogue" element={<Catalogue />} />
                 <Route path="/commandes" element={<Orders />} />
                 <Route path="/commandes/nouvelle" element={<OrderForm />} />
                 <Route path="/commandes/:orderId" element={<OrderDetail />} />

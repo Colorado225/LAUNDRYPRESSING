@@ -8,6 +8,7 @@ import type {
 import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
 import { calculerTarif } from '@/lib/catalogPricing'
+import { calculerPrixKilo, formaterDetailKilo } from '@/lib/prixKilo'
 import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
 import { motifPrixServeur, problemeTarifaire } from '@/lib/orderPricing'
 import {
@@ -58,10 +59,16 @@ export async function createOrderLocal(
       minimumFacturable: item.minimumChargeSnapshot,
     })
 
+    // Devis au kilo par tranches : le total imposé prime sur le produit
+    // quantité × prix unitaire (non linéaire) ; le serveur recalcule tout.
+    const totalLigne = item.totalImpose ?? calculated.total
+    const quantiteFacturee =
+      item.totalImpose != null ? (item.billedQuantity ?? quantity) : calculated.quantiteFacturee
+
     const probleme = problemeTarifaire({
       label: item.label,
       unitPrice,
-      price: calculated.total,
+      price: totalLigne,
       priceStatus: item.priceStatus,
     })
     if (probleme) throw new Error(probleme)
@@ -94,9 +101,9 @@ export async function createOrderLocal(
       specialInstructions: item.specialInstructions?.trim()
         ? item.specialInstructions.trim()
         : null,
-      price: calculated.total,
+      price: totalLigne,
       quantity,
-      billedQuantity: calculated.quantiteFacturee,
+      billedQuantity: quantiteFacturee,
       billingUnit,
       unitPrice,
       pricingMode: item.pricingMode ?? 'FIXED',
@@ -106,6 +113,7 @@ export async function createOrderLocal(
       serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
       tenantServiceId: item.tenantServiceId ?? null,
       activityNameSnapshot: item.activityNameSnapshot?.trim() ? item.activityNameSnapshot.trim() : null,
+      garmentTypeId: item.garmentTypeId ?? null,
       familyNameSnapshot: item.familyNameSnapshot ?? null,
       catalogUnitPriceSnapshot: item.catalogUnitPriceSnapshot ?? null,
       minimumQuantitySnapshot: item.minimumQuantitySnapshot ?? null,
@@ -116,7 +124,9 @@ export async function createOrderLocal(
       // on le produit ici plutôt que de laisser la commande échouer à l'envoi.
       priceReason: motifPrixServeur({
         label: item.label,
-        catalogEntryId: item.catalogEntryId ?? null,
+        // Une ligne issue du catalogue (article choisi) n'est pas une ligne
+        // libre : pas de motif par défaut, le serveur contrôle la grille.
+        catalogEntryId: item.garmentTypeId ?? item.catalogEntryId ?? null,
         priceReason: item.priceReason,
       }),
       laundryModelId: item.laundryModelId ?? null,
@@ -186,6 +196,17 @@ export async function updateOrderItemMeasurementLocal(
 ): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
   const validated = orderItemMeasurementSchema.parse(input)
 
+  // Règle au kilo en cache pour cette ligne (lue hors transaction) : si elle
+  // existe, le nouveau poids est re-tarifé par tranches, comme à la création.
+  const ligneActuelle = await db.orderItems.get(itemId)
+  const regleKilo =
+    ligneActuelle?.billingUnit === 'KG' && ligneActuelle.tenantServiceId
+      ? await db.catalogPricingRules
+          .where('[tenantId+tenantServiceId]')
+          .equals([tenantId, ligneActuelle.tenantServiceId])
+          .first()
+      : undefined
+
   return db.transaction('rw', db.orders, db.orderItems, async () => {
     const order = await db.orders.get(orderId)
     const item = await db.orderItems.get(itemId)
@@ -205,7 +226,24 @@ export async function updateOrderItemMeasurementLocal(
       throw new Error('Un forfait ne comporte pas de mesure à confirmer.')
     }
 
-    const calcul = calculerTarif({
+    const devisKilo =
+      regleKilo && item.billingUnit === 'KG'
+        ? calculerPrixKilo(
+            {
+              mode: regleKilo.ruleMode,
+              minBillableKg: regleKilo.minBillableKg,
+              stepKg: regleKilo.stepKg,
+              rounding: regleKilo.roundingMode,
+            },
+            regleKilo.tiers.map((t) => ({ minKg: t.minKg, maxKg: t.maxKg, prixParKg: t.pricePerKgXof })),
+            validated.quantity,
+          )
+        : null
+    if (regleKilo && item.billingUnit === 'KG' && !devisKilo) {
+      throw new Error('Aucune tranche de la règle au kilo ne couvre ce poids.')
+    }
+
+    const calculBrut = calculerTarif({
       quantite: validated.quantity,
       prixUnitaire: item.unitPrice,
       unite: item.billingUnit,
@@ -213,6 +251,13 @@ export async function updateOrderItemMeasurementLocal(
       increment: item.billingIncrementSnapshot,
       minimumFacturable: item.minimumChargeSnapshot,
     })
+    const calcul = devisKilo
+      ? {
+          ...calculBrut,
+          total: devisKilo.montant,
+          quantiteFacturee: devisKilo.poidsFactureKg,
+        }
+      : calculBrut
     let laundryBreakdown = item.laundryPriceBreakdownSnapshot
     if (item.laundryModelId && item.laundryModelTypeSnapshot === 'PER_KG') {
       const result = calculateLaundryModelPrice({
@@ -237,6 +282,15 @@ export async function updateOrderItemMeasurementLocal(
       billedQuantity: calcul.quantiteFacturee,
       price: calcul.total,
       priceStatus: validated.priceStatus,
+      ...(devisKilo
+        ? {
+            unitPrice: Math.max(
+              1,
+              Math.round(devisKilo.montant / Math.max(devisKilo.poidsFactureKg, 0.001)),
+            ),
+            conditionsSnapshot: formaterDetailKilo(devisKilo),
+          }
+        : {}),
       ...(item.laundryModelId ? { laundryWeightKg: validated.quantity, laundryPriceBreakdownSnapshot: laundryBreakdown } : {}),
     }
 
@@ -318,7 +372,15 @@ async function recalculerTotalLocal(
 export async function addOrderItemLocal(
   tenantId: string,
   orderId: string,
-  input: { label: string; quantity: number; unitPrice: number },
+  input: {
+    label: string
+    quantity: number
+    unitPrice: number
+    garmentTypeId?: string | null
+    tenantServiceId?: string | null
+    serviceName?: string | null
+    activityNameSnapshot?: string | null
+  },
 ): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
   const label = input.label.trim()
   if (!label) throw new Error('Indiquez le libellé de l’article.')
@@ -357,16 +419,21 @@ export async function addOrderItemLocal(
       priceStatus: 'CONFIRMED',
       catalogEntryId: null,
       articleName: label,
-      serviceName: null,
-      tenantServiceId: null,
-      activityNameSnapshot: null,
+      serviceName: input.serviceName ?? null,
+      tenantServiceId: input.tenantServiceId ?? null,
+      garmentTypeId: input.garmentTypeId ?? null,
+      activityNameSnapshot: input.activityNameSnapshot ?? null,
       familyNameSnapshot: null,
-      catalogUnitPriceSnapshot: null,
+      catalogUnitPriceSnapshot: input.garmentTypeId ? input.unitPrice : null,
       minimumQuantitySnapshot: null,
       billingIncrementSnapshot: null,
       minimumChargeSnapshot: null,
       conditionsSnapshot: null,
-      priceReason: motifPrixServeur({ label, catalogEntryId: null, priceReason: null }),
+      priceReason: motifPrixServeur({
+        label,
+        catalogEntryId: input.garmentTypeId ?? null,
+        priceReason: null,
+      }),
       laundryModelId: null,
       laundryModelNameSnapshot: null,
       laundryModelTypeSnapshot: null,
@@ -737,6 +804,7 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     service_name: item.serviceName,
     tenant_service_id: item.tenantServiceId ?? null,
     activity_name_snapshot: item.activityNameSnapshot ?? null,
+    garment_type_id: item.garmentTypeId ?? null,
     family_name_snapshot: item.familyNameSnapshot,
     catalog_unit_price_snapshot: item.catalogUnitPriceSnapshot,
     minimum_quantity_snapshot: item.minimumQuantitySnapshot,
@@ -747,7 +815,7 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     // l'ajout du motif automatique : sans lui, leur envoi resterait bloqué.
     price_reason: motifPrixServeur({
       label: item.label,
-      catalogEntryId: item.catalogEntryId ?? null,
+      catalogEntryId: item.garmentTypeId ?? item.catalogEntryId ?? null,
       priceReason: item.priceReason,
     }),
     garment_details: item.garmentDetails ?? [],

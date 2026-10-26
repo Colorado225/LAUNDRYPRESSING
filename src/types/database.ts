@@ -102,6 +102,128 @@ export type TenantServiceRow = {
   unit_price: number | null
   sort_order: number
   created_at: string
+  /** Colonnes du catalogue (migration 027), optionnelles pour les anciennes lectures. */
+  code?: string | null
+  description?: string | null
+  estimated_turnaround_hours?: number | null
+  is_express?: boolean
+  is_active?: boolean
+  archived_at?: string | null
+  updated_at?: string
+}
+
+/** Catégorie d'articles du catalogue (migration 027) ; `tenant_id` nul = bibliothèque système. */
+export type GarmentCategoryRow = {
+  id: string
+  tenant_id: string | null
+  code: string
+  name: string
+  sort_order: number
+  is_system: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Article / type de vêtement du catalogue (migration 027). */
+export type GarmentTypeRow = {
+  id: string
+  tenant_id: string | null
+  category_id: string
+  code: string
+  name: string
+  icon_key: string
+  default_unit: CatalogBillingUnit
+  is_delicate: boolean
+  is_system: boolean
+  is_active: boolean
+  archived_at: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+/** Prix courant d'une prestation pour un article (migration 027) ; absence = non configuré. */
+export type ServiceGarmentPriceRow = {
+  id: string
+  tenant_id: string
+  tenant_service_id: string
+  garment_type_id: string
+  price_xof: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Règle de tarification au kilo d'une prestation (migration 028). */
+export type PricingRuleRow = {
+  id: string
+  tenant_id: string
+  tenant_service_id: string
+  rule_name: string
+  rule_mode: 'flat_rate' | 'progressive_tiers'
+  min_billable_kg: number
+  step_kg: number
+  rounding_mode: 'ceil' | 'nearest' | 'exact'
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type PricingRuleTierRow = {
+  id: string
+  pricing_rule_id: string
+  min_kg: number
+  max_kg: number | null
+  price_per_kg_xof: number
+}
+
+/** Modèle de blanchisserie (migration 029) ; `tenant_id` nul = gabarit système. */
+export type LaundryProfileRow = {
+  id: string
+  tenant_id: string | null
+  code: string
+  name: string
+  description: string | null
+  profile_kind: 'system_template' | 'custom'
+  is_default: boolean
+  is_active: boolean
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LaundryProfileItemRow = {
+  id: string
+  profile_id: string
+  garment_type_id: string | null
+  garment_code: string | null
+  service_code: string | null
+  sort_order: number
+}
+
+export type CommercialPackageRow = {
+  id: string
+  tenant_id: string
+  code: string
+  name: string
+  description: string | null
+  price_xof: number
+  is_active: boolean
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CommercialPackageItemRow = {
+  id: string
+  tenant_id: string
+  package_id: string
+  garment_type_id: string | null
+  tenant_service_id: string | null
+  label: string | null
+  quantity: number
+  sort_order: number
 }
 
 export type TenantUserRow = {
@@ -165,6 +287,8 @@ export type OrderItemRow = {
   service_name: string | null
   tenant_service_id: string | null
   activity_name_snapshot: string | null
+  /** Article du catalogue vendu (migration 027) ; les libellés figés restent la référence d'affichage. */
+  garment_type_id?: string | null
   family_name_snapshot: string | null
   catalog_unit_price_snapshot: number | null
   minimum_quantity_snapshot: number | null
@@ -778,6 +902,60 @@ export interface Database {
         Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
+      garment_categories: {
+        Row: GarmentCategoryRow
+        Insert: InsertOf<GarmentCategoryRow, 'id' | 'tenant_id' | 'sort_order' | 'is_system' | 'is_active' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<GarmentCategoryRow, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      garment_types: {
+        Row: GarmentTypeRow
+        Insert: InsertOf<GarmentTypeRow, 'id' | 'tenant_id' | 'icon_key' | 'default_unit' | 'is_delicate' | 'is_system' | 'is_active' | 'archived_at' | 'sort_order' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<GarmentTypeRow, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      service_garment_prices: {
+        Row: ServiceGarmentPriceRow
+        Insert: InsertOf<ServiceGarmentPriceRow, 'id' | 'is_active' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ServiceGarmentPriceRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
+      pricing_rules: {
+        Row: PricingRuleRow
+        Insert: InsertOf<PricingRuleRow, 'id' | 'min_billable_kg' | 'step_kg' | 'rounding_mode' | 'is_active' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<PricingRuleRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
+      pricing_rule_tiers: {
+        Row: PricingRuleTierRow
+        Insert: InsertOf<PricingRuleTierRow, 'id' | 'max_kg'>
+        Update: Partial<Omit<PricingRuleTierRow, 'id'>>
+        Relationships: []
+      }
+      laundry_profiles: {
+        Row: LaundryProfileRow
+        Insert: InsertOf<LaundryProfileRow, 'id' | 'tenant_id' | 'description' | 'is_default' | 'is_active' | 'archived_at' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<LaundryProfileRow, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      laundry_profile_items: {
+        Row: LaundryProfileItemRow
+        Insert: InsertOf<LaundryProfileItemRow, 'id' | 'garment_type_id' | 'garment_code' | 'service_code' | 'sort_order'>
+        Update: Partial<Omit<LaundryProfileItemRow, 'id'>>
+        Relationships: []
+      }
+      commercial_packages: {
+        Row: CommercialPackageRow
+        Insert: InsertOf<CommercialPackageRow, 'id' | 'description' | 'is_active' | 'archived_at' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<CommercialPackageRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
+      commercial_package_items: {
+        Row: CommercialPackageItemRow
+        Insert: InsertOf<CommercialPackageItemRow, 'id' | 'garment_type_id' | 'tenant_service_id' | 'label' | 'quantity' | 'sort_order'>
+        Update: Partial<Omit<CommercialPackageItemRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
       tenant_users: {
         Row: TenantUserRow
         Insert: TenantUserRow
@@ -816,6 +994,7 @@ export interface Database {
           | 'service_name'
           | 'tenant_service_id'
           | 'activity_name_snapshot'
+          | 'garment_type_id'
           | 'price_reason'
           | 'quantity'
           | 'billed_quantity'
@@ -1027,6 +1206,18 @@ export interface Database {
       }
       save_tenant_services: {
         Args: { p_services: Json }
+        Returns: string
+      }
+      install_catalog_reference: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      quote_weight_price: {
+        Args: { p_service: string; p_weight: number }
+        Returns: Json
+      }
+      duplicate_laundry_profile: {
+        Args: { p_profile: string; p_name?: string }
         Returns: string
       }
       report_stock_consumption_costs: {
