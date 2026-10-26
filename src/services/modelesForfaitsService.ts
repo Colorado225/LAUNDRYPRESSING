@@ -1,13 +1,17 @@
+import { db, type LocalCommercialPackage } from '@/db/localDb'
 import { isSupabaseConfigured } from '@/lib/env'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { codeDepuisNom } from '@/lib/catalogue'
+import { problemeForfait } from '@/lib/prixForfait'
+import type { OverflowPolicy } from '@/types/database'
 
 /**
- * Modèles de blanchisserie et forfaits commerciaux (migration 029).
+ * Modèles de blanchisserie et forfaits commerciaux (migrations 029 et 030).
  *
- * Données de configuration du propriétaire : lecture et écriture en ligne
- * uniquement (pas de cache hors ligne au Lot 2 — rien n'en dépend au comptoir
- * tant que la vente de forfaits n'est pas branchée en caisse).
+ * Les modèles restent une configuration en ligne. Les forfaits, eux, sont
+ * vendables au comptoir : Supabase fait foi en ligne, Dexie conserve la
+ * dernière version pour l'écran de comptage et les corrections hors ligne.
+ * Le serveur recalcule toujours le prix à la synchronisation.
  */
 
 export interface ModeleBlanchisserie {
@@ -24,12 +28,23 @@ export interface ModeleBlanchisserie {
 
 export interface ForfaitCommercial {
   id: string
+  tenantId: string
   code: string
   name: string
   description: string | null
   priceXof: number
+  tenantServiceId: string | null
+  /** `null` = ancien forfait global ; sinon nombre de vêtements inclus. */
+  garmentsIncluded: number | null
+  overflowPolicy: OverflowPolicy
+  overflowUnitPriceXof: number | null
   isActive: boolean
   items: Array<{ garmentTypeId: string | null; label: string | null; quantity: number }>
+}
+
+async function forfaitsLocaux(tenantId: string): Promise<ForfaitCommercial[]> {
+  const forfaits = await db.catalogPackages.where('tenantId').equals(tenantId).toArray()
+  return forfaits.sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 }
 
 function requireOnline(): void {
@@ -108,12 +123,14 @@ export async function setModeleActif(profileId: string, tenantId: string, isActi
 }
 
 export async function fetchForfaits(tenantId: string): Promise<ForfaitCommercial[]> {
-  if (!isSupabaseConfigured || !navigator.onLine) return []
+  if (!isSupabaseConfigured || !navigator.onLine) return forfaitsLocaux(tenantId)
   const supabase = getSupabaseClient()
   const [packs, items] = await Promise.all([
     supabase
       .from('commercial_packages')
-      .select('id, code, name, description, price_xof, is_active')
+      .select(
+        'id, tenant_id, code, name, description, price_xof, tenant_service_id, garments_included, overflow_policy, overflow_unit_price_xof, is_active',
+      )
       .eq('tenant_id', tenantId)
       .order('name'),
     supabase
@@ -134,15 +151,26 @@ export async function fetchForfaits(tenantId: string): Promise<ForfaitCommercial
     })
     parForfait.set(item.package_id, liste)
   }
-  return (packs.data ?? []).map((row) => ({
+  const forfaits: LocalCommercialPackage[] = (packs.data ?? []).map((row) => ({
     id: row.id,
+    tenantId: row.tenant_id,
     code: row.code,
     name: row.name,
     description: row.description,
     priceXof: row.price_xof,
+    tenantServiceId: row.tenant_service_id,
+    garmentsIncluded: row.garments_included,
+    overflowPolicy: row.overflow_policy,
+    overflowUnitPriceXof: row.overflow_unit_price_xof,
     isActive: row.is_active,
     items: parForfait.get(row.id) ?? [],
   }))
+
+  await db.transaction('rw', db.catalogPackages, async () => {
+    await db.catalogPackages.where('tenantId').equals(tenantId).delete()
+    if (forfaits.length > 0) await db.catalogPackages.bulkAdd(forfaits)
+  })
+  return forfaits
 }
 
 export async function creerForfait(
@@ -151,13 +179,22 @@ export async function creerForfait(
     name: string
     description: string
     priceXof: number
+    tenantServiceId?: string | null
+    garmentsIncluded?: number | null
+    overflowPolicy?: OverflowPolicy
+    overflowUnitPriceXof?: number | null
     items: Array<{ garmentTypeId: string; garmentName: string; quantity: number }>
   },
 ): Promise<void> {
   requireOnline()
-  if (!Number.isInteger(input.priceXof) || input.priceXof <= 0) {
-    throw new Error('Le prix du forfait doit être un montant positif en FCFA.')
-  }
+  const forfaitQuantite = {
+    prixXof: input.priceXof,
+    inclus: input.garmentsIncluded ?? null,
+    politique: input.overflowPolicy ?? 'PER_EXTRA_ITEM',
+    prixSupplementXof: input.overflowUnitPriceXof ?? null,
+  } as const
+  const probleme = problemeForfait(forfaitQuantite)
+  if (probleme) throw new Error(probleme)
   const supabase = getSupabaseClient()
   const { data, error } = await supabase
     .from('commercial_packages')
@@ -167,6 +204,10 @@ export async function creerForfait(
       name: input.name.trim(),
       description: input.description.trim() || null,
       price_xof: input.priceXof,
+      tenant_service_id: input.tenantServiceId ?? null,
+      garments_included: forfaitQuantite.inclus,
+      overflow_policy: forfaitQuantite.politique,
+      overflow_unit_price_xof: forfaitQuantite.prixSupplementXof,
     })
     .select('id')
     .single()
@@ -184,6 +225,7 @@ export async function creerForfait(
     )
     if (itemsError) throw itemsError
   }
+  await fetchForfaits(tenantId)
 }
 
 export async function setForfaitActif(packageId: string, tenantId: string, isActive: boolean): Promise<void> {
@@ -195,4 +237,5 @@ export async function setForfaitActif(packageId: string, tenantId: string, isAct
     .eq('id', packageId)
     .eq('tenant_id', tenantId)
   if (error) throw error
+  await fetchForfaits(tenantId)
 }

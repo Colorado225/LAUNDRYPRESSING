@@ -19,12 +19,22 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
   const [quantite, setQuantite] = useState(String(item.quantity))
   const [confirmee, setConfirmee] = useState(item.priceStatus === 'CONFIRMED')
   const [enregistrement, setEnregistrement] = useState(false)
+  const estDetailForfait = Boolean(item.packageLineId)
+  const estPorteuseForfait = Boolean(item.commercialPackageId)
 
   if (!editable || item.billingUnit === 'FLAT') return null
+  if (estPorteuseForfait) {
+    return (
+      <p className="mt-2 text-xs font-medium text-slate-500">
+        Corrigez le comptage depuis un article inclus : cette ligne de forfait se recalcule
+        automatiquement.
+      </p>
+    )
+  }
 
   const ouvrir = () => {
     setQuantite(String(item.quantity))
-    setConfirmee(item.priceStatus === 'CONFIRMED')
+    setConfirmee(estDetailForfait ? true : item.priceStatus === 'CONFIRMED')
     setOuvert(true)
   }
 
@@ -32,16 +42,23 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
   let totalPrevu: number | null = null
   let quantiteFacturee: number | null = null
   try {
-    const calcul = calculerTarif({
-      quantite: nombre,
-      prixUnitaire: item.unitPrice,
-      unite: item.billingUnit,
-      quantiteMinimum: item.minimumQuantitySnapshot,
-      increment: item.billingIncrementSnapshot,
-      minimumFacturable: item.minimumChargeSnapshot,
-    })
-    totalPrevu = calcul.total
-    quantiteFacturee = calcul.quantiteFacturee
+    if (estDetailForfait) {
+      if (Number.isInteger(nombre) && nombre > 0) {
+        totalPrevu = 0
+        quantiteFacturee = nombre
+      }
+    } else {
+      const calcul = calculerTarif({
+        quantite: nombre,
+        prixUnitaire: item.unitPrice,
+        unite: item.billingUnit,
+        quantiteMinimum: item.minimumQuantitySnapshot,
+        increment: item.billingIncrementSnapshot,
+        minimumFacturable: item.minimumChargeSnapshot,
+      })
+      totalPrevu = calcul.total
+      quantiteFacturee = calcul.quantiteFacturee
+    }
   } catch {
     // Le formulaire affiche l'erreur de quantité sans persister de ligne partielle.
   }
@@ -59,7 +76,13 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
         quantity: nombre,
         priceStatus: confirmee ? 'CONFIRMED' : 'ESTIMATED',
       })
-      toast.success(confirmee ? 'Mesure confirmée et commande recalculée.' : 'Mesure estimée mise à jour.', {
+      toast.success(
+        estDetailForfait
+          ? 'Comptage corrigé et forfait recalculé.'
+          : confirmee
+            ? 'Mesure confirmée et commande recalculée.'
+            : 'Mesure estimée mise à jour.',
+        {
         icon: '✅',
       })
       setOuvert(false)
@@ -86,7 +109,7 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
           ) : (
             <>
               <Pencil size={14} aria-hidden />
-              Corriger la mesure
+              {estDetailForfait ? 'Corriger le comptage' : 'Corriger la mesure'}
             </>
           )}
         </button>
@@ -97,7 +120,9 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
         >
           <label className="block">
             <span className="mb-1 block text-xs font-semibold text-slate-600">
-              Mesure réelle ({libelleUnite(item.billingUnit)})
+              {estDetailForfait
+                ? 'Nombre de vêtements comptés'
+                : `Mesure réelle (${libelleUnite(item.billingUnit)})`}
             </span>
             <input
               type="number"
@@ -120,16 +145,26 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
               type="checkbox"
               checked={confirmee}
               onChange={(event) => setConfirmee(event.target.checked)}
+              disabled={estDetailForfait}
               className="mt-0.5 size-4 accent-brand-teal"
             />
-            <span>J’ai vérifié cette mesure et je la confirme.</span>
+            <span>
+              {estDetailForfait
+                ? 'Comptage confirmé : le forfait sera recalculé.'
+                : 'J’ai vérifié cette mesure et je la confirme.'}
+            </span>
           </label>
 
           <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
             {quantiteFacturee === null
               ? 'La quantité saisie n’est pas compatible avec l’unité de cette ligne.'
-              : `${quantiteFacturee} ${libelleUnite(item.billingUnit)} facturé${item.billingUnit === 'PIECE' ? 'e' : 's'} · nouveau montant : ${formatFcfa(totalPrevu ?? 0)}.`}
-            {' '}Le prix unitaire et les valeurs tarifaires de référence restent inchangés.
+              : estDetailForfait
+                ? `${quantiteFacturee} pièce(s) comptée(s) · article inclus à 0 FCFA.`
+                : `${quantiteFacturee} ${libelleUnite(item.billingUnit)} facturé${item.billingUnit === 'PIECE' ? 'e' : 's'} · nouveau montant : ${formatFcfa(totalPrevu ?? 0)}.`}
+            {' '}
+            {estDetailForfait
+              ? 'La ligne du forfait et le total de la commande seront recalculés.'
+              : 'Le prix unitaire et les valeurs tarifaires de référence restent inchangés.'}
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -139,7 +174,13 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
               className="inline-flex min-h-12 items-center gap-1.5 rounded-lg bg-brand-teal px-3 text-xs font-bold text-white disabled:opacity-50"
             >
               <Check size={14} aria-hidden />
-              {enregistrement ? 'Enregistrement…' : confirmee ? 'Confirmer la mesure' : 'Enregistrer l’estimation'}
+              {enregistrement
+                ? 'Enregistrement…'
+                : estDetailForfait
+                  ? 'Confirmer le comptage'
+                  : confirmee
+                    ? 'Confirmer la mesure'
+                    : 'Enregistrer l’estimation'}
             </button>
             <button
               type="button"

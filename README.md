@@ -2,7 +2,7 @@
 
 Application web installable (PWA) pour gérer les commandes d’un pressing. Le projet cible en priorité les téléphones et tablettes Android, une interface française et les connexions intermittentes.
 
-> **État de cette révision (26 octobre 2026).** Le catalogue est revenu sous une forme simplifiée et complétée (Lots 1 et 2, migrations 027 à 029) : articles par catégorie, grille de prix par prestation, bibliothèque système sans prix clonée par pressing, tarification au kilo par tranches calculée côté serveur, modèles de blanchisserie et forfaits commerciaux. Dès qu'un pressing installe son catalogue, les nouvelles lignes à la pièce partent obligatoirement de la grille (garde serveur comprise) ; avant installation, la saisie libre reste possible. Voir [`docs/CATALOGUE-LOT1.md`](docs/CATALOGUE-LOT1.md) et [`docs/CATALOGUE-LOT2.md`](docs/CATALOGUE-LOT2.md). L'ancien catalogue et les modèles commerciaux restent supprimés par la migration 020 (destructive, sauvegarde requise sur un projet existant).
+> **État de cette révision (26 octobre 2026).** Le catalogue est revenu sous une forme simplifiée et complétée (Lots 1 à 3, migrations 027 à 030) : articles par catégorie, grille de prix par prestation, bibliothèque système sans prix clonée par pressing, tarification au kilo par tranches et forfaits au nombre de vêtements calculés côté serveur, modèles de blanchisserie et modèle d’exploitation par pressing. Dès qu'un pressing installe son catalogue, les nouvelles lignes à la pièce partent obligatoirement de la grille (garde serveur comprise) ; avant installation, la saisie libre reste possible. Voir [`docs/CATALOGUE-LOT1.md`](docs/CATALOGUE-LOT1.md), [`docs/CATALOGUE-LOT2.md`](docs/CATALOGUE-LOT2.md) et [`docs/CATALOGUE-LOT3.md`](docs/CATALOGUE-LOT3.md). L'ancien catalogue et les modèles commerciaux restent supprimés par la migration 020 (destructive, sauvegarde requise sur un projet existant).
 
 ## Fonctionnalités
 
@@ -20,7 +20,7 @@ Application web installable (PWA) pour gérer les commandes d’un pressing. Le 
 - Authentification Supabase, rôles et isolation multi-tenant avec politiques RLS.
 - PWA installable avec écran de repli hors ligne.
 
-Une fois le catalogue installé par le propriétaire (« Catalogue & tarifs »), les prix des lignes à la pièce viennent de la grille prestation × article ; un couple sans tarif est affiché « non configuré » et bloque la vente. Les prestations au kilo peuvent porter une règle par tranches (palier ou progressive) que le serveur recalcule à chaque ligne — simulateur inclus dans l'écran catalogue —, et le propriétaire y gère aussi ses modèles de blanchisserie (sans prix) et ses forfaits commerciaux.
+Une fois le catalogue installé par le propriétaire (« Catalogue & tarifs »), les prix des lignes à la pièce viennent de la grille prestation × article ; un couple sans tarif est affiché « non configuré » et bloque la vente. Les prestations au kilo peuvent porter une règle par tranches (palier ou progressive) que le serveur recalcule à chaque ligne — simulateur inclus dans l'écran catalogue. Le propriétaire y gère aussi ses modèles de blanchisserie (sans prix) et ses forfaits au nombre de vêtements : quatre politiques de dépassement, comptage de tous les articles actifs au dépôt et recalcul serveur à la synchronisation. Le modèle d’exploitation choisi dans Paramètres propose seulement le mode de saisie par défaut, sans interdire les autres.
 
 ## Stack
 

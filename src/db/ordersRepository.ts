@@ -9,6 +9,7 @@ import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
 import { calculerTarif } from '@/lib/catalogPricing'
 import { calculerPrixKilo, formaterDetailKilo } from '@/lib/prixKilo'
+import { calculerPrixForfait, formaterDetailForfait } from '@/lib/prixForfait'
 import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
 import { motifPrixServeur, problemeTarifaire } from '@/lib/orderPricing'
 import {
@@ -19,6 +20,7 @@ import {
 } from '@/schemas/order'
 import {
   db,
+  type LocalCommercialPackage,
   type LocalOrder,
   type LocalOrderItem,
   type SyncFlag,
@@ -37,6 +39,50 @@ export interface LocalOrderWithItems {
   items: LocalOrderItem[]
 }
 
+/**
+ * Re-tarife la ligne porteuse d'un forfait après correction du comptage.
+ *
+ * Pour `MANUAL_QUOTE`, le montant déjà validé au comptoir est réutilisé tant
+ * qu'un dépassement subsiste ; les autres politiques sont recalculées depuis
+ * le forfait mis en cache, exactement comme le fera le serveur.
+ */
+function lignePorteuseRecalculee(
+  porteuse: LocalOrderItem,
+  forfait: LocalCommercialPackage,
+  totalVetements: number,
+): LocalOrderItem {
+  if (!forfait.isActive) {
+    throw new Error('Ce forfait est archivé : son comptage ne peut plus être re-tarifé.')
+  }
+  const devis = calculerPrixForfait(
+    {
+      prixXof: forfait.priceXof,
+      inclus: forfait.garmentsIncluded,
+      politique: forfait.overflowPolicy,
+      prixSupplementXof: forfait.overflowUnitPriceXof,
+    },
+    totalVetements,
+    forfait.overflowPolicy === 'MANUAL_QUOTE' ? porteuse.price : null,
+  )
+  if (!devis) {
+    throw new Error(
+      'Ce comptage dépasse la limite autorisée par le forfait ou son tarif est incomplet.',
+    )
+  }
+  if (devis.montant === null) {
+    throw new Error('Confirmez le montant du devis pour les vêtements supplémentaires.')
+  }
+  return {
+    ...porteuse,
+    quantity: totalVetements,
+    billedQuantity: totalVetements,
+    price: devis.montant,
+    unitPrice: Math.max(1, Math.round(devis.montant / totalVetements)),
+    priceStatus: 'CONFIRMED',
+    conditionsSnapshot: formaterDetailForfait(devis),
+  }
+}
+
 /** Crée une commande COMPLÈTE en local (transaction unique), sans réseau. */
 export async function createOrderLocal(
   tenantId: string,
@@ -46,18 +92,43 @@ export async function createOrderLocal(
   const createdAt = nowIso()
   const orderId = newId()
 
-  const items: LocalOrderItem[] = validated.items.map((item) => {
+  // Les identifiants sont attribués avant la construction des lignes afin
+  // que chaque détail de forfait désigne immédiatement sa ligne porteuse,
+  // quel que soit son ordre dans le payload.
+  const idsLignes = validated.items.map(() => newId())
+  const porteuseParGroupe = new Map<string, string>()
+  validated.items.forEach((item, index) => {
+    if (item.commercialPackageId && item.forfaitGroupeId) {
+      porteuseParGroupe.set(item.forfaitGroupeId, idsLignes[index]!)
+    }
+  })
+
+  const items: LocalOrderItem[] = validated.items.map((item, index) => {
     const quantity = item.quantity ?? 1
     const billingUnit = item.billingUnit ?? 'PIECE'
     const unitPrice = item.unitPrice ?? item.price
-    const calculated = calculerTarif({
+    const estDetailForfait = Boolean(item.forfaitGroupeId && !item.commercialPackageId)
+    const packageLineId = estDetailForfait
+      ? porteuseParGroupe.get(item.forfaitGroupeId!) ?? null
+      : null
+    if (estDetailForfait && !packageLineId) {
+      throw new Error('Chaque article inclus doit être rattaché à la ligne du forfait.')
+    }
+    const calculated = estDetailForfait
+      ? {
+          quantiteMesuree: quantity,
+          quantiteFacturee: quantity,
+          prixUnitaire: 0,
+          total: 0,
+        }
+      : calculerTarif({
       quantite: quantity,
       prixUnitaire: unitPrice,
       unite: billingUnit,
       quantiteMinimum: item.minimumQuantitySnapshot,
       increment: item.billingIncrementSnapshot,
-      minimumFacturable: item.minimumChargeSnapshot,
-    })
+          minimumFacturable: item.minimumChargeSnapshot,
+        })
 
     // Devis au kilo par tranches : le total imposé prime sur le produit
     // quantité × prix unitaire (non linéaire) ; le serveur recalcule tout.
@@ -65,7 +136,9 @@ export async function createOrderLocal(
     const quantiteFacturee =
       item.totalImpose != null ? (item.billedQuantity ?? quantity) : calculated.quantiteFacturee
 
-    const probleme = problemeTarifaire({
+    // Un détail de forfait est volontairement à 0 FCFA : seule la porteuse
+    // passe le contrôle tarifaire ordinaire.
+    const probleme = estDetailForfait ? null : problemeTarifaire({
       label: item.label,
       unitPrice,
       price: totalLigne,
@@ -93,7 +166,7 @@ export async function createOrderLocal(
     }
 
     return {
-      id: newId(),
+      id: idsLignes[index]!,
       orderId,
       tenantId,
       label: item.label,
@@ -114,6 +187,8 @@ export async function createOrderLocal(
       tenantServiceId: item.tenantServiceId ?? null,
       activityNameSnapshot: item.activityNameSnapshot?.trim() ? item.activityNameSnapshot.trim() : null,
       garmentTypeId: item.garmentTypeId ?? null,
+      commercialPackageId: item.commercialPackageId ?? null,
+      packageLineId,
       familyNameSnapshot: item.familyNameSnapshot ?? null,
       catalogUnitPriceSnapshot: item.catalogUnitPriceSnapshot ?? null,
       minimumQuantitySnapshot: item.minimumQuantitySnapshot ?? null,
@@ -124,9 +199,15 @@ export async function createOrderLocal(
       // on le produit ici plutôt que de laisser la commande échouer à l'envoi.
       priceReason: motifPrixServeur({
         label: item.label,
-        // Une ligne issue du catalogue (article choisi) n'est pas une ligne
-        // libre : pas de motif par défaut, le serveur contrôle la grille.
-        catalogEntryId: item.garmentTypeId ?? item.catalogEntryId ?? null,
+        // Une ligne issue du catalogue ou d'un forfait n'est pas une ligne
+        // libre : aucun motif automatique ne doit permettre de contourner
+        // le recalcul du serveur.
+        catalogEntryId:
+          item.commercialPackageId ??
+          (estDetailForfait ? item.forfaitGroupeId : null) ??
+          item.garmentTypeId ??
+          item.catalogEntryId ??
+          null,
         priceReason: item.priceReason,
       }),
       laundryModelId: item.laundryModelId ?? null,
@@ -206,6 +287,12 @@ export async function updateOrderItemMeasurementLocal(
           .equals([tenantId, ligneActuelle.tenantServiceId])
           .first()
       : undefined
+  const porteuseActuelle = ligneActuelle?.packageLineId
+    ? await db.orderItems.get(ligneActuelle.packageLineId)
+    : undefined
+  const forfaitActuel = porteuseActuelle?.commercialPackageId
+    ? await db.catalogPackages.get(porteuseActuelle.commercialPackageId)
+    : undefined
 
   return db.transaction('rw', db.orders, db.orderItems, async () => {
     const order = await db.orders.get(orderId)
@@ -224,6 +311,84 @@ export async function updateOrderItemMeasurementLocal(
     }
     if (item.billingUnit === 'FLAT') {
       throw new Error('Un forfait ne comporte pas de mesure à confirmer.')
+    }
+    if (item.commercialPackageId) {
+      throw new Error(
+        'Corrigez le nombre de vêtements depuis un article inclus : la ligne du forfait se recalcule automatiquement.',
+      )
+    }
+    if (item.packageLineId) {
+      if (!Number.isInteger(validated.quantity)) {
+        throw new Error('Le comptage d’un forfait se fait en vêtements entiers.')
+      }
+      if (validated.priceStatus !== 'CONFIRMED') {
+        throw new Error('Confirmez le comptage du forfait pour recalculer son montant.')
+      }
+
+      const porteuse = await db.orderItems.get(item.packageLineId)
+      if (
+        !porteuse ||
+        porteuse.orderId !== orderId ||
+        porteuse.tenantId !== tenantId ||
+        !porteuse.commercialPackageId
+      ) {
+        throw new Error('La ligne porteuse de ce forfait est introuvable.')
+      }
+
+      const toutesLesLignes = await db.orderItems.where('orderId').equals(orderId).toArray()
+      const totalVetements = toutesLesLignes
+        .filter((ligne) => ligne.packageLineId === porteuse.id)
+        .reduce(
+          (total, ligne) => total + (ligne.id === itemId ? validated.quantity : ligne.quantity),
+          0,
+        )
+      if (!Number.isSafeInteger(totalVetements) || totalVetements <= 0) {
+        throw new Error('Le comptage du forfait doit rester supérieur à zéro.')
+      }
+      if (validated.quantity === item.quantity && porteuse.quantity === totalVetements) {
+        return { order, item }
+      }
+      if (
+        !forfaitActuel ||
+        forfaitActuel.id !== porteuse.commercialPackageId ||
+        forfaitActuel.tenantId !== tenantId
+      ) {
+        throw new Error(
+          'Forfait introuvable hors ligne : reconnectez-vous pour rafraîchir les forfaits avant de corriger ce comptage.',
+        )
+      }
+
+      const detailMisAJour: LocalOrderItem = {
+        ...item,
+        quantity: validated.quantity,
+        billedQuantity: validated.quantity,
+        price: 0,
+        unitPrice: 0,
+        priceStatus: 'CONFIRMED',
+      }
+      const porteuseMiseAJour = lignePorteuseRecalculee(porteuse, forfaitActuel, totalVetements)
+      const lignesMisesAJour = toutesLesLignes.map((ligne) =>
+        ligne.id === itemId
+          ? detailMisAJour
+          : ligne.id === porteuse.id
+            ? porteuseMiseAJour
+            : ligne,
+      )
+      const nouveauTotal = lignesMisesAJour.reduce((total, ligne) => total + ligne.price, 0)
+      if (!Number.isSafeInteger(nouveauTotal)) {
+        throw new Error('Le total de la commande dépasse le montant pris en charge.')
+      }
+
+      const commandeMiseAJour: LocalOrder = {
+        ...order,
+        totalAmount: nouveauTotal,
+        updatedAt: nowIso(),
+        synced: 0,
+        syncError: null,
+      }
+      await db.orderItems.bulkPut([detailMisAJour, porteuseMiseAJour])
+      await db.orders.put(commandeMiseAJour)
+      return { order: commandeMiseAJour, item: detailMisAJour }
     }
 
     const devisKilo =
@@ -422,6 +587,8 @@ export async function addOrderItemLocal(
       serviceName: input.serviceName ?? null,
       tenantServiceId: input.tenantServiceId ?? null,
       garmentTypeId: input.garmentTypeId ?? null,
+      commercialPackageId: null,
+      packageLineId: null,
       activityNameSnapshot: input.activityNameSnapshot ?? null,
       familyNameSnapshot: null,
       catalogUnitPriceSnapshot: input.garmentTypeId ? input.unitPrice : null,
@@ -471,7 +638,7 @@ export async function removeOrderItemLocal(
   orderId: string,
   itemId: string,
 ): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
-  return db.transaction('rw', db.orders, db.orderItems, async () => {
+  return db.transaction('rw', db.orders, db.orderItems, db.catalogPackages, async () => {
     const order = await db.orders.get(orderId)
     const item = await db.orderItems.get(itemId)
     if (!order || !item || item.orderId !== orderId) {
@@ -487,6 +654,59 @@ export async function removeOrderItemLocal(
       throw new Error(
         'Une commande doit garder au moins un article. Annulez la commande si elle n’a plus lieu d’être.',
       )
+    }
+
+    if (item.commercialPackageId) {
+      const idsGroupe = lignes
+        .filter((ligne) => ligne.id === item.id || ligne.packageLineId === item.id)
+        .map((ligne) => ligne.id)
+      const restantes = lignes.filter((ligne) => !idsGroupe.includes(ligne.id))
+      if (restantes.length === 0) {
+        throw new Error(
+          'Une commande doit garder au moins un article. Annulez la commande si elle n’a plus lieu d’être.',
+        )
+      }
+      await db.orderItems.bulkDelete(idsGroupe)
+      const commande = await recalculerTotalLocal(order, restantes)
+      return { order: commande, item }
+    }
+
+    if (item.packageLineId) {
+      const porteuse = lignes.find((ligne) => ligne.id === item.packageLineId)
+      if (!porteuse || !porteuse.commercialPackageId) {
+        throw new Error('La ligne porteuse de ce forfait est introuvable.')
+      }
+      const detailsRestants = lignes.filter(
+        (ligne) => ligne.packageLineId === porteuse.id && ligne.id !== item.id,
+      )
+      const totalRestant = detailsRestants.reduce((total, ligne) => total + ligne.quantity, 0)
+
+      if (totalRestant === 0) {
+        const restantes = lignes.filter((ligne) => ligne.id !== item.id && ligne.id !== porteuse.id)
+        if (restantes.length === 0) {
+          throw new Error(
+            'Une commande doit garder au moins un article. Annulez la commande si elle n’a plus lieu d’être.',
+          )
+        }
+        await db.orderItems.bulkDelete([item.id, porteuse.id])
+        const commande = await recalculerTotalLocal(order, restantes)
+        return { order: commande, item }
+      }
+
+      const forfait = await db.catalogPackages.get(porteuse.commercialPackageId)
+      if (!forfait || forfait.tenantId !== tenantId) {
+        throw new Error(
+          'Forfait introuvable hors ligne : reconnectez-vous pour rafraîchir les forfaits avant de retirer cet article.',
+        )
+      }
+      const porteuseMiseAJour = lignePorteuseRecalculee(porteuse, forfait, totalRestant)
+      const restantes = lignes
+        .filter((ligne) => ligne.id !== item.id)
+        .map((ligne) => (ligne.id === porteuse.id ? porteuseMiseAJour : ligne))
+      await db.orderItems.delete(item.id)
+      await db.orderItems.put(porteuseMiseAJour)
+      const commande = await recalculerTotalLocal(order, restantes)
+      return { order: commande, item }
     }
 
     await db.orderItems.delete(itemId)
@@ -805,6 +1025,8 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     tenant_service_id: item.tenantServiceId ?? null,
     activity_name_snapshot: item.activityNameSnapshot ?? null,
     garment_type_id: item.garmentTypeId ?? null,
+    commercial_package_id: item.commercialPackageId ?? null,
+    package_line_id: item.packageLineId ?? null,
     family_name_snapshot: item.familyNameSnapshot,
     catalog_unit_price_snapshot: item.catalogUnitPriceSnapshot,
     minimum_quantity_snapshot: item.minimumQuantitySnapshot,
@@ -815,7 +1037,12 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     // l'ajout du motif automatique : sans lui, leur envoi resterait bloqué.
     price_reason: motifPrixServeur({
       label: item.label,
-      catalogEntryId: item.garmentTypeId ?? item.catalogEntryId ?? null,
+      catalogEntryId:
+        item.commercialPackageId ??
+        item.packageLineId ??
+        item.garmentTypeId ??
+        item.catalogEntryId ??
+        null,
       priceReason: item.priceReason,
     }),
     garment_details: item.garmentDetails ?? [],

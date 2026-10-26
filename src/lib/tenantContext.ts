@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getSupabaseClient } from './supabaseClient'
-import type { TenantRole } from '@/types/database'
+import type { BusinessModel, TenantRole } from '@/types/database'
 
 /**
  * Contexte multi-tenant côté client.
@@ -20,6 +20,8 @@ export interface TenantMembership {
   tenantId: string
   tenantName: string
   role: TenantRole
+  /** Absent des anciennes sessions et du mode démonstration : défaut `MIXTE`. */
+  businessModel?: BusinessModel
   /** Compte Supabase connecté, `null` en mode démonstration. */
   userId: string | null
 }
@@ -29,12 +31,15 @@ export interface ShopMembership {
   tenantId: string
   tenantName: string
   role: TenantRole
+  businessModel?: BusinessModel
 }
 
 interface TenantState {
   tenantId: string | null
   tenantName: string | null
   role: TenantRole | null
+  /** Modèle de la boutique active ; guide l’interface, n’impose aucun mode. */
+  businessModel: BusinessModel
   userId: string | null
   /** Toutes les boutiques du compte, dans l'ordre de rattachement. */
   shops: ShopMembership[]
@@ -48,6 +53,8 @@ interface TenantState {
   switchTenant: (tenantId: string) => void
   /** Met à jour le nom affiché après une modification du pressing. */
   renameTenant: (tenantName: string) => void
+  /** Met à jour le modèle d'exploitation de la boutique active. */
+  setBusinessModel: (businessModel: BusinessModel) => void
   clear: () => void
 }
 
@@ -57,23 +64,37 @@ export const useTenantStore = create<TenantState>()(
       tenantId: null,
       tenantName: null,
       role: null,
+      businessModel: 'MIXTE',
       userId: null,
       shops: [],
       isPlatformAdmin: false,
       setPlatformAdmin: (value) => set({ isPlatformAdmin: value }),
-      setMembership: ({ tenantId, tenantName, role, userId }) =>
-        set((state) => ({
-          tenantId,
-          tenantName,
-          role,
+      setMembership: ({ tenantId, tenantName, role, businessModel, userId }) =>
+        set((state) => {
+          const boutiqueConnue = state.shops.find((shop) => shop.tenantId === tenantId)
+          const modele = businessModel ?? boutiqueConnue?.businessModel ?? 'MIXTE'
+          return {
+            tenantId,
+            tenantName,
+            role,
+            businessModel: modele,
+            userId,
+            // Le mode démonstration n'a qu'une seule boutique : la liste reste
+            // cohérente avec la boutique active.
+            shops: boutiqueConnue
+              ? state.shops.map((shop) =>
+                  shop.tenantId === tenantId
+                    ? { ...shop, tenantName, role, businessModel: modele }
+                    : shop,
+                )
+              : [{ tenantId, tenantName, role, businessModel: modele }],
+          }
+        }),
+      setShops: (shops, userId) =>
+        set({
+          shops: shops.map((shop) => ({ ...shop, businessModel: shop.businessModel ?? 'MIXTE' })),
           userId,
-          // Le mode démonstration n'a qu'une seule boutique : la liste reste
-          // cohérente avec la boutique active.
-          shops: state.shops.some((shop) => shop.tenantId === tenantId)
-            ? state.shops
-            : [{ tenantId, tenantName, role }],
-        })),
-      setShops: (shops, userId) => set({ shops, userId }),
+        }),
       switchTenant: (tenantId) =>
         set((state) => {
           const shop = state.shops.find((entry) => entry.tenantId === tenantId)
@@ -82,8 +103,16 @@ export const useTenantStore = create<TenantState>()(
             tenantId: shop.tenantId,
             tenantName: shop.tenantName,
             role: shop.role,
+            businessModel: shop.businessModel ?? 'MIXTE',
           }
         }),
+      setBusinessModel: (businessModel) =>
+        set((state) => ({
+          businessModel,
+          shops: state.shops.map((shop) =>
+            shop.tenantId === state.tenantId ? { ...shop, businessModel } : shop,
+          ),
+        })),
       renameTenant: (tenantName) =>
         set((state) => ({
           tenantName,
@@ -98,6 +127,7 @@ export const useTenantStore = create<TenantState>()(
           tenantId: null,
           tenantName: null,
           role: null,
+          businessModel: 'MIXTE',
           userId: null,
           shops: [],
           isPlatformAdmin: false,
@@ -110,6 +140,7 @@ export const useTenantStore = create<TenantState>()(
         tenantId: state.tenantId,
         tenantName: state.tenantName,
         role: state.role,
+        businessModel: state.businessModel,
         userId: state.userId,
         shops: state.shops,
         // Un simple drapeau d'interface : la console reste protégée côté
@@ -157,15 +188,24 @@ export async function resolveTenantForUser(userId: string): Promise<TenantMember
 
   const { data: tenants, error: tenantError } = await supabase
     .from('tenants')
-    .select('id, name')
+    .select('id, name, business_model')
     .in('id', ids)
 
   if (tenantError) throw tenantError
 
-  const noms = new Map((tenants ?? []).map((tenant) => [tenant.id, tenant.name]))
+  const boutiques = new Map((tenants ?? []).map((tenant) => [tenant.id, tenant]))
   const shops: ShopMembership[] = rows.flatMap((row) => {
-    const name = noms.get(row.tenant_id)
-    return name ? [{ tenantId: row.tenant_id, tenantName: name, role: row.role }] : []
+    const tenant = boutiques.get(row.tenant_id)
+    return tenant
+      ? [
+          {
+            tenantId: row.tenant_id,
+            tenantName: tenant.name,
+            role: row.role,
+            businessModel: tenant.business_model ?? 'MIXTE',
+          },
+        ]
+      : []
   })
 
   if (shops.length === 0) return null

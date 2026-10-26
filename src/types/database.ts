@@ -54,10 +54,21 @@ export type PaymentStatus = 'pending' | 'paid' | 'partial'
 /** Moyens de paiement acceptés (Mobile Money en priorité). */
 export type PaymentMethod = 'wave' | 'orange_money' | 'mtn_momo' | 'moov_money' | 'cash'
 
+/** Modèle d'exploitation déclaré : guide l'interface, sans interdiction (migration 030). */
+export type BusinessModel = 'PRESSING_PRO' | 'BLANCHISSERIE' | 'MIXTE'
+
+/** Politique appliquée au-delà du nombre de vêtements inclus dans un forfait. */
+export type OverflowPolicy =
+  | 'PER_EXTRA_ITEM'
+  | 'REPEAT_PACKAGE'
+  | 'REJECT_OVER_LIMIT'
+  | 'MANUAL_QUOTE'
+
 export type TenantRow = {
   id: string
   name: string
   phone: string | null
+  business_model: BusinessModel
   created_at: string
   onboarding_completed_at: string | null
 }
@@ -209,6 +220,12 @@ export type CommercialPackageRow = {
   name: string
   description: string | null
   price_xof: number
+  /** Prestation associée à l'offre, si le pressing souhaite l'imposer. */
+  tenant_service_id: string | null
+  /** Nombre de vêtements inclus ; `null` conserve un forfait global historique. */
+  garments_included: number | null
+  overflow_policy: OverflowPolicy
+  overflow_unit_price_xof: number | null
   is_active: boolean
   archived_at: string | null
   created_at: string
@@ -289,6 +306,10 @@ export type OrderItemRow = {
   activity_name_snapshot: string | null
   /** Article du catalogue vendu (migration 027) ; les libellés figés restent la référence d'affichage. */
   garment_type_id?: string | null
+  /** Forfait vendu par une ligne porteuse (migration 030). */
+  commercial_package_id?: string | null
+  /** Ligne porteuse pour un détail de forfait facturé 0 FCFA. */
+  package_line_id?: string | null
   family_name_snapshot: string | null
   catalog_unit_price_snapshot: number | null
   minimum_quantity_snapshot: number | null
@@ -886,7 +907,7 @@ export interface Database {
     Tables: {
       tenants: {
         Row: TenantRow
-        Insert: InsertOf<TenantRow, 'id' | 'phone' | 'created_at' | 'onboarding_completed_at'>
+        Insert: InsertOf<TenantRow, 'id' | 'phone' | 'business_model' | 'created_at' | 'onboarding_completed_at'>
         Update: Partial<Omit<TenantRow, 'id'>>
         Relationships: []
       }
@@ -946,7 +967,7 @@ export interface Database {
       }
       commercial_packages: {
         Row: CommercialPackageRow
-        Insert: InsertOf<CommercialPackageRow, 'id' | 'description' | 'is_active' | 'archived_at' | 'created_at' | 'updated_at'>
+        Insert: InsertOf<CommercialPackageRow, 'id' | 'description' | 'tenant_service_id' | 'garments_included' | 'overflow_policy' | 'overflow_unit_price_xof' | 'is_active' | 'archived_at' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<CommercialPackageRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
@@ -995,6 +1016,8 @@ export interface Database {
           | 'tenant_service_id'
           | 'activity_name_snapshot'
           | 'garment_type_id'
+          | 'commercial_package_id'
+          | 'package_line_id'
           | 'price_reason'
           | 'quantity'
           | 'billed_quantity'
@@ -1214,6 +1237,10 @@ export interface Database {
       }
       quote_weight_price: {
         Args: { p_service: string; p_weight: number }
+        Returns: Json
+      }
+      quote_package_price: {
+        Args: { p_package: string; p_garments: number; p_manual_amount?: number | null }
         Returns: Json
       }
       duplicate_laundry_profile: {

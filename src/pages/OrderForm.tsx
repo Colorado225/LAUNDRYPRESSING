@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
+import { Check, Minus, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder, useLocalOrders } from '@/db/hooks'
 import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
 import { signalerIncidentCommande, signalerSonde, syncOrderNow } from '@/sync/syncEngine'
-import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
+import { createOrderBaseSchema, createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
 import { problemeTarifaire } from '@/lib/orderPricing'
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
@@ -18,7 +18,10 @@ import {
 import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
 import { fetchCatalogConfiguration } from '@/services/catalogService'
 import { fetchPricingRules } from '@/services/pricingRulesService'
+import { fetchForfaits, type ForfaitCommercial } from '@/services/modelesForfaitsService'
 import { calculerPrixKilo, formaterDetailKilo } from '@/lib/prixKilo'
+import { calculerPrixForfait, formaterDetailForfait, problemeForfait } from '@/lib/prixForfait'
+import { newId } from '@/lib/ids'
 import type { LocalPricingRule } from '@/db/localDb'
 import {
   articlesParCategorie,
@@ -74,6 +77,7 @@ export default function OrderForm() {
   const localOrders = useLocalOrders()
   const role = useTenantStore((state) => state.role)
   const tenantId = useTenantStore((state) => state.tenantId)
+  const businessModel = useTenantStore((state) => state.businessModel)
   // Le rôle peut manquer alors que la boutique est connue (session restaurée
   // depuis le cache, ancien stockage local). On retombe sur le rôle mémorisé
   // pour la boutique active : sinon le bouton restait grisé sans explication.
@@ -88,6 +92,17 @@ export default function OrderForm() {
   const [articlesCatalogue, setArticlesCatalogue] = useState<LocalCatalogGarment[]>([])
   const [prixCatalogue, setPrixCatalogue] = useState<LocalCatalogPrice[]>([])
   const [reglesKilo, setReglesKilo] = useState<LocalPricingRule[]>([])
+  const [forfaits, setForfaits] = useState<ForfaitCommercial[]>([])
+  // Modèle « doux » : la blanchisserie ouvre sur le comptage, sans interdire
+  // de revenir aux lignes classiques à la pièce ou au kilo.
+  const [modeSaisie, setModeSaisie] = useState<'lignes' | 'forfait'>(() =>
+    businessModel === 'BLANCHISSERIE' ? 'forfait' : 'lignes',
+  )
+  const [forfaitId, setForfaitId] = useState('')
+  const [forfaitServiceId, setForfaitServiceId] = useState('')
+  const [comptagesForfait, setComptagesForfait] = useState<Record<string, number>>({})
+  const [montantManuelForfait, setMontantManuelForfait] = useState('')
+  const [forfaitGroupeId] = useState(() => newId())
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -125,6 +140,35 @@ export default function OrderForm() {
         if (active) setReglesKilo(regles)
       })
       .catch(() => undefined)
+    void fetchForfaits(tenantId)
+      .then((liste) => {
+        if (!active) return
+        setForfaits(liste)
+        const premier = liste.find(
+          (forfait) =>
+            forfait.isActive &&
+            forfait.garmentsIncluded !== null &&
+            problemeForfait({
+              prixXof: forfait.priceXof,
+              inclus: forfait.garmentsIncluded,
+              politique: forfait.overflowPolicy,
+              prixSupplementXof: forfait.overflowUnitPriceXof,
+            }) === null,
+        )
+        if (!premier) return
+        setForfaitId((courant) => courant || premier.id)
+        setForfaitServiceId((courant) => courant || premier.tenantServiceId || '')
+        setComptagesForfait((courants) =>
+          Object.keys(courants).length > 0
+            ? courants
+            : Object.fromEntries(
+                premier.items.flatMap((item) =>
+                  item.garmentTypeId ? [[item.garmentTypeId, item.quantity] as const] : [],
+                ),
+              ),
+        )
+      })
+      .catch(() => undefined)
     return () => {
       active = false
     }
@@ -154,7 +198,125 @@ export default function OrderForm() {
   const catalogueActif = articlesCatalogue.some((article) => article.isActive)
   const groupesCatalogue = articlesParCategorie(articlesCatalogue)
 
-  const total = items.reduce((sum, item) => sum + item.price, 0)
+  const forfaitsComptables = forfaits.filter(
+    (forfait) =>
+      forfait.isActive &&
+      forfait.garmentsIncluded !== null &&
+      problemeForfait({
+        prixXof: forfait.priceXof,
+        inclus: forfait.garmentsIncluded,
+        politique: forfait.overflowPolicy,
+        prixSupplementXof: forfait.overflowUnitPriceXof,
+      }) === null,
+  )
+  const forfaitChoisi = forfaitsComptables.find((forfait) => forfait.id === forfaitId)
+  const prestationForfait = prestations.find(
+    (service) => service.id === (forfaitChoisi?.tenantServiceId ?? forfaitServiceId),
+  )
+  const totalVetementsForfait = Object.values(comptagesForfait).reduce(
+    (totalCompte, quantite) => totalCompte + quantite,
+    0,
+  )
+  const montantManuelForfaitNombre =
+    montantManuelForfait.trim() === ''
+      ? null
+      : Math.floor(Number(montantManuelForfait) || 0)
+  const devisForfait = forfaitChoisi
+    ? calculerPrixForfait(
+        {
+          prixXof: forfaitChoisi.priceXof,
+          inclus: forfaitChoisi.garmentsIncluded,
+          politique: forfaitChoisi.overflowPolicy,
+          prixSupplementXof: forfaitChoisi.overflowUnitPriceXof,
+        },
+        totalVetementsForfait,
+        montantManuelForfaitNombre,
+      )
+    : null
+
+  const construireLignesForfait = (): OrderItemDraft[] => {
+    if (!forfaitChoisi) return [createEmptyItem()]
+
+    const champsService: Pick<
+      OrderItemDraft,
+      'selectedActivityId' | 'selectedOfferingId' | 'serviceName' | 'tenantServiceId' | 'activityNameSnapshot'
+    > = prestationForfait
+      ? {
+          selectedActivityId: prestationForfait.activityId,
+          selectedOfferingId: prestationForfait.id,
+          serviceName: prestationForfait.serviceName,
+          tenantServiceId:
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              prestationForfait.id,
+            )
+              ? prestationForfait.id
+              : null,
+          activityNameSnapshot: prestationForfait.activityName,
+        }
+      : {
+          selectedActivityId: '',
+          selectedOfferingId: '',
+          serviceName: '',
+          tenantServiceId: null,
+          activityNameSnapshot: null,
+        }
+
+    const montant =
+      totalVetementsForfait > 0 ? devisForfait?.montant ?? forfaitChoisi.priceXof : 0
+    const porteuse: OrderItemDraft = {
+      ...createEmptyItem(),
+      ...champsService,
+      label: forfaitChoisi.name,
+      price: montant,
+      quantity: Math.max(1, totalVetementsForfait),
+      billedQuantity: Math.max(1, totalVetementsForfait),
+      unitPrice:
+        totalVetementsForfait > 0
+          ? Math.max(1, Math.round(montant / totalVetementsForfait))
+          : 0,
+      totalImpose: montant > 0 ? montant : undefined,
+      billingUnit: 'PACKAGE',
+      pricingMode: 'FIXED',
+      priceStatus: 'CONFIRMED',
+      garmentTypeId: null,
+      commercialPackageId: forfaitChoisi.id,
+      forfaitGroupeId,
+      catalogUnitPriceSnapshot: null,
+      conditionsSnapshot:
+        devisForfait?.montant != null ? formaterDetailForfait(devisForfait) : null,
+      garmentDetails: [],
+    }
+
+    const details = groupesCatalogue
+      .flatMap((groupe) => groupe.articles)
+      .flatMap((article) => {
+        const quantite = comptagesForfait[article.id] ?? 0
+        if (quantite <= 0) return []
+        const detail: OrderItemDraft = {
+          ...createEmptyItem(),
+          ...champsService,
+          label: article.name,
+          articleName: article.name,
+          price: 0,
+          quantity: quantite,
+          billedQuantity: quantite,
+          unitPrice: 0,
+          billingUnit: 'PIECE',
+          pricingMode: 'FIXED',
+          priceStatus: 'CONFIRMED',
+          garmentTypeId: article.id,
+          forfaitGroupeId,
+          catalogUnitPriceSnapshot: null,
+          garmentDetails: [],
+        }
+        return [detail]
+      })
+
+    return [porteuse, ...details]
+  }
+
+  const lignes = modeSaisie === 'forfait' ? construireLignesForfait() : items
+  const total = lignes.reduce((sum, item) => sum + item.price, 0)
 
   const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
     setItems((current) => current.map((item, itemIndex) => {
@@ -309,6 +471,56 @@ export default function OrderForm() {
     }
   }
 
+  const choisirForfait = (packageId: string) => {
+    const forfait = forfaitsComptables.find((candidate) => candidate.id === packageId)
+    setForfaitId(packageId)
+    setForfaitServiceId(forfait?.tenantServiceId ?? '')
+    setMontantManuelForfait('')
+    setComptagesForfait(
+      Object.fromEntries(
+        (forfait?.items ?? []).flatMap((item) =>
+          item.garmentTypeId ? [[item.garmentTypeId, item.quantity] as const] : [],
+        ),
+      ),
+    )
+  }
+
+  const majComptageForfait = (garmentTypeId: string, quantite: number) => {
+    const valeur = Math.min(10_000, Math.max(0, Math.floor(quantite || 0)))
+    setComptagesForfait((courants) => ({ ...courants, [garmentTypeId]: valeur }))
+  }
+
+  const problemeSaisieForfait = (): string[] => {
+    if (forfaitsComptables.length === 0) {
+      return ['Aucun forfait au nombre de vêtements actif : créez-en un dans Catalogue & tarifs → Forfaits.']
+    }
+    if (!forfaitChoisi) return ['Choisissez le forfait vendu au client.']
+    if (!catalogueActif) {
+      return ['Installez le catalogue pour compter les articles déposés dans le forfait.']
+    }
+    if (!prestationForfait) return ['Choisissez la prestation appliquée aux vêtements du forfait.']
+    if (totalVetementsForfait <= 0) return ['Comptez au moins un vêtement dans le forfait.']
+
+    const probleme = problemeForfait({
+      prixXof: forfaitChoisi.priceXof,
+      inclus: forfaitChoisi.garmentsIncluded,
+      politique: forfaitChoisi.overflowPolicy,
+      prixSupplementXof: forfaitChoisi.overflowUnitPriceXof,
+    })
+    if (probleme) return [probleme]
+    if (!devisForfait) {
+      return [
+        forfaitChoisi.overflowPolicy === 'REJECT_OVER_LIMIT'
+          ? `Ce forfait accepte au maximum ${forfaitChoisi.garmentsIncluded} vêtement(s).`
+          : 'Le montant de ce forfait ne peut pas être calculé pour ce comptage.',
+      ]
+    }
+    if (devisForfait.manuelRequis) {
+      return ['Saisissez le montant total validé au comptoir pour les vêtements supplémentaires.']
+    }
+    return []
+  }
+
   /**
    * Contrôle l'étape en cours **sans jamais bloquer la navigation**.
    *
@@ -326,7 +538,7 @@ export default function OrderForm() {
    * ici pour que le comptoir corrige au lieu de découvrir l'échec à l'envoi.
    */
   const problemesTarifaires = (): string[] =>
-    items.flatMap((item) => {
+    modeSaisie === 'forfait' ? problemeSaisieForfait() : items.flatMap((item) => {
       if (catalogueActif && item.billingUnit !== 'KG') {
         const problemeCatalogue = problemeLigneCatalogue({
           garmentTypeId: item.garmentTypeId,
@@ -351,12 +563,12 @@ export default function OrderForm() {
 
   const controlerEtape = (step: number): boolean => {
     const parsed = step === 0
-      ? createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
+      ? createOrderBaseSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
           customerName,
           customerPhone,
           dueDate: dueDate || undefined,
         })
-      : createOrderSchema.pick({ items: true }).safeParse({ items })
+      : createOrderBaseSchema.pick({ items: true }).safeParse({ items: lignes })
 
     if (parsed.success) {
       if (step === 1) {
@@ -430,7 +642,7 @@ export default function OrderForm() {
     void signalerSonde({
       evenement: 'clic_enregistrer',
       etape,
-      lignes: items.length,
+      lignes: lignes.length,
       total,
       peut_creer: canCreate,
       en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
@@ -451,7 +663,7 @@ export default function OrderForm() {
       const parsed = createOrderSchema.safeParse({
         customerName,
         customerPhone,
-        items,
+        items: lignes,
         dueDate: dueDate || undefined,
       })
       if (!parsed.success) {
@@ -559,6 +771,161 @@ export default function OrderForm() {
     }
   }
 
+  const problemeForfaitActuel =
+    modeSaisie === 'forfait' ? problemeSaisieForfait()[0] : undefined
+
+  const saisieForfait = (
+    <section className="space-y-4 rounded-xl border border-slate-200 p-3 sm:p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1">
+          <span className="text-xs font-semibold text-slate-600">Forfait vendu</span>
+          <select
+            value={forfaitId}
+            onChange={(event) => choisirForfait(event.target.value)}
+            aria-label="Forfait vendu"
+            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal"
+          >
+            <option value="">Choisir un forfait</option>
+            {forfaitsComptables.map((forfait) => (
+              <option key={forfait.id} value={forfait.id}>
+                {forfait.name} — {forfait.garmentsIncluded} inclus · {formatFcfa(forfait.priceXof)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-semibold text-slate-600">Prestation appliquée</span>
+          <select
+            value={prestationForfait?.id ?? forfaitServiceId}
+            onChange={(event) => setForfaitServiceId(event.target.value)}
+            disabled={Boolean(forfaitChoisi?.tenantServiceId)}
+            aria-label="Prestation appliquée au forfait"
+            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal disabled:bg-slate-50"
+          >
+            <option value="">Choisir une prestation</option>
+            {prestations
+              .filter((service) => service.billingUnit === 'PIECE')
+              .map((service) => (
+                <option key={service.id} value={service.id}>
+                  {service.serviceName} — {service.activityName}
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
+
+      {forfaitsComptables.length === 0 && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          Aucun forfait au nombre de vêtements actif. Le propriétaire peut en créer un dans
+          Catalogue &amp; tarifs → Forfaits.
+        </p>
+      )}
+      {forfaitChoisi && (
+        <p className="text-sm text-slate-600">
+          {formatFcfa(forfaitChoisi.priceXof)} pour {forfaitChoisi.garmentsIncluded} vêtement(s)
+          inclus.
+          {forfaitChoisi.overflowPolicy === 'PER_EXTRA_ITEM' &&
+            ` Au-delà : ${formatFcfa(forfaitChoisi.overflowUnitPriceXof ?? 0)} par vêtement supplémentaire.`}
+          {forfaitChoisi.overflowPolicy === 'REPEAT_PACKAGE' &&
+            ' Au-delà, le forfait entier se répète.'}
+          {forfaitChoisi.overflowPolicy === 'REJECT_OVER_LIMIT' &&
+            ' Aucun dépassement n’est accepté.'}
+          {forfaitChoisi.overflowPolicy === 'MANUAL_QUOTE' &&
+            ' En cas de dépassement, le montant total est validé au comptoir.'}
+        </p>
+      )}
+      {!catalogueActif && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          Le catalogue doit être installé pour énumérer les articles comptés dans le forfait.
+        </p>
+      )}
+
+      {groupesCatalogue.map((groupe) => (
+        <fieldset key={groupe.categoryCode} className="rounded-xl border border-slate-100 px-3 py-2">
+          <legend className="px-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            {groupe.categoryName}
+          </legend>
+          <div className="divide-y divide-slate-100">
+            {groupe.articles.map((article) => {
+              const quantite = comptagesForfait[article.id] ?? 0
+              return (
+                <div key={article.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2">
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-800">{article.name}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => majComptageForfait(article.id, quantite - 1)}
+                      disabled={submitting || quantite <= 0}
+                      aria-label={`Retirer un ${article.name} du forfait`}
+                      className="flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-slate-300 text-slate-600 disabled:opacity-40"
+                    >
+                      <Minus size={16} aria-hidden />
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10000"
+                      step="1"
+                      value={quantite}
+                      onChange={(event) => majComptageForfait(article.id, Number(event.target.value))}
+                      aria-label={`Nombre de ${article.name} dans le forfait`}
+                      className="min-h-10 w-20 rounded-lg border border-slate-300 px-2 text-center text-base outline-none focus:border-brand-teal"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => majComptageForfait(article.id, quantite + 1)}
+                      disabled={submitting}
+                      aria-label={`Ajouter un ${article.name} au forfait`}
+                      className="flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-slate-300 text-slate-700 disabled:opacity-40"
+                    >
+                      <Plus size={16} aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </fieldset>
+      ))}
+
+      {forfaitChoisi?.overflowPolicy === 'MANUAL_QUOTE' &&
+        forfaitChoisi.garmentsIncluded !== null &&
+        totalVetementsForfait > forfaitChoisi.garmentsIncluded && (
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-slate-600">
+              Montant total validé au comptoir (FCFA)
+            </span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={montantManuelForfait}
+              onChange={(event) => setMontantManuelForfait(event.target.value)}
+              aria-label="Montant total validé au comptoir pour le forfait"
+              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+            />
+          </label>
+        )}
+
+      <div className="rounded-xl bg-teal-50/60 p-3">
+        <p className="text-sm font-semibold text-slate-800">
+          {totalVetementsForfait} vêtement(s) compté(s)
+        </p>
+        {problemeForfaitActuel ? (
+          <p className="mt-1 text-sm font-medium text-amber-800">{problemeForfaitActuel}</p>
+        ) : devisForfait?.montant != null ? (
+          <p className="mt-1 text-sm font-semibold text-brand-navy">
+            {formaterDetailForfait(devisForfait)} → {formatFcfa(devisForfait.montant)}
+          </p>
+        ) : null}
+        <p className="mt-1 text-xs text-slate-500">
+          Tous les articles actifs comptent ; seule la somme change le prix, pas leur répartition.
+          Les articles resteront visibles à 0 FCFA, inclus dans la ligne du forfait.
+        </p>
+      </div>
+    </section>
+  )
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header>
@@ -656,11 +1023,37 @@ export default function OrderForm() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">Vêtements et prestations</h2>
-                <p className="text-sm text-slate-500">Pour une prestation au kilo, énumérez les vêtements, pesez le lot et confirmez le tarif par kilo.</p>
+                <p className="text-sm text-slate-500">
+                  {modeSaisie === 'forfait'
+                    ? 'Comptez chaque article déposé : le prix du forfait dépend du total, pas de la répartition.'
+                    : 'Pour une prestation au kilo, énumérez les vêtements, pesez le lot et confirmez le tarif par kilo.'}
+                </p>
               </div>
-              <button type="button" onClick={() => setItems((current) => [...current, createEmptyItem()])} disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"><Plus size={17} aria-hidden /> Ajouter une ligne</button>
+              {modeSaisie === 'lignes' && (
+                <button type="button" onClick={() => setItems((current) => [...current, createEmptyItem()])} disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"><Plus size={17} aria-hidden /> Ajouter une ligne</button>
+              )}
             </div>
 
+            <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Mode de dépôt">
+              <button
+                type="button"
+                onClick={() => setModeSaisie('lignes')}
+                aria-pressed={modeSaisie === 'lignes'}
+                className={`min-h-12 rounded-xl border px-3 text-sm font-bold ${modeSaisie === 'lignes' ? 'border-brand-teal bg-brand-teal/5 text-brand-navy' : 'border-slate-300 text-slate-600 hover:border-brand-teal'}`}
+              >
+                À la pièce / au kilo
+              </button>
+              <button
+                type="button"
+                onClick={() => setModeSaisie('forfait')}
+                aria-pressed={modeSaisie === 'forfait'}
+                className={`min-h-12 rounded-xl border px-3 text-sm font-bold ${modeSaisie === 'forfait' ? 'border-brand-teal bg-brand-teal/5 text-brand-navy' : 'border-slate-300 text-slate-600 hover:border-brand-teal'}`}
+              >
+                Forfait (comptage)
+              </button>
+            </div>
+
+            {modeSaisie === 'lignes' ? (
             <div className="space-y-3">
               {items.map((item, index) => (
                 <fieldset key={index} className="rounded-xl border border-slate-200 p-3 sm:p-4">
@@ -775,17 +1168,18 @@ export default function OrderForm() {
                 </fieldset>
               ))}
             </div>
-            {prestations.length === 0 && !catalogueActif && (
+            ) : saisieForfait}
+            {modeSaisie === 'lignes' && prestations.length === 0 && !catalogueActif && (
               <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée. Vous pouvez laisser la ligne sans prestation ou en saisir une librement.</p>
             )}
-            {!catalogueActif && (
+            {modeSaisie === 'lignes' && !catalogueActif && (
               <p className="text-xs text-slate-500">
                 Catalogue non installé : la saisie libre reste possible. Le propriétaire peut
                 installer le catalogue de référence et ses tarifs via le menu « Catalogue &amp; tarifs » ;
                 les prix viendront ensuite automatiquement de la grille.
               </p>
             )}
-            {catalogueActif && (
+            {modeSaisie === 'lignes' && catalogueActif && (
               <p className="text-xs text-slate-500">
                 Prix issus de la grille du catalogue. Un couple article × prestation sans tarif
                 (« non configuré ») bloque l’enregistrement : définissez-le dans Catalogue → Tarifs.

@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/localDb'
 import { useTenantStore } from '@/lib/tenantContext'
-import { createOrderSchema, normalizePhoneCi } from '@/schemas/order'
+import { createOrderBaseSchema, normalizePhoneCi } from '@/schemas/order'
 import toast from 'react-hot-toast'
 
 vi.mock('@/lib/env', () => ({ isSupabaseConfigured: true }))
@@ -122,7 +122,7 @@ beforeEach(async () => {
 
 describe('validation des étapes du formulaire de commande', () => {
   it('accepte un nom et un numéro ivoirien à 10 chiffres', () => {
-    const resultat = createOrderSchema
+    const resultat = createOrderBaseSchema
       .pick({ customerName: true, customerPhone: true, dueDate: true })
       .safeParse({ customerName: 'Awa Koné', customerPhone: '07 00 00 00 00', dueDate: undefined })
 
@@ -138,7 +138,7 @@ describe('validation des étapes du formulaire de commande', () => {
   })
 
   it('refuse toujours un numéro trop court', () => {
-    const resultat = createOrderSchema
+    const resultat = createOrderBaseSchema
       .pick({ customerName: true, customerPhone: true, dueDate: true })
       .safeParse({ customerName: 'Awa Koné', customerPhone: '0700', dueDate: undefined })
 

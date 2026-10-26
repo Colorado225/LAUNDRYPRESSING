@@ -168,11 +168,15 @@ export default function OrderItemsEditor({ order, items }: Props) {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-slate-800">{item.label}</p>
               <p className="text-xs text-slate-500">
-                {item.billedQuantity} × {formatFcfa(item.unitPrice)}
+                {item.packageLineId
+                  ? `${item.quantity} pièce(s) · inclus dans le forfait`
+                  : item.commercialPackageId
+                    ? item.conditionsSnapshot ?? `${item.quantity} vêtement(s) compté(s) · forfait`
+                    : `${item.billedQuantity} × ${formatFcfa(item.unitPrice)}`}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <span className="text-sm font-semibold text-brand-navy">{formatFcfa(item.price)}</span>
+              <span className="text-sm font-semibold text-brand-navy">{item.packageLineId ? 'Inclus' : formatFcfa(item.price)}</span>
               <button
                 type="button"
                 onClick={() => void retirer(item)}

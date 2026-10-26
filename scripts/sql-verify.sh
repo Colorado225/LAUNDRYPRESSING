@@ -133,6 +133,8 @@ FICHIERS=(
   "supabase/migrations/028_tarification_kilo_tranches.sql"
   "supabase/migrations/029_modeles_forfaits.sql"
   "supabase/tests/catalogue_lot2.sql"
+  "supabase/migrations/030_forfaits_quantite_modele_exploitation.sql"
+  "supabase/tests/catalogue_lot3.sql"
 )
 
 ECHECS=0

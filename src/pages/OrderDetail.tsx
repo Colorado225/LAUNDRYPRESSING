@@ -362,9 +362,13 @@ export default function OrderDetail() {
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
                     : item.laundryModelId
                       ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
-                      : item.billingUnit === 'FLAT'
-                        ? `Forfait · ${formatFcfa(item.unitPrice)}`
-                        : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                      : item.packageLineId
+                        ? `${item.quantity} pièce(s) · inclus dans le forfait`
+                        : item.commercialPackageId
+                          ? item.conditionsSnapshot ?? `${item.quantity} vêtement(s) compté(s) · forfait`
+                          : item.billingUnit === 'FLAT'
+                            ? `Forfait · ${formatFcfa(item.unitPrice)}`
+                            : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ — à confirmer' : ''}
                 </p>
                 <p className="text-xs text-slate-500">
@@ -387,7 +391,7 @@ export default function OrderDetail() {
                 />
               </div>
               <span className="font-semibold text-brand-navy">
-                {seeAmounts ? formatFcfa(item.price) : '—'}
+                {item.packageLineId ? 'Inclus' : seeAmounts ? formatFcfa(item.price) : '—'}
               </span>
             </li>
           ))}

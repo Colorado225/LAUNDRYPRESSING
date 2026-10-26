@@ -50,7 +50,7 @@ import {
   type TeamMember,
 } from '@/services/tenantMembers'
 import { fetchTenantPressing, updateTenant } from '@/services/tenantService'
-import type { TenantRole } from '@/types/database'
+import type { BusinessModel, TenantRole } from '@/types/database'
 import { useSyncStore } from '@/stores/syncStore'
 import { syncPendingOrders } from '@/sync/syncEngine'
 
@@ -73,9 +73,37 @@ import { syncPendingOrders } from '@/sync/syncEngine'
  */
 const VERSION_APPLICATION = '0.7.0'
 
+const MODELES_EXPLOITATION: Array<{
+  value: BusinessModel
+  label: string
+  description: string
+}> = [
+  {
+    value: 'PRESSING_PRO',
+    label: 'Pressing pro — à la pièce',
+    description: 'Propose d’abord la grille article × prestation.',
+  },
+  {
+    value: 'BLANCHISSERIE',
+    label: 'Blanchisserie — au kilo ou au forfait',
+    description: 'Propose d’abord la pesée ou le comptage d’un forfait.',
+  },
+  {
+    value: 'MIXTE',
+    label: 'Mixte',
+    description: 'Laisse le comptoir choisir à chaque dépôt.',
+  },
+]
+
+function libelleModeleExploitation(modele: BusinessModel): string {
+  return MODELES_EXPLOITATION.find((option) => option.value === modele)?.label ?? 'Mixte'
+}
+
 export default function Parametres() {
   const tenantId = useTenantStore((state) => state.tenantId)
   const tenantName = useTenantStore((state) => state.tenantName)
+  const businessModel = useTenantStore((state) => state.businessModel)
+  const setBusinessModel = useTenantStore((state) => state.setBusinessModel)
   const role = useTenantStore((state) => state.role)
   const userId = useTenantStore((state) => state.userId)
   const shops = useTenantStore((state) => state.shops)
@@ -107,6 +135,7 @@ export default function Parametres() {
   const [edition, setEdition] = useState(false)
   const [nom, setNom] = useState(tenantName ?? '')
   const [telephone, setTelephone] = useState('')
+  const [modeleExploitation, setModeleExploitation] = useState<BusinessModel>(businessModel)
   const [enregistrement, setEnregistrement] = useState(false)
 
   const [resume, setResume] = useState<ResumeLocal | null>(null)
@@ -265,12 +294,14 @@ export default function Parametres() {
     }
     setNom(tenantName ?? '')
     setTelephone('')
+    setModeleExploitation(businessModel)
     setEdition(true)
 
     try {
       const fiche = await fetchTenantPressing(tenantId)
       setNom(fiche.name)
       setTelephone(fiche.phone ?? '')
+      setModeleExploitation(fiche.businessModel)
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : 'Lecture du pressing impossible hors ligne.',
@@ -285,8 +316,13 @@ export default function Parametres() {
     }
     setEnregistrement(true)
     try {
-      const maj = await updateTenant(tenantId, { name: nom, phone: telephone })
+      const maj = await updateTenant(tenantId, {
+        name: nom,
+        phone: telephone,
+        businessModel: modeleExploitation,
+      })
       renameTenant(maj.name)
+      setBusinessModel(maj.businessModel)
       setEdition(false)
       toast.success('Informations du pressing mises à jour', { icon: '🏪' })
     } catch (error) {
@@ -438,6 +474,28 @@ export default function Parametres() {
                 </span>
               </label>
 
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Modèle d’exploitation
+                </span>
+                <select
+                  value={modeleExploitation}
+                  onChange={(event) => setModeleExploitation(event.target.value as BusinessModel)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                >
+                  {MODELES_EXPLOITATION.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {MODELES_EXPLOITATION.find((option) => option.value === modeleExploitation)
+                    ?.description}{' '}
+                  Ce choix ne bloque aucun autre mode de vente.
+                </span>
+              </label>
+
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -466,6 +524,12 @@ export default function Parametres() {
               <div>
                 <dt className="text-xs text-slate-500">Nom</dt>
                 <dd className="font-semibold text-slate-800">{tenantName ?? 'Non sélectionné'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-slate-500">Modèle d’exploitation</dt>
+                <dd className="font-semibold text-slate-800">
+                  {libelleModeleExploitation(businessModel)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Identifiant (à communiquer au support)</dt>

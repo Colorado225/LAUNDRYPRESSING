@@ -23,7 +23,8 @@ import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import type { LocalCatalogGarment, LocalCatalogPrice } from '@/db/localDb'
-import type { CatalogBillingUnit } from '@/types/database'
+import type { CatalogBillingUnit, OverflowPolicy } from '@/types/database'
+import { calculerPrixForfait, formaterDetailForfait, problemeForfait } from '@/lib/prixForfait'
 import {
   disablePricingRule,
   fetchPricingRules,
@@ -61,6 +62,34 @@ const UNITES: Array<{ value: CatalogBillingUnit; label: string }> = [
 ]
 
 type Onglet = 'articles' | 'tarifs' | 'kilo' | 'modeles' | 'forfaits'
+
+const POLITIQUES_DEPASSEMENT: Array<{ value: OverflowPolicy; label: string }> = [
+  { value: 'PER_EXTRA_ITEM', label: 'Prix par vêtement supplémentaire' },
+  { value: 'REPEAT_PACKAGE', label: 'Répéter le forfait entier' },
+  { value: 'REJECT_OVER_LIMIT', label: 'Refuser au-delà du nombre inclus' },
+  { value: 'MANUAL_QUOTE', label: 'Montant validé au comptoir si dépassement' },
+]
+
+function resumeForfaitCommercial(forfait: ForfaitCommercial, prestation?: TenantServiceOffering): string {
+  const service = prestation
+    ? `Prestation : ${prestation.serviceName} — ${prestation.activityName}`
+    : 'Prestation choisie au dépôt'
+  if (forfait.garmentsIncluded === null) {
+    return `${service} · forfait global, sans tarif au nombre de vêtements`
+  }
+
+  const base = `${service} · ${forfait.garmentsIncluded} vêtement(s) inclus`
+  switch (forfait.overflowPolicy) {
+    case 'PER_EXTRA_ITEM':
+      return `${base} · ${formatFcfa(forfait.overflowUnitPriceXof ?? 0)} par vêtement supplémentaire`
+    case 'REPEAT_PACKAGE':
+      return `${base} · le forfait se répète au-delà`
+    case 'REJECT_OVER_LIMIT':
+      return `${base} · aucun dépassement accepté`
+    case 'MANUAL_QUOTE':
+      return `${base} · montant à valider au comptoir en cas de dépassement`
+  }
+}
 
 /**
  * Catalogue du pressing (Lot 1) : articles, installation du référentiel
@@ -110,6 +139,12 @@ export default function Catalogue() {
   const [forfaitItems, setForfaitItems] = useState(
     [] as Array<{ garmentTypeId: string; quantity: string }>,
   )
+  const [forfaitServiceId, setForfaitServiceId] = useState('')
+  const [forfaitInclus, setForfaitInclus] = useState('')
+  const [forfaitPolitique, setForfaitPolitique] = useState<OverflowPolicy>('PER_EXTRA_ITEM')
+  const [forfaitSupplement, setForfaitSupplement] = useState('')
+  const [forfaitSimVetements, setForfaitSimVetements] = useState('25')
+  const [forfaitSimManuel, setForfaitSimManuel] = useState('')
 
   const recharger = useCallback(async () => {
     if (!tenantId) return
@@ -344,12 +379,30 @@ export default function Catalogue() {
     }
   }
 
+  const forfaitQuantiteSaisi = {
+    prixXof: Math.floor(Number(forfaitPrix) || 0),
+    inclus: forfaitInclus.trim() === '' ? null : Math.floor(Number(forfaitInclus) || 0),
+    politique: forfaitPolitique,
+    prixSupplementXof:
+      forfaitSupplement.trim() === '' ? null : Math.floor(Number(forfaitSupplement) || 0),
+  } as const
+  const problemeConfigForfait = problemeForfait(forfaitQuantiteSaisi)
+  const devisForfaitSimule = calculerPrixForfait(
+    forfaitQuantiteSaisi,
+    Math.floor(Number(forfaitSimVetements) || 0),
+    forfaitSimManuel.trim() === '' ? null : Math.floor(Number(forfaitSimManuel) || 0),
+  )
+
   const enregistrerForfait = async () => {
     if (!tenantId) return
     const nom = forfaitNom.trim()
-    const montant = Math.floor(Number(forfaitPrix) || 0)
+    const montant = forfaitQuantiteSaisi.prixXof
     if (nom.length < 2) {
       toast.error('Donnez un nom au forfait.')
+      return
+    }
+    if (problemeConfigForfait) {
+      toast.error(problemeConfigForfait)
       return
     }
     try {
@@ -357,6 +410,10 @@ export default function Catalogue() {
         name: nom,
         description: forfaitDesc,
         priceXof: montant,
+        tenantServiceId: forfaitServiceId || null,
+        garmentsIncluded: forfaitQuantiteSaisi.inclus,
+        overflowPolicy: forfaitQuantiteSaisi.politique,
+        overflowUnitPriceXof: forfaitQuantiteSaisi.prixSupplementXof,
         items: forfaitItems
           .filter((item) => item.garmentTypeId)
           .map((item) => ({
@@ -369,6 +426,11 @@ export default function Catalogue() {
       setForfaitPrix('')
       setForfaitDesc('')
       setForfaitItems([])
+      setForfaitServiceId('')
+      setForfaitInclus('')
+      setForfaitPolitique('PER_EXTRA_ITEM')
+      setForfaitSupplement('')
+      setForfaitSimManuel('')
       toast.success(`Forfait « ${nom} » créé.`)
       await recharger()
     } catch (error) {
@@ -857,8 +919,9 @@ export default function Catalogue() {
           {onglet === 'forfaits' && (
             <div className="space-y-5">
               <p className="text-sm text-slate-600">
-                Forfaits à prix global et leur composition indicative. La vente d’un forfait en
-                caisse arrivera au lot suivant ; définissez dès maintenant vos offres.
+                Forfaits vendables au dépôt : prix global ou tarif au nombre de vêtements.
+                Au comptage, <strong>tous les articles actifs</strong> peuvent être comptés ; la
+                composition ci-dessous reste indicative et ne limite pas les articles admissibles.
               </p>
               {peutGerer && (
                 <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
@@ -868,8 +931,69 @@ export default function Catalogue() {
                     <input type="number" min="1" step="1" value={forfaitPrix} onChange={(e) => setForfaitPrix(e.target.value)} placeholder="Prix (FCFA)" aria-label="Prix du forfait en FCFA" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal" />
                     <input value={forfaitDesc} onChange={(e) => setForfaitDesc(e.target.value)} placeholder="Description (facultatif)" aria-label="Description du forfait" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal" />
                   </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-slate-600">Prestation associée (facultatif)</span>
+                      <select value={forfaitServiceId} onChange={(e) => setForfaitServiceId(e.target.value)} aria-label="Prestation associée au forfait" className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal">
+                        <option value="">Choisie au dépôt</option>
+                        {prestationsPiece.map((service) => (
+                          <option key={service.id} value={service.id}>{service.serviceName} — {service.activityName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-slate-600">Vêtements inclus</span>
+                      <input type="number" min="1" max="10000" step="1" value={forfaitInclus} onChange={(e) => setForfaitInclus(e.target.value)} placeholder="Vide = forfait global" aria-label="Nombre de vêtements inclus dans le forfait" className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal" />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-semibold text-slate-600">Au-delà du nombre inclus</span>
+                      <select value={forfaitPolitique} onChange={(e) => setForfaitPolitique(e.target.value as OverflowPolicy)} aria-label="Politique de dépassement du forfait" className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal">
+                        {POLITIQUES_DEPASSEMENT.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {forfaitPolitique === 'PER_EXTRA_ITEM' ? (
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-slate-600">Prix par vêtement supplémentaire</span>
+                        <input type="number" min="1" step="1" value={forfaitSupplement} onChange={(e) => setForfaitSupplement(e.target.value)} placeholder="FCFA" aria-label="Prix par vêtement supplémentaire" className="min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-brand-teal" />
+                      </label>
+                    ) : (
+                      <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        Aucun prix unitaire de dépassement à saisir pour ce choix.
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Simulateur de comptage</p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-slate-600">Vêtements comptés</span>
+                        <input type="number" min="1" step="1" value={forfaitSimVetements} onChange={(e) => setForfaitSimVetements(e.target.value)} aria-label="Nombre de vêtements à simuler" className="min-h-10 w-36 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal" />
+                      </label>
+                      {forfaitPolitique === 'MANUAL_QUOTE' && forfaitQuantiteSaisi.inclus !== null && (
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold text-slate-600">Montant validé si dépassement</span>
+                          <input type="number" min="1" step="1" value={forfaitSimManuel} onChange={(e) => setForfaitSimManuel(e.target.value)} placeholder="FCFA" aria-label="Montant manuel simulé" className="min-h-10 w-40 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal" />
+                        </label>
+                      )}
+                    </div>
+                    {problemeConfigForfait ? (
+                      <p className="text-sm font-medium text-amber-700">{problemeConfigForfait}</p>
+                    ) : devisForfaitSimule ? (
+                      devisForfaitSimule.manuelRequis ? (
+                        <p className="text-sm font-medium text-amber-700">Dépassement : saisissez le montant total qui serait validé au comptoir.</p>
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-800">
+                          {formaterDetailForfait(devisForfaitSimule)} → {formatFcfa(devisForfaitSimule.montant ?? 0)}
+                        </p>
+                      )
+                    ) : (
+                      <p className="text-sm font-medium text-amber-700">Ce comptage serait refusé avec la règle choisie.</p>
+                    )}
+                  </div>
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-slate-600">Composition (articles inclus, facultatif)</p>
+                    <p className="text-xs font-semibold text-slate-600">Composition indicative (facultative, ne limite pas le comptage)</p>
                     {forfaitItems.map((item, i) => (
                       <div key={i} className="grid grid-cols-[minmax(0,1fr)_90px_auto] gap-2">
                         <select value={item.garmentTypeId} onChange={(e) => setForfaitItems((c) => c.map((x, j) => (j === i ? { ...x, garmentTypeId: e.target.value } : x)))} aria-label={`Article du forfait ${i + 1}`} className="min-h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal">
@@ -901,10 +1025,14 @@ export default function Catalogue() {
                         {forfait.name} · <span className="text-emerald-700">{formatFcfa(forfait.priceXof)}</span>
                         {!forfait.isActive && <span className="ml-1 text-[11px] font-bold text-amber-700">Archivé</span>}
                       </p>
+                      <p className="text-xs text-slate-500">{forfait.description ?? 'Sans description'}</p>
                       <p className="text-xs text-slate-500">
-                        {forfait.description ?? 'Sans description'}
+                        {resumeForfaitCommercial(
+                          forfait,
+                          prestations.find((service) => service.id === forfait.tenantServiceId),
+                        )}
                         {forfait.items.length > 0 &&
-                          ` · ${forfait.items.map((item) => `${item.quantity} × ${item.label ?? articles.find((a) => a.id === item.garmentTypeId)?.name ?? 'article'}`).join(', ')}`}
+                          ` · Composition indicative : ${forfait.items.map((item) => `${item.quantity} × ${item.label ?? articles.find((a) => a.id === item.garmentTypeId)?.name ?? 'article'}`).join(', ')}`}
                       </p>
                     </div>
                     {peutGerer && tenantId && (

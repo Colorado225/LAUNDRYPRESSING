@@ -11,6 +11,7 @@ import type {
   OrderGarmentDetail,
   OrderItemPriceStatus,
   OrderStatus,
+  OverflowPolicy,
   PaymentMethod,
   PaymentStatus,
   TenantActivityCode,
@@ -104,6 +105,10 @@ export interface LocalOrderItem {
   activityNameSnapshot?: string | null
   /** Article du catalogue choisi au comptoir (null pour les lignes historiques/libres). */
   garmentTypeId?: string | null
+  /** Forfait vendu par la ligne porteuse ; null pour une ligne ordinaire ou un détail. */
+  commercialPackageId?: string | null
+  /** Ligne porteuse du forfait pour un détail compté à 0 FCFA. */
+  packageLineId?: string | null
   familyNameSnapshot: string | null
   catalogUnitPriceSnapshot: number | null
   minimumQuantitySnapshot: number | null
@@ -189,6 +194,22 @@ export interface LocalPricingRule {
   roundingMode: 'ceil' | 'nearest' | 'exact'
   isActive: boolean
   tiers: LocalPricingTier[]
+}
+
+/** Forfait commercial et composition indicative (cache hors ligne). */
+export interface LocalCommercialPackage {
+  id: string
+  tenantId: string
+  code: string
+  name: string
+  description: string | null
+  priceXof: number
+  tenantServiceId: string | null
+  garmentsIncluded: number | null
+  overflowPolicy: OverflowPolicy
+  overflowUnitPriceXof: number | null
+  isActive: boolean
+  items: Array<{ garmentTypeId: string | null; label: string | null; quantity: number }>
 }
 
 export interface LocalCatalogPrice {
@@ -412,6 +433,7 @@ export class PressingDatabase extends Dexie {
   catalogGarments!: Table<LocalCatalogGarment, string>
   catalogPrices!: Table<LocalCatalogPrice, string>
   catalogPricingRules!: Table<LocalPricingRule, string>
+  catalogPackages!: Table<LocalCommercialPackage, string>
 
   constructor() {
     super('pressing-pro')
@@ -655,6 +677,18 @@ export class PressingDatabase extends Dexie {
       catalogPricingRules: 'id, tenantId, tenantServiceId, [tenantId+tenantServiceId]',
     })
 
+    // v18 : cache hors ligne des forfaits vendables au nombre de vêtements.
+    this.version(18)
+      .stores({
+        catalogPackages: 'id, tenantId',
+      })
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.commercialPackageId === undefined) item.commercialPackageId = null
+          if (item.packageLineId === undefined) item.packageLineId = null
+        })
+      })
+
   }
 }
 
@@ -681,6 +715,8 @@ export async function clearLocalData(): Promise<void> {
       db.tenantServices,
       db.catalogGarments,
       db.catalogPrices,
+      db.catalogPricingRules,
+      db.catalogPackages,
     ],
     async () => {
       await Promise.all([
@@ -698,6 +734,8 @@ export async function clearLocalData(): Promise<void> {
         db.tenantServices.clear(),
         db.catalogGarments.clear(),
         db.catalogPrices.clear(),
+        db.catalogPricingRules.clear(),
+        db.catalogPackages.clear(),
       ])
     },
   )

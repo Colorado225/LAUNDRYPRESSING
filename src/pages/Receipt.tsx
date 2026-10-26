@@ -142,6 +142,10 @@ export default function Receipt() {
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
                     : item.laundryModelId
                     ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
+                    : item.packageLineId
+                    ? `${item.quantity} pièce(s) · inclus dans le forfait`
+                    : item.commercialPackageId
+                    ? item.conditionsSnapshot ?? `${item.quantity} vêtement(s) compté(s) · forfait`
                     : item.billingUnit === 'FLAT'
                       ? `Forfait ${formatFcfa(item.unitPrice)}`
                       : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé × ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
@@ -150,7 +154,7 @@ export default function Receipt() {
                 {item.laundryServicesSnapshot && <span className="block text-[9px]">Prestations : {item.laundryServicesSnapshot}</span>}
                 {item.familyPackageSnapshot && <span className="block text-[9px]">Composition : {item.familyPackageSnapshot.contents.map((content) => `${content.quantity} × ${content.articleName}`).join(', ')}</span>}
               </td>
-              <td className="text-right whitespace-nowrap">{formatFcfa(item.price)}</td>
+              <td className="text-right whitespace-nowrap">{item.packageLineId ? 'Inclus' : formatFcfa(item.price)}</td>
             </tr>
           ))}
         </tbody>

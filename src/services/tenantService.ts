@@ -1,6 +1,7 @@
 import { isSupabaseConfigured } from '@/lib/env'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { validerNomPressing, validerTelephonePressing } from '@/lib/parametres'
+import type { BusinessModel } from '@/types/database'
 
 /**
  * Modification du pressing (écran Paramètres).
@@ -14,9 +15,13 @@ import { validerNomPressing, validerTelephonePressing } from '@/lib/parametres'
  * multiplierait les chemins d'écriture pour un gain nul.
  */
 
+const MODELES_EXPLOITATION: readonly BusinessModel[] = ['PRESSING_PRO', 'BLANCHISSERIE', 'MIXTE']
+
 export interface PressingModifiable {
   name: string
   phone: string | null
+  /** Guide le mode de saisie proposé au comptoir, sans interdire les autres. */
+  businessModel: BusinessModel
 }
 
 export function tenantErrorMessage(message: string): string {
@@ -45,14 +50,14 @@ export async function fetchTenantPressing(tenantId: string): Promise<PressingMod
 
   const { data, error } = await getSupabaseClient()
     .from('tenants')
-    .select('name, phone')
+    .select('name, phone, business_model')
     .eq('id', tenantId)
     .maybeSingle()
 
   if (error) throw new Error(tenantErrorMessage(error.message))
   if (!data) throw new Error('Pressing introuvable pour ce compte.')
 
-  return { name: data.name, phone: data.phone ?? null }
+  return { name: data.name, phone: data.phone ?? null, businessModel: data.business_model ?? 'MIXTE' }
 }
 
 /** Enregistre le nom et le téléphone du pressing, après validation locale. */
@@ -66,15 +71,19 @@ export async function updateTenant(
   const telephone = validerTelephonePressing(valeurs.phone ?? '')
   if (!telephone.ok) throw new Error(telephone.erreur)
 
+  if (!MODELES_EXPLOITATION.includes(valeurs.businessModel)) {
+    throw new Error('Choisissez le modèle d’exploitation du pressing.')
+  }
+
   if (!isSupabaseConfigured) {
     throw new Error('La modification nécessite un projet Supabase configuré.')
   }
 
   const { data, error } = await getSupabaseClient()
     .from('tenants')
-    .update({ name: nom.valeur, phone: telephone.valeur })
+    .update({ name: nom.valeur, phone: telephone.valeur, business_model: valeurs.businessModel })
     .eq('id', tenantId)
-    .select('name, phone')
+    .select('name, phone, business_model')
     .maybeSingle()
 
   if (error) throw new Error(tenantErrorMessage(error.message))
@@ -84,5 +93,5 @@ export async function updateTenant(
     throw new Error('Modification refusée : seul le propriétaire peut la faire.')
   }
 
-  return { name: data.name, phone: data.phone ?? null }
+  return { name: data.name, phone: data.phone ?? null, businessModel: data.business_model ?? 'MIXTE' }
 }

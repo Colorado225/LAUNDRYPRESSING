@@ -45,7 +45,7 @@ export function generateReceiptText(
   const lignesArticles = items
     .map(
       (item) =>
-        `  • ${item.label} (${item.quantity}x) : ${item.price.toLocaleString("fr-FR")} FCFA`,
+        `  • ${item.label} (${item.quantity}x) : ${item.packageLineId ? "inclus dans le forfait" : `${item.price.toLocaleString("fr-FR")} FCFA`}`,
     )
     .join("\n");
 
@@ -118,7 +118,7 @@ export function generatePrintableReceipt(
       (item) => `
       <tr>
         <td style="text-align: left; padding: 2px 0; font-size: 11px;">${escapeHtml(item.label)} (${item.quantity}x)</td>
-        <td style="text-align: right; padding: 2px 0; font-size: 11px;">${item.price.toLocaleString("fr-FR")}</td>
+        <td style="text-align: right; padding: 2px 0; font-size: 11px;">${item.packageLineId ? "Inclus" : item.price.toLocaleString("fr-FR")}</td>
       </tr>`,
     )
     .join("");

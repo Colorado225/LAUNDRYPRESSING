@@ -224,6 +224,38 @@ describe('lignesFacture', () => {
     })
   })
 
+  it('marque un détail de forfait comme inclus, sans le fusionner avec sa porteuse', () => {
+    const lignes = lignesFacture([
+      ligne({
+        id: 'porteuse-forfait',
+        label: 'Pack 25 vêtements',
+        articleName: null,
+        price: 2_000,
+        quantity: 25,
+        billedQuantity: 25,
+        billingUnit: 'PACKAGE',
+        unitPrice: 80,
+        commercialPackageId: '33333333-3333-4333-8333-333333333333',
+      }),
+      ligne({
+        id: 'detail-forfait',
+        price: 0,
+        quantity: 20,
+        billedQuantity: 20,
+        unitPrice: 0,
+        packageLineId: 'porteuse-forfait',
+      }),
+    ])
+
+    expect(lignes).toHaveLength(2)
+    expect(lignes[0]).not.toHaveProperty('incluseDansForfait')
+    expect(lignes[1]).toMatchObject({
+      incluseDansForfait: true,
+      prixUnitaire: 0,
+      total: 0,
+    })
+  })
+
   it('renvoie une liste vide sans ligne', () => {
     expect(lignesFacture([])).toEqual([])
   })

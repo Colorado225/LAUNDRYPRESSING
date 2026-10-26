@@ -30,6 +30,8 @@ export interface LigneFacture {
   /** Prix unitaire et total restent figés dans les instantanés de commande. */
   prixUnitaire: number
   total: number
+  /** Détail compté à 0 FCFA, facturé uniquement via sa ligne de forfait. */
+  incluseDansForfait?: boolean
   poidsKg?: number
   activiteSnapshot?: string
   detailCommercial?: string
@@ -115,7 +117,7 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
     const activiteSnapshot = item.activityNameSnapshot?.trim() || undefined
     // Ne regroupe que des saisies aux quantités, tarifs, statuts et totaux
     // identiques : le minimum facturable peut rendre le total non multiplicatif.
-    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${compositionVetements ?? ''}|${item.tenantServiceId ?? ''}|${activiteSnapshot ?? ''}|${item.laundryModelId ? item.id : ''}`
+    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${compositionVetements ?? ''}|${item.tenantServiceId ?? ''}|${activiteSnapshot ?? ''}|${item.laundryModelId || item.commercialPackageId ? item.id : item.packageLineId ?? ''}`
 
     const existante = parCle.get(cle)
     if (existante) {
@@ -131,6 +133,7 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
         prixStatut,
         prixUnitaire,
         total: item.price,
+        ...(item.packageLineId ? { incluseDansForfait: true } : {}),
         ...(compositionVetements ? { compositionVetements } : {}),
         ...(activiteSnapshot ? { activiteSnapshot } : {}),
         ...(item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined

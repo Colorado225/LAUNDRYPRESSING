@@ -58,9 +58,9 @@ existent. Un modèle archivé n'apparaît plus au comptoir.
 
 `commercial_packages` (prix global en FCFA, devise du pressing) +
 `commercial_package_items` (composition indicative — articles/pièces incluses).
-L'écran permet de créer/archiver les forfaits ; **la vente d'un forfait au
-comptoir** (ligne de commande portant le prix global) est prévue au
-Lot 3, en réutilisant les instantanés existants.
+L'écran permettait à ce stade de créer/archiver les forfaits. Leur vente
+au comptoir et leur tarification au nombre de vêtements sont réalisées
+au Lot 3 : voir [`docs/CATALOGUE-LOT3.md`](CATALOGUE-LOT3.md).
 
 ## 4. Alignements comptoir
 

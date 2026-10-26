@@ -149,6 +149,9 @@ export default function Facture() {
                 {ligne.activiteSnapshot && (
                   <span className="block text-[8px] text-slate-500">Activité : {ligne.activiteSnapshot}</span>
                 )}
+                {ligne.incluseDansForfait && (
+                  <span className="block text-[8px] text-slate-500">Inclus dans le forfait</span>
+                )}
                 {ligne.compositionVetements && (
                   <span className="block text-[8px] text-slate-500">Vêtements : {ligne.compositionVetements}</span>
                 )}
@@ -176,9 +179,11 @@ export default function Facture() {
                   ? 'Forfait'
                   : `${ligne.quantite} ${libelleUnite(ligne.unite)}`}
               </td>
-              <td className="py-2 text-right whitespace-nowrap">{formatFcfa(ligne.prixUnitaire)}</td>
+              <td className="py-2 text-right whitespace-nowrap">
+                {ligne.incluseDansForfait ? '—' : formatFcfa(ligne.prixUnitaire)}
+              </td>
               <td className="py-2 text-right font-medium whitespace-nowrap">
-                {formatFcfa(ligne.total)}
+                {ligne.incluseDansForfait ? 'Inclus' : formatFcfa(ligne.total)}
               </td>
             </tr>
           ))}

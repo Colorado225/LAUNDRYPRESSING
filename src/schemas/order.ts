@@ -63,6 +63,13 @@ export const orderItemInputSchema = z.object({
   tenantServiceId: z.string().uuid('Référence de prestation invalide').nullable().optional(),
   /** Article du catalogue choisi (obligatoire au comptoir quand le catalogue est installé). */
   garmentTypeId: z.string().uuid("Référence d'article invalide").nullable().optional(),
+  /** Forfait vendu par la ligne porteuse (migration 030). */
+  commercialPackageId: z.string().uuid('Référence de forfait invalide').nullable().optional(),
+  /**
+   * Identifiant temporaire commun à la porteuse et à ses détails pendant la
+   * saisie ; le dépôt local le remplace par l'identifiant réel de la porteuse.
+   */
+  forfaitGroupeId: z.string().uuid('Référence de groupe de forfait invalide').nullable().optional(),
   /**
    * Total imposé par un calcul externe (tarification au kilo par tranches) :
    * prime sur quantité × prix unitaire, le serveur recalcule et contrôle.
@@ -140,6 +147,109 @@ export const orderItemInputSchema = z.object({
 }).superRefine((item, context) => {
   const unite = item.billingUnit ?? 'PIECE'
   const quantite = item.quantity ?? 1
+
+  // Forfait au nombre de vêtements (migration 030) : la porteuse porte le
+  // seul prix confirmé, chaque détail énumère un article à 0 FCFA.
+  const estPorteuseForfait = Boolean(item.commercialPackageId)
+  const estDetailForfait = Boolean(item.forfaitGroupeId && !item.commercialPackageId)
+  if (estPorteuseForfait || estDetailForfait) {
+    if (item.laundryModelId || item.familyPackageSnapshot != null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['commercialPackageId'],
+        message: 'Un forfait au nombre de vêtements ne peut pas être combiné à un ancien modèle commercial.',
+      })
+    }
+    if (item.quantity === undefined || !Number.isInteger(quantite) || quantite < 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['quantity'],
+        message: 'Le comptage d’un forfait se fait en vêtements entiers, au moins un.',
+      })
+    }
+    if (item.billedQuantity !== undefined && item.billedQuantity !== quantite) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billedQuantity'],
+        message: 'Pour un forfait, la quantité facturée doit égaler le nombre de vêtements comptés.',
+      })
+    }
+    if (item.priceStatus === 'ESTIMATED') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['priceStatus'],
+        message: 'Confirmez le comptage et le montant du forfait avant de valider.',
+      })
+    }
+    if (item.pricingMode !== undefined && item.pricingMode !== 'FIXED') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pricingMode'],
+        message: 'Un forfait au nombre de vêtements est vendu au prix calculé de l’offre.',
+      })
+    }
+  }
+  if (estPorteuseForfait) {
+    if (!item.forfaitGroupeId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['forfaitGroupeId'],
+        message: 'Associez la ligne du forfait aux articles comptés.',
+      })
+    }
+    if (unite !== 'PACKAGE') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billingUnit'],
+        message: 'La ligne porteuse d’un forfait doit utiliser l’unité « forfait ».',
+      })
+    }
+    if (item.garmentTypeId != null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['garmentTypeId'],
+        message: 'La ligne du forfait ne désigne pas un article unique : les articles sont ses lignes de détail.',
+      })
+    }
+    if (item.totalImpose === undefined || item.price !== item.totalImpose) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: 'Le montant du forfait doit être le total calculé pour le comptage.',
+      })
+    }
+    if (item.unitPrice === undefined || item.unitPrice <= 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['unitPrice'],
+        message: 'Calculez le montant du forfait avant de valider.',
+      })
+    }
+  }
+  if (estDetailForfait) {
+    if (!item.garmentTypeId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['garmentTypeId'],
+        message: 'Choisissez l’article déposé pour chaque détail de forfait.',
+      })
+    }
+    if (item.price !== 0 || (item.unitPrice ?? 0) !== 0 || item.totalImpose !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: 'Un article inclus dans un forfait doit rester à 0 FCFA : seul le forfait est facturé.',
+      })
+    }
+    if (item.billingUnit !== undefined && item.billingUnit !== 'PIECE') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billingUnit'],
+        message: 'Les articles d’un forfait se comptent à la pièce.',
+      })
+    }
+  }
+
   if (item.laundryModelId) {
     if (item.catalogEntryId) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['catalogEntryId'], message: 'Une ligne modèle ne peut pas dépendre d’un tarif à la pièce.' })
@@ -313,7 +423,11 @@ export const orderItemMeasurementSchema = z.object({
 
 export type UpdateOrderItemMeasurementInput = z.infer<typeof orderItemMeasurementSchema>
 
-export const createOrderSchema = z.object({
+/**
+ * Champs sans la cohérence inter-lignes : utilisé pour contrôler une seule
+ * étape du formulaire. Zod interdit `.pick()` sur un objet raffiné.
+ */
+export const createOrderBaseSchema = z.object({
   customerName: z
     .string()
     .trim()
@@ -330,8 +444,72 @@ export const createOrderSchema = z.object({
   assignedTo: z.string().uuid('Employé invalide').optional(),
 })
 
+export const createOrderSchema = createOrderBaseSchema.superRefine((order, context) => {
+  const groupes = new Map<
+    string,
+    { porteuses: number[]; details: number[]; articles: Set<string> }
+  >()
+
+  order.items.forEach((item, index) => {
+    if (!item.forfaitGroupeId) return
+    const groupe =
+      groupes.get(item.forfaitGroupeId) ?? { porteuses: [], details: [], articles: new Set<string>() }
+    if (item.commercialPackageId) {
+      groupe.porteuses.push(index)
+    } else {
+      groupe.details.push(index)
+      if (item.garmentTypeId) {
+        if (groupe.articles.has(item.garmentTypeId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['items', index, 'garmentTypeId'],
+            message: 'Comptez chaque article une seule fois dans le forfait.',
+          })
+        }
+        groupe.articles.add(item.garmentTypeId)
+      }
+    }
+    groupes.set(item.forfaitGroupeId, groupe)
+  })
+
+  groupes.forEach((groupe) => {
+    const premierIndex = groupe.porteuses[0] ?? groupe.details[0] ?? 0
+    if (groupe.porteuses.length !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items', premierIndex, 'forfaitGroupeId'],
+        message: 'Chaque forfait doit comporter exactement une ligne facturée.',
+      })
+      return
+    }
+
+    const porteuseIndex = groupe.porteuses[0]!
+    if (groupe.details.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items', porteuseIndex, 'quantity'],
+        message: 'Comptez au moins un article dans le forfait.',
+      })
+      return
+    }
+
+    const comptage = groupe.details.reduce(
+      (total, index) => total + (order.items[index]?.quantity ?? 1),
+      0,
+    )
+    const annonce = order.items[porteuseIndex]?.quantity ?? 1
+    if (comptage !== annonce) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items', porteuseIndex, 'quantity'],
+        message: `Le forfait annonce ${annonce} vêtement(s), mais le comptage en totalise ${comptage}.`,
+      })
+    }
+  })
+})
+
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>
-export type CreateOrderInput = z.infer<typeof createOrderSchema>
+export type CreateOrderInput = z.infer<typeof createOrderBaseSchema>
 
 /**
  * Aplatit les erreurs Zod en une liste de messages français.
