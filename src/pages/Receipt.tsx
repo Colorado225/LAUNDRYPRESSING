@@ -8,6 +8,7 @@ import { formatDateFr, formatDateTimeFr, formatFcfa, formatPhoneCi } from '@/lib
 import { libelleUnite } from '@/lib/catalogPricing'
 import { computeBalance } from '@/services/cashService'
 import { PAYMENT_METHOD_LABELS, ORDER_STATUSES } from '@/constants/orders'
+import { formatGarmentComposition } from '@/constants/garmentTypes'
 
 /**
  * Reçu client — impression thermique 80 mm.
@@ -127,9 +128,15 @@ export default function Receipt() {
           {items.map((item) => (
             <tr key={item.id} className="align-top">
               <td className="pr-1">
-                {item.articleName ?? item.label}
-                {item.serviceName ? ` — ${item.serviceName}` : ''}
+                {item.billingUnit === 'KG' ? (item.serviceName ?? item.label) : item.articleName ?? item.label}
+                {item.billingUnit !== 'KG' && item.serviceName ? ` — ${item.serviceName}` : ''}
+                {item.activityNameSnapshot && (
+                  <span className="block text-[9px]">Activité : {item.activityNameSnapshot}</span>
+                )}
                 {item.fabricType ? ` (${item.fabricType})` : ''}
+                {formatGarmentComposition(item.garmentDetails) && (
+                  <span className="block text-[9px]">Vêtements : {formatGarmentComposition(item.garmentDetails)}</span>
+                )}
                 <span className="block text-[10px]">
                   {item.familyPackageSnapshot
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`

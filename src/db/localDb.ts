@@ -8,10 +8,13 @@ import type {
   LaundryModelServiceMode,
   LaundryModelType,
   FamilyPackageSnapshot,
+  OrderGarmentDetail,
   OrderItemPriceStatus,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  TenantActivityCode,
+  TenantServiceBillingUnit,
 } from '@/types/database'
 
 /**
@@ -92,10 +95,13 @@ export interface LocalOrderItem {
   unitPrice: number
   pricingMode: CatalogPricingMode
   priceStatus: OrderItemPriceStatus
-  /** Références et conditions tarifaires figées au moment de la vente. */
+  /** Métadonnées locales historiques ; les champs génériques restent disponibles sur la ligne serveur. */
   catalogEntryId: string | null
   articleName: string | null
   serviceName: string | null
+  /** Référence et nom de l’activité figés depuis la prestation configurée. */
+  tenantServiceId?: string | null
+  activityNameSnapshot?: string | null
   familyNameSnapshot: string | null
   catalogUnitPriceSnapshot: number | null
   minimumQuantitySnapshot: number | null
@@ -117,16 +123,38 @@ export interface LocalOrderItem {
   laundryMinimumWeightKgSnapshot?: number | null
   laundryBillingIncrementKgSnapshot?: number | null
   laundryMinimumChargeSnapshot?: number | null
-  /** Composition locale, préservée jusqu’au RPC du forfait famille. */
+  /** Composition issue des anciennes données locales ; elle n’est plus envoyée au serveur. */
   familyPackageSnapshot?: FamilyPackageSnapshot | null
+  /** Vêtements détaillés pour une prestation au kilo. */
+  garmentDetails?: OrderGarmentDetail[]
+}
+
+/** Prestation configurée pour un pressing (cache hors ligne du référentiel). */
+export interface LocalTenantActivity {
+  id: string
+  tenantId: string
+  name: string
+  sortOrder: number
+}
+
+export interface LocalTenantService {
+  id: string
+  tenantId: string
+  activityId: string
+  activityName: string
+  /** Identifiant historique conservé uniquement pour les lignes migrées. */
+  activityCode: TenantActivityCode | null
+  serviceName: string
+  billingUnit: TenantServiceBillingUnit
+  unitPrice: number | null
+  sortOrder: number
 }
 
 /**
- * Cache local du catalogue (palier 2).
+ * Structure Dexie historique du catalogue.
  *
- * Le catalogue vit sur le serveur (seul le propriétaire l'écrit) mais doit
- * rester consultable hors ligne : la tablette en garde une copie en lecture
- * seule, rafraîchie à chaque synchronisation.
+ * Conservée pour lire et migrer les données locales des versions précédentes.
+ * Le catalogue n'est plus proposé par l'application courante ni synchronisé.
  */
 export interface LocalCatalogEntry {
   id: string
@@ -149,15 +177,11 @@ export interface LocalCatalogEntry {
 }
 
 /**
- * Structure locale du catalogue (palier 2).
+ * Schéma Dexie historique du catalogue.
  *
- * En production, les catégories, articles et prestations vivent dans trois
- * tables serveur distinctes (`catalog_families`, `catalog_articles`,
- * `catalog_services`). En mode démonstration — où aucun projet Supabase n'est
- * configuré — la structure est administrée hors ligne dans cette table Dexie
- * unique, discriminante par `kind`, qui reproduit les trois schémas serveur.
- * Les opérations réécrivent la ligne locale ET l'envoi serveur : à la
- * synchronisation, le serveur reste l'autorité.
+ * Gardé pour reconnaître les données créées par les versions précédentes et
+ * éviter de supprimer les caches locaux lors d'une mise à jour. Il ne reflète
+ * plus le schéma PostgreSQL courant et n'est plus synchronisé.
  */
 export interface LocalCatalogStructureRow {
   id: string
@@ -177,7 +201,7 @@ export interface LocalCatalogStructureRow {
   updatedAt: string
 }
 
-/** Cache hors ligne des paramètres commerciaux, avec libellés de prestations figés. */
+/** Cache Dexie historique des modèles commerciaux, conservé pour compatibilité locale. */
 export interface LocalLaundryModel {
   id: string
   tenantId: string
@@ -332,6 +356,8 @@ export class PressingDatabase extends Dexie {
   orderIssues!: Table<LocalOrderIssue, string>
   refunds!: Table<LocalRefund, string>
   notifications!: Table<LocalNotification, string>
+  tenantActivities!: Table<LocalTenantActivity, string>
+  tenantServices!: Table<LocalTenantService, string>
 
   constructor() {
     super('pressing-pro')
@@ -523,6 +549,40 @@ export class PressingDatabase extends Dexie {
     this.version(11).stores({
       catalogStructure: 'id, tenantId, kind, isActive, [tenantId+kind], [tenantId+isActive]',
     })
+
+    // v12 : prestations choisies par chaque pressing, utilisables hors ligne.
+    this.version(12).stores({
+      tenantServices: 'id, tenantId, activityCode, [tenantId+activityCode]',
+    })
+
+    // v13 : référentiel d'activités personnalisées et relation service → activité.
+    this.version(13).stores({
+      tenantActivities: 'id, tenantId, [tenantId+name]',
+      tenantServices: 'id, tenantId, activityId, activityCode, [tenantId+activityId]',
+    })
+
+    // v14 : tarif optionnel au kilo et détail de la composition des lots pesés.
+    this.version(14)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.garmentDetails === undefined) item.garmentDetails = []
+        })
+        await tx.table('tenantServices').toCollection().modify((service: LocalTenantService & Record<string, unknown>) => {
+          if (service.billingUnit === undefined) service.billingUnit = 'PIECE'
+          if (service.unitPrice === undefined) service.unitPrice = null
+        })
+      })
+
+    // v15 : liaison souple à la prestation de configuration et instantané de l’activité.
+    this.version(15)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.tenantServiceId === undefined) item.tenantServiceId = null
+          if (item.activityNameSnapshot === undefined) item.activityNameSnapshot = null
+        })
+      })
   }
 }
 
@@ -545,6 +605,8 @@ export async function clearLocalData(): Promise<void> {
       db.orderIssues,
       db.refunds,
       db.notifications,
+      db.tenantActivities,
+      db.tenantServices,
     ],
     async () => {
       await Promise.all([
@@ -558,6 +620,8 @@ export async function clearLocalData(): Promise<void> {
         db.orderIssues.clear(),
         db.refunds.clear(),
         db.notifications.clear(),
+        db.tenantActivities.clear(),
+        db.tenantServices.clear(),
       ])
     },
   )

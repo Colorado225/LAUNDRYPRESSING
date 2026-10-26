@@ -7,12 +7,12 @@ paiement Mobile Money).
 
 Toute demande hors de ces quatre modules est refusée en MVP et consignée ici.
 
-> **Mise à jour du 24 octobre 2026.** Les paliers 2 à 4 ont livré plusieurs
-> éléments de ce backlog. Le lot 2 couvre les modèles commerciaux, dont les
-> forfaits famille ; le lot 3 couvre les coûts de stock imputés, les rapports
-> comparatifs et l'export CSV. Les deux lots passent les contrôles automatisés
-> (638 tests, typecheck, lint et build). La recette d'une vraie sortie de stock
-> dans un pressing reste à effectuer ; les limites restantes restent explicites.
+> **État historique — ne pas utiliser comme référence du périmètre courant.**
+> La révision du 26 octobre 2026 a supprimé le catalogue tarifaire et les
+> modèles commerciaux (migration 020). Les anciennes mentions ci-dessous
+> décrivent des fonctionnalités antérieures ; le périmètre actuel et les
+> contrôles à jour sont dans [`AUDIT-COURANT.md`](AUDIT-COURANT.md) et le
+> [`README`](../README.md).
 
 ---
 

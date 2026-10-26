@@ -1,6 +1,8 @@
-# Rapport final — Pressing Pro MVP `v0.1.0-mvp`
+# Rapport final historique — Pressing Pro MVP `v0.1.0-mvp`
 
-Date : 23 octobre 2026 · Périmètre : `RESTRUCTURATION.md` (4 modules)
+> Document d’archive rédigé le 23 octobre 2026. Il décrit un état antérieur du produit, avant la suppression du catalogue et des modèles commerciaux. Pour l’état courant, consulter [`AUDIT-COURANT.md`](AUDIT-COURANT.md) et le [`README`](../README.md).
+
+Date de l’état décrit : 23 octobre 2026 · Périmètre : `RESTRUCTURATION.md`
 
 ---
 

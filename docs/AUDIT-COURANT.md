@@ -1,251 +1,84 @@
 # Audit courant — Pressing Pro
 
-**Date de mise à jour :** 24 octobre 2026
-**Révision auditée :** branche active `arena/6a467918-laundrypressing`, palier 4,
-lots 2 et 3 vérifiés automatiquement ; améliorations UX hors ligne, comptoir et atelier intégrées
-**Méthode :** inventaire automatisé du code (analyse des imports, comptage des
-tables, politiques et tests), puis lecture ciblée des zones sensibles
-(authentification, synchronisation, paiement, RLS).
-**Périmètre :** application `src/`, `supabase/`, `scripts/`, outillage.
+**Date :** 26 octobre 2026
+**Branche :** `arena/e64723d6-laundrypressing`
+**Périmètre :** application, synchronisation, migration 020, tests et documentation du dépôt.
 
-> Ce document décrit l'état **actuel**. L'audit de phase 0, qui décrit le point
-> de départ (commit `ae2903f`), est archivé dans [`AUDIT.md`](AUDIT.md).
-> La feuille de route et la vérification de l'audit externe sont dans
-> [`../MAJ.md`](../MAJ.md).
+> Cet audit décrit l’état vérifié dans cette révision. Les documents d’audit antérieurs restent dans Git comme historique, mais ne sont pas une description de la version actuelle.
 
----
+## Résumé exécutif
 
-## 1. Chiffres clés
+Le projet est une application ERP de pressing construite autour d’un socle offline-first : React/TypeScript, Dexie/IndexedDB, Supabase/PostgreSQL avec RLS et fonctions Edge de paiement CinetPay. Le périmètre comprend la gestion des commandes, l’atelier QR, la caisse, les clients, le stock, les dépenses, les rapports et les fonctions d’administration.
 
-| Élément | Valeur |
-| --- | --- |
-| Fichiers TypeScript / TSX dans `src/` | 148 (94 applicatifs, 53 tests et 1 fichier de support) |
-| Lignes de code applicatif | 24 938 (hors dossier `src/test/`) |
-| Migrations | 19 (`001_init` → `019_catalogue_commercial_models`) |
-| Tables PostgreSQL | 38 + 3 vues (`expense_totals`, `order_balances`, `order_latest_payment`) |
-| Politiques RLS | 91 |
-| Fonctions SQL | 60 (fonctions/procédures du schéma `public`) |
-| Déclencheurs | 56 (hors déclencheurs internes PostgreSQL) |
-| Edge Functions | 2 (`cinetpay-init`, `cinetpay-webhook`) + 3 modules `_shared` |
-| Scripts d'installation, de recette, de base et de déploiement | 7 (`scripts/setup.mjs`, `scripts/lib/config.mjs`, `scripts/sql-verify.sh`, `scripts/recette.mjs`, `scripts/db.mjs`, `scripts/deploy-fonctions.mjs`, `scripts/cinetpay-simule.mjs`) |
-| Fichiers de tests | 59 Vitest (53 sous `src/`, 6 pour les scripts) + 23 fichiers SQL sous `supabase/tests/` |
-| Tests automatisés | 638 (suite relancée le 24/10/2026 après ajouts stock, rapport d’équipe et améliorations UX de l’atelier) |
-| Contrôles SQL exécutés | 175 lors des recettes antérieures (jusqu'aux migrations précédentes) ; tests SQL ajoutés pour 019 non rejoués localement faute de `psql` |
-| Intégration continue | 1 workflow (deux jobs : application et SQL réel) |
-| Code mort | 0 fichier (voir §3) |
+Le catalogue de prestations et les modèles commerciaux ont été retirés. Les lignes de commande sont saisies librement. La migration 020 supprime les tables et références spécifiques de ces fonctionnalités, tout en conservant les libellés, prix, quantités et snapshots génériques des commandes existantes.
 
----
+### État des contrôles locaux
 
-## 2. Inventaire de ce qui est actif
+| Contrôle | Résultat dans cette révision |
+|---|---|
+| `npm run typecheck` | Réussi |
+| `npm run lint` | Réussi |
+| `npm test` | **578 tests réussis / 578**, 55 fichiers |
+| `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
+| `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
+| CI PostgreSQL 16 | Réussie sur la PR #7 : migrations et suite SQL ordonnée passées |
+| Suite SQL ordonnée dans PGlite | Tous les scripts listés par `scripts/sql-verify.sh` passent ; extension `pgcrypto` omise car non disponible dans PGlite |
+| Supabase/CinetPay réels | Non vérifiés dans cette session |
 
-### 2.1 Application
+Le passage complet dans PGlite valide l’ordre des migrations et des tests jusqu’à 020. La CI de la PR #7 a également exécuté `scripts/sql-verify.sh` sur PostgreSQL 16 réel avec succès ; cela ne remplace pas une recette Supabase déployée. Pendant ces vérifications, le test `catalogue_commercial_models.sql` a été corrigé : il prétendait tester un article hors périmètre, mais réutilisait par erreur l’identifiant d’une chemise déjà incluse dans le forfait.
 
-Point d'entrée : `src/main.tsx` → `src/App.tsx` → `src/components/AuthGate.tsx`
-→ `src/components/AppLayout.tsx`.
+## Architecture
 
-| Route | Écran | Chargement |
-| --- | --- | --- |
-| `/` | redirection vers `/commandes` | — |
-| `/commandes` | `Orders.tsx` — liste, recherche, filtres | différé |
-| `/commandes/nouvelle` | `OrderForm.tsx` — création hors ligne | différé |
-| `/commandes/:orderId` | `OrderDetail.tsx` — fiche, QR, statut, paiement | différé |
-| `/atelier` | `Atelier.tsx` — scan caméra | différé (html5-qrcode) |
-| `/offline` | `Offline.tsx` — écran de repli | différé |
-| `/catalogue` | `Catalogue.tsx` — prestations et tarifs (propriétaire) | différé |
-| `/modeles-commerciaux` | `ModelesCommerciaux.tsx` — modèles au kilo et au forfait (propriétaire) | différé |
-| `/caisse` | `Caisse.tsx` — encaissements et clôture journalière | différé |
-| `/commandes/:orderId/recu` | `Receipt.tsx` — reçu 80 mm imprimable | différé |
-| `/tableau-de-bord` | `TableauDeBord.tsx` — indicateurs du propriétaire | différé |
-| `/clients` | `Clients.tsx` — fiches et historique (offline pour l'historique) | différé |
-| `/stock` | `Stock.tsx` — articles, mouvements, fournisseurs | différé |
-| `/depenses` | `Depenses.tsx` — dépenses du propriétaire | différé |
-| `/abonnement` | `Abonnement.tsx` — formule, échéance, droits (propriétaire) | différé |
-| `/support` | `Support.tsx` — demandes d'assistance du pressing | différé |
-| `/supervision` | `Supervision.tsx` — console de l'éditeur | différé |
-| `/parametres` | `Parametres.tsx` — compte, pressing, synchronisation | différé |
-| `/reinitialisation` | `Reinitialisation.tsx` — nouveau mot de passe (avant `AuthGate`) | différé |
-| `/paiement/retour` | `PaymentReturn.tsx` — retour CinetPay, lecture seule | différé |
-| `/payment/return` | alias redirigé (anciens liens) | — |
+### Frontend et données locales
 
-### 2.2 Données locales et synchronisation
+- Point d’entrée : `src/main.tsx` → `src/App.tsx` → `AuthGate` → `AppLayout`.
+- React Router fournit les routes ; les pages sont chargées à la demande.
+- Dexie/IndexedDB contient commandes, lignes, encaissements et éléments de synchronisation.
+- Le moteur `src/sync/syncEngine.ts` transmet les données locales, remonte certains états distants et laisse l’arbitrage des conflits à un choix utilisateur.
+- La PWA est configurée dans `vite.config.ts` avec service worker, manifeste et cache des ressources statiques.
 
-| Fichier | Rôle |
-| --- | --- |
-| `src/db/localDb.ts` | schéma Dexie : `orders` (version serveur, conflits), `orderItems`, `payments`, `cashSessions`, `issues`, `refunds`, catalogue local |
-| `src/db/ordersRepository.ts` | CRUD local, mapping vers Supabase **sans les champs de paiement** |
-| `src/db/hooks.ts` | `useLocalOrders`, `useCreateOrder`, `useUpdateOrderStatus` et lectures d'agrégats (`useAllLocalItems`, `useAllCashPayments`) |
-| `src/sync/syncEngine.ts` | `insert` idempotent (23505 = réponse perdue) puis `update … eq('version')` ; verrou `runId` |
-| `src/services/orderConflictService.ts` | arbitrage : garder la version locale ou adopter celle du serveur |
-| `src/components/ConflictBanner.tsx` | bandeau d'arbitrage dans la fiche commande |
-| `src/stores/syncStore.ts` | état de synchronisation, dont le nombre de conflits (Zustand) |
+### Serveur
 
-### 2.3 Sécurité et multi-tenant
+- Supabase Auth identifie les comptes ; `tenant_users` associe les comptes à un ou plusieurs pressings.
+- PostgreSQL et les politiques RLS encadrent les accès multi-tenant.
+- Les paiements CinetPay sont initiés et confirmés par les Edge Functions `cinetpay-init` et `cinetpay-webhook`.
+- Les opérations sensibles de caisse, d’abonnement et de supervision s’appuient sur des fonctions SQL et des règles serveur.
 
-| Fichier | Rôle |
-| --- | --- |
-| `supabase/migrations/001_init.sql` | 5 tables, 12 politiques RLS, clés composites |
-| `supabase/migrations/002_payments.sql` | `payment_transactions`, index, 1 politique de lecture |
-| `supabase/migrations/003_palier1.sql` | `version`, `previous_status`/`reason`, `guard_order_update`, index de guichet unique |
-| `supabase/migrations/004_palier2.sql` | catalogue, prix historisé, caisse, clôture, 22 contrôles associés |
-| `supabase/migrations/005_palier2_complement.sql` | attribution, réclamations, remboursements, motif de transition |
-| `supabase/migrations/006_palier3.sql` | clients, fournisseurs, stock + grand livre, dépenses, vue `expense_totals` |
-| `supabase/migrations/007_palier4.sql` | formules et abonnements, lecture seule, multi-boutiques, supervision, support |
-| `supabase/migrations/016_laundry_models.sql` | modèles de lavage au kilo ou au forfait et prestations associées |
-| `supabase/migrations/017_laundry_model_order_lines.sql` | instantanés durables du modèle et des règles tarifaires sur les lignes de commande |
-| `supabase/migrations/018_stock_consumption_costs.sql` | coût unitaire figé des sorties imputées, agrégats réservés au propriétaire |
-| `supabase/tests/stock_consumption_costs.sql` | isolation du coût, coût figé et refus d’écriture au réceptionniste |
-| `supabase/tests/isolation.sql` | rejoue PostgREST (`request.jwt.claims`) et exige `42501` |
-| `supabase/tests/roles.sql` | 11 contrôles de la matrice de rôles côté serveur |
-| `supabase/tests/palier1.sql` | verrou optimiste, historique, guichet unique |
-| `supabase/tests/palier3.sql` | 17 contrôles clients, stock et dépenses |
-| `src/lib/permissions.ts` | matrice `Capability` / `can` / `canSeeAmounts` |
-| `src/lib/tenantContext.ts` | pressing courant (Zustand + persistance) |
-| `src/components/AuthGate.tsx` | restauration de session, mode hors ligne |
-| `src/services/authService.ts` | connexion, déconnexion, messages d'erreur en français |
+### Routes métier principales
 
-### 2.4 Gestion (palier 2 et 3)
+Commandes (`/commandes`, `/commandes/nouvelle`, `/commandes/:orderId`), atelier (`/atelier`), caisse (`/caisse`), reçus et factures, clients, stock, dépenses, tableau de bord, rapports, abonnement, support, audit, paramètres et supervision.
 
-| Fichier | Rôle |
-| --- | --- |
-| `src/pages/Catalogue.tsx` + `src/services/catalogService.ts` | prestations, tarifs, prix historisé |
-| `src/pages/ModelesCommerciaux.tsx` + `src/lib/laundryModelPricing.ts` | modèles au kilo/forfait, poids réel, seuils, dépassements et instantanés de tarifs |
-| `src/pages/Caisse.tsx` + `src/services/cashService.ts` | encaissements, solde, clôture |
-| `src/pages/Receipt.tsx` | reçu 80 mm |
-| `src/pages/Clients.tsx` + `src/services/customerService.ts` | fiche par téléphone, historique local, coordonnées serveur |
-| `src/pages/Stock.tsx` + `src/services/stockService.ts` | articles, seuils, mouvements, fournisseurs |
-| `src/pages/Depenses.tsx` + `src/services/expenseService.ts` | dépenses catégorisées (propriétaire) |
-| `src/pages/TableauDeBord.tsx` + `src/services/dashboardService.ts` | agrégats locaux, compléments serveur |
-| `src/pages/Rapports.tsx` + `src/lib/reporting.ts` | périodes 7/30/90 jours, comparaison, marge partielle et export CSV complet |
-| `src/lib/permissions.ts` | 14 capacités, matrice propriétaire / réceptionniste / artisan |
+## Modèle courant des commandes
 
-### 2.5 Paiement
+Le formulaire crée une commande locale avec une ou plusieurs lignes saisies librement : libellé, quantité, prix unitaire, tissu et instructions éventuelles. Le total de ligne est calculé ; le total de commande est la somme des lignes. Les choix de règlement sont distincts de la création : « espèces maintenant » crée d’abord la commande, puis ouvre sa fiche avec le panneau espèces prêt à confirmer. Le Mobile Money se lance depuis une commande déjà créée.
 
-| Fichier | Rôle |
-| --- | --- |
-| `supabase/functions/cinetpay-init/index.ts` | initiation : montant relu en base, multiple de 5, **guichet unique** (réutilisation 15 min), artisan refusé |
-| `supabase/functions/cinetpay-webhook/index.ts` | notification : HMAC **obligatoire en production**, **toujours** reconfirmée auprès de CinetPay, mise à jour compare-and-set |
-| `supabase/functions/_shared/cinetpay.ts` | client HTTP, signature, vérification, arrondi |
-| `src/services/paymentService.ts` | appel de la fonction, redirection, lecture du statut |
+La synchronisation envoie maintenant les lignes ordinaires par upsert sans colonne de catalogue, modèle commercial ou composition famille. Les snapshots génériques encore présents servent à préserver l’historique et les quantités sur les données existantes.
 
-### 2.6 Outillage
+## Migration 020 — portée et précautions
 
-| Fichier | Rôle |
-| --- | --- |
-| `scripts/setup.mjs` | provisionnement complet depuis `.env` (6 étapes, idempotent) |
-| `scripts/lib/config.mjs` | lecture et validation pure du `.env` (`APP_ENV` inclus) |
-| `scripts/sql-verify.sh` | rejoue migrations et tests SQL sur un PostgreSQL jetable |
-| `scripts/recette.mjs` | 7 contrôles **en lecture seule** sur un projet déployé (`npm run recette`) |
-| `src/lib/pagination.ts` | découpe locale (commandes) **et** curseur serveur (dépenses), testés |
-| `src/lib/reporting.ts` | calculs purs des rapports : bornes, comparaisons, coûts imputés, marge partielle, export CSV complet |
-| `src/services/stockService.ts` | stock immuable, imputation des sorties aux lignes, instantané du coût et agrégats de coût réservés au propriétaire |
-| `src/lib/parametres.ts` | validation du pressing, tailles lisibles, règle de purgeabilité |
-| `src/db/maintenance.ts` | résumé, export JSON et purge des commandes synchronisées |
-| `src/lib/facturation.ts` | numéro déterministe, regroupement des lignes, montant en lettres |
-| `src/lib/impression.ts` | `@page` injecté (A4 ou 80 mm), nettoyage après impression |
-| `scripts/db.mjs` | `db:etat` / `db:push` / `db:verifier` sur une base PostgreSQL gérée (Neon) — voir `docs/NEON.md` |
-| `.github/workflows/ci.yml` | job application (`npm ci`, types, style, tests, build) + job SQL réel |
-| `vitest.config.ts` | tests `src/` **et** `scripts/` |
+Fichier : `supabase/migrations/020_suppression_tarification_et_laundry_models.sql`.
 
----
+- Supprime catalogue, aliases, opérations de catalogue, modèles au kilo/forfait et compositions de forfaits famille.
+- Retire les clés catalogue, les colonnes spécifiques aux modèles commerciaux et les snapshots d’opérations d’atelier.
+- Conserve `order_items`, ses prix, libellés, quantités, unités et snapshots génériques.
+- Remplace la fonction de journalisation des corrections de prix pour qu’elle ne consulte plus de colonnes supprimées.
+- Le test `supabase/tests/suppression_tarification.sql` vérifie l’absence des tables/colonnes supprimées, la présence des commandes et de `order_balances`, et l’insertion d’une ligne libre.
+- `scripts/sql-verify.sh` applique les tests historiques avant la migration 020, puis applique 020 et son test de régression. Les anciens tests catalogue sont donc conservés comme tests de transition pré-migration.
 
-## 3. Code mort
+**Risque opérationnel :** les tables, tarifs, modèles et compositions sont supprimés définitivement. Sauvegarde et confirmation de la cible obligatoires avant application à une base existante.
 
-Analyse de reachability depuis `src/main.tsx`, imports statiques **et** différés
-(`React.lazy`) inclus :
+## Écarts résiduels connus
 
-- 65 fichiers atteignables (tous les écrans `lazy` compris) ;
-- 10 fichiers de test sous `src/` (exécutés par Vitest, non importés) ;
-- 1 fichier de déclarations de types (`src/vite-env.d.ts`).
+1. Certains types et modules utilitaires locaux conservent encore des structures de catalogue ou de modèles pour compatibilité avec les données Dexie historiques et des tests antérieurs. Ils ne sont plus exposés par le parcours courant ni transmis au serveur.
+2. Le bundle principal dépasse l’avertissement Vite de 500 kB minifiés. Une analyse ultérieure du découpage des dépendances peut réduire le chargement initial sur réseau mobile.
+3. Le test de sélection « espèces » confirme l’ouverture du panneau d’encaissement après création ; il ne prend pas d’argent sans confirmation explicite sur la fiche.
+4. Les tests locaux ne valident pas l’authentification sur un vrai projet Supabase, les paramètres RLS déployés, les Edge Functions en production, les paiements CinetPay réels ni le comportement sur tablette physique.
+5. Les documents d’historique (`CHANGELOG.md`, anciens rapports de recette, `MAJ.md`) peuvent évoquer l’ancien catalogue comme fonctionnalité passée. Le README et le guide utilisateur doivent rester la référence pour le périmètre actuel.
 
-**Aucun composant, service ou utilitaire orphelin.** Les seuls fichiers non
-atteignables sont les tests et les déclarations, ce qui est attendu.
+## Vérifications à faire avant production
 
----
-
-## 4. Ce qui manque par rapport au modèle cible
-
-| Domaine | État | Palier prévu |
-| --- | --- | --- |
-| Catalogue (articles, prestations, prix) | **Livré** — catalogue article × prestation, prix historisé, dérogation motivée | Fait |
-| Modèles commerciaux au kilo et au forfait | **Livré, lot 2 validé** — poids, minimums, conditions, prestations et instantanés en commande | Fait |
-| Rentabilité des consommables et rapports CSV | **Lot 3 vérifié automatiquement** — sorties imputées et marge partielle, comparaisons, export détaillé ; recette métier avec de vraies sorties encore à effectuer | Fait (recette réelle restante) |
-| Encaissement espèces, acomptes, solde dû | **Livré** — encaissement idempotent, solde recalculé | Fait |
-| Reçus imprimables, clôture de caisse | **Livré** — reçu 80 mm, clôture quotidienne, remboursements déduits | Fait |
-| Workflow complet (tri, séchage, contrôle qualité) | **Livré** — 8 étapes, transitions contrôlées, attribution, réclamations | Fait |
-| Date de livraison promise, alertes de retard | **Livré** — `orders.due_date`, badge « En retard » | Fait |
-| Clients (fiche, historique) | **Livré** — fiche par téléphone, historique, total dépensé, coordonnées | Fait |
-| Stocks, fournisseurs, dépenses | **Livré** — articles, seuils, grand livre immuable, fournisseurs, dépenses propriétaire | Fait |
-| Tableau de bord propriétaire | **Livré** — activité, chiffre d'affaires, encours, retards, alertes, dépenses | Fait |
-| Abonnement, multi-boutiques | **Livré** — formules, échéance, rôle par boutique et supervision | Fait |
-| Navigation et actions par rôle | **Livré** — 14 capacités, navigation filtrée, garde-fou SQL | Fait |
-| Verrou optimiste sur les commandes | **Livré** — comparaison de version, conflit visible et arbitrage | Fait |
-| Journal d'audit des actions sensibles | **Livré** — table `audit_log`, 7 déclencheurs, écran `/audit` propriétaire | Palier 5 |
-| Intégration continue | **Ajoutée** au palier 0 | Fait |
-
----
-
-## 5. Défauts et risques constatés
-
-| # | Gravité | Constat | Référence | Traitement |
-| --- | --- | --- | --- | --- |
-| 1 | **Élevée** | Double paiement possible : chaque appel d'initiation crée un `transaction_id` neuf ; la garde `already_paid` n'agit qu'après encaissement | `cinetpay-init` | **Corrigé** (guichet unique + index partiel) |
-| 2 | **Élevée** | Écrasement silencieux entre deux tablettes : `upsert` sans comparaison de version | `syncEngine` | **Corrigé** (verrou optimiste + arbitrage) |
-| 3 | Moyenne | Signature HMAC facultative si `CINETPAY_SECRET_KEY` est absente | `cinetpay-webhook` | **Corrigé** (refus 503 en production) |
-| 4 | Moyenne | Aucun rôle appliqué à la navigation ni aux actions | `tenantContext` | **Corrigé** (matrice + garde-fou SQL) |
-| 5 | Moyenne | Historique sans ancien statut ni motif | `001_init.sql:86-97` | **Corrigé** : `previous_status` et motif transporté puis journalisé (`005`) |
-| 6 | Faible | Documentation : 16 politiques annoncées pour 13 réelles | `CHANGELOG.md` | **Corrigé** |
-| 7 | Faible | Audit de phase 0 présenté comme l'état courant | `docs/AUDIT.md` | **Archivé** |
-| 8 | Faible | Aucun contrôle automatique avant fusion | `.github/` absent | **Corrigé** |
-
-Les sept défauts constatés sont corrigés. Le **motif** d'une transition est
-transporté par `orders.status_reason`, recopié dans l'historique par le
-déclencheur puis effacé : l'écran d'annulation le propose, et le palier 2 a
-ajouté le motif obligatoire du tarif dérogatoire et du remboursement.
-
-La **recette sur un projet Supabase réel** a été faite le 23/10 pour sa partie
-schéma, isolation et rôles : `supabase/tests/recette_reelle.sql` a tourné sur le
-projet de recette avec deux pressings et trois comptes (voir
-`docs/RECETTE-SUPABASE.md`). Restent hors de portée : les Edge Functions
-déployées et le paiement CinetPay de bout en bout, faute de compte marchand. En revanche, le schéma, les 13 politiques
-RLS, les 5 déclencheurs et les 11 règles de rôle ont été **réellement exécutés**
-sur PostgreSQL 16.2 (voir §6) — ce n'est plus une simple analyse syntaxique.
-
----
-
-## 6. Vérifications automatisées
-
-| Contrôle | Commande | Couverture |
-| --- | --- | --- |
-| Types | `npm run typecheck` | `src/` (les scripts `.mjs` ne sont pas typés) |
-| Style | `npm run lint` | `src/`, tests, scripts `.mjs`, configuration |
-| Tests | `npm test` | 613 tests dans 51 fichiers : QR, synchronisation, rôles, caisse, clients, stock, modèles commerciaux, coûts imputés, rapports, factures, abonnement, isolation, CinetPay et scripts |
-| Build | `npm run build` | compilation TypeScript + PWA (précache 119 fichiers, 1 617 KiB) |
-| SQL | migrations et tests 001→018 | schéma, RLS, rôles, tarification commerciale, instantané du coût, agrégation de consommables, et droits propriétaire vérifiés sous PGlite |
-| Intégration continue | GitHub Actions | deux jobs (application + SQL réel) sur chaque PR et sur `main` |
-
-`sql:verify` crée une base jetable, y applique `supabase/tests/local/00_bootstrap.sql`
-(qui recrée les rôles et le schéma `auth` de Supabase), puis rejoue les tests.
-Il ne demande ni Supabase ni Docker ; seul `psql` 15+ est nécessaire.
-
-**Ce que ces contrôles ne couvrent pas :** provisionnement d'un vrai projet
-Supabase, Edge Functions déployées, webhook CinetPay de bout en bout,
-comportement sur tablette Android physique, relecture multi-appareil des
-réclamations et des remboursements (seul l'état des commandes est rapatrié).
-
-Les modules des paliers 3 et 4 ont une limite supplémentaire **assumée** : le
-stock, les dépenses, l'abonnement, le support et la console de supervision sont
-des écrans de bureau, utilisables **en ligne** uniquement. L'historique client
-et les commandes, eux, restent consultables hors ligne car ils sont dérivés des
-données locales.
-
----
-
-## 7. Ce qui n'est pas vérifiable dans cet environnement
-
-1. Provisionnement réel d'un projet Supabase (aucun identifiant disponible).
-2. Déploiement des Edge Functions et appel réel de l'API CinetPay (aucun compte marchand).
-3. Lighthouse (aucun navigateur Chrome/Chromium installable).
-4. Installation PWA sur un appareil Android physique.
-
-Les migrations et la sécurité **ne sont plus dans cette liste** : elles sont
-exécutées à chaque intégration continue sur PostgreSQL 16 (§6).
+- Exécuter `npm run sql:verify` sur PostgreSQL 15+ (PostgreSQL 16 recommandé) et obtenir tous les contrôles verts.
+- Sauvegarder la base Supabase cible et appliquer la migration 020 sur un environnement de préproduction avant production.
+- Vérifier RLS sur plusieurs pressings et rôles, puis les scénarios de synchronisation après coupure réseau.
+- Tester les Edge Functions, notifications et paiement/remboursement avec les comptes et identifiants CinetPay appropriés.
+- Valider l’installation PWA, le scanner caméra, l’impression et l’usage hors ligne sur la tablette Android cible.

@@ -38,7 +38,18 @@ export const orderItemInputSchema = z.object({
   /** Entrée de catalogue utilisée (prix historisé), absente pour une ligne libre. */
   catalogEntryId: z.string().uuid("Référence de catalogue invalide").optional(),
   articleName: z.string().trim().max(60).optional(),
-  serviceName: z.string().trim().max(60).optional(),
+  serviceName: z.string().trim().max(80).optional(),
+  /** Prestation configurée source et nom de son activité figé au dépôt. */
+  tenantServiceId: z.string().uuid('Référence de prestation invalide').nullable().optional(),
+  activityNameSnapshot: z.string().trim().max(80).nullable().optional(),
+  /** Types et quantités énumérés pour une ligne de prestation au kilo. */
+  garmentDetails: z.array(z.object({
+    type: z.enum([
+      'CHEMISE', 'T_SHIRT', 'PANTALON', 'JEAN', 'ROBE', 'JUPE',
+      'VESTE', 'COSTUME', 'BOUBOU', 'DRAP', 'SERVIETTE', 'AUTRE',
+    ]),
+    quantity: z.number().int().min(1).max(1000),
+  })).max(100).optional(),
   /** Quantité réellement pesée/mesurée ; 1 par défaut pour les anciennes lignes. */
   quantity: z
     .number()
@@ -148,6 +159,34 @@ export const orderItemInputSchema = z.object({
   ) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'La référence du modèle commercial est manquante.' })
   }
+  if (item.tenantServiceId && (!item.serviceName?.trim() || !item.activityNameSnapshot?.trim())) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['tenantServiceId'],
+      message: 'Rechargez la prestation sélectionnée pour conserver son activité et son libellé.',
+    })
+  }
+  if (unite === 'KG' && (item.unitPrice ?? 0) <= 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['unitPrice'],
+      message: 'Indiquez un tarif au kilo supérieur à zéro.',
+    })
+  }
+  if (unite === 'KG' && item.garmentDetails !== undefined && item.garmentDetails.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['garmentDetails'],
+      message: 'Énumérez au moins un type de vêtement pour cette prestation au kilo.',
+    })
+  }
+  if (unite !== 'KG' && item.garmentDetails?.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['garmentDetails'],
+      message: 'Le détail des vêtements ne s’applique qu’à une prestation au kilo.',
+    })
+  }
   if (['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(unite) && !Number.isInteger(quantite)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -160,13 +199,6 @@ export const orderItemInputSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['quantity'],
       message: 'Une prestation forfaitaire se facture une seule fois.',
-    })
-  }
-  if (!item.catalogEntryId && (item.priceReason ?? '').trim().length < 10) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['priceReason'],
-      message: 'Une ligne saisie librement exige un motif de 10 caractères minimum.',
     })
   }
   if (item.pricingMode === 'UNCONFIGURED') {

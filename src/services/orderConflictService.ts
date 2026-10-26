@@ -1,6 +1,6 @@
 import { db, type LocalOrder, type LocalOrderItem } from '@/db/localDb'
 import { getSupabaseClient } from '@/lib/supabaseClient'
-import type { OrderItemFamilyPackageContentRow, OrderItemFamilyPackageRow, OrderItemRow, OrderRow } from '@/types/database'
+import type { OrderItemRow, OrderRow } from '@/types/database'
 
 /**
  * Arbitrage d'un conflit de synchronisation (palier 1).
@@ -29,8 +29,6 @@ export class ConflictResolutionError extends Error {
 interface ServerOrder {
   order: OrderRow
   items: OrderItemRow[]
-  familyPackages: OrderItemFamilyPackageRow[]
-  familyContents: OrderItemFamilyPackageContentRow[]
 }
 
 /** Lit l'état courant d'une commande sur le serveur (RLS : son pressing seul). */
@@ -66,20 +64,7 @@ async function fetchServerOrder(orderId: string): Promise<ServerOrder> {
   if (itemsError) {
     throw new ConflictResolutionError('Impossible de lire les vêtements de cette commande.')
   }
-  const [packagesResult, contentsResult] = await Promise.all([
-    supabase.from('order_item_family_packages').select('*').eq('order_id', orderId).eq('tenant_id', order.tenant_id),
-    supabase.from('order_item_family_package_contents').select('*').eq('order_id', orderId).eq('tenant_id', order.tenant_id),
-  ])
-  if (packagesResult.error || contentsResult.error) {
-    throw new ConflictResolutionError('Impossible de lire la composition des forfaits famille.')
-  }
-
-  return {
-    order,
-    items: items ?? [],
-    familyPackages: packagesResult.data ?? [],
-    familyContents: contentsResult.data ?? [],
-  }
+  return { order, items: items ?? [] }
 }
 
 /**
@@ -103,12 +88,9 @@ export async function keepLocalVersion(order: LocalOrder): Promise<void> {
  * La commande locale et ses vêtements sont remplacés, puis marqués synchronisés.
  */
 export async function takeServerVersion(order: LocalOrder): Promise<void> {
-  const { order: server, items, familyPackages, familyContents } = await fetchServerOrder(order.id)
+  const { order: server, items } = await fetchServerOrder(order.id)
 
-  const localItems: LocalOrderItem[] = items.map((item) => {
-    const familyPackage = familyPackages.find((candidate) => candidate.order_item_id === item.id)
-    const familyContentsForItem = familyContents.filter((content) => content.order_item_id === item.id)
-    return ({
+  const localItems: LocalOrderItem[] = items.map((item) => ({
     id: item.id,
     orderId: item.order_id,
     tenantId: item.tenant_id,
@@ -122,10 +104,12 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     unitPrice: item.unit_price ?? item.price,
     pricingMode: item.pricing_mode ?? 'FIXED',
     priceStatus: item.price_status ?? 'CONFIRMED',
-    // Les snapshots absents désignent une ancienne ligne libre/historique.
-    catalogEntryId: item.catalog_entry_id ?? null,
+    // Les instantanés purement locaux sont initialisés vides lors de la reprise.
+    catalogEntryId: null,
     articleName: item.article_name ?? null,
     serviceName: item.service_name ?? null,
+    tenantServiceId: item.tenant_service_id ?? null,
+    activityNameSnapshot: item.activity_name_snapshot ?? null,
     familyNameSnapshot: item.family_name_snapshot ?? null,
     catalogUnitPriceSnapshot: item.catalog_unit_price_snapshot ?? null,
     minimumQuantitySnapshot: item.minimum_quantity_snapshot ?? null,
@@ -133,45 +117,22 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     minimumChargeSnapshot: item.minimum_charge_snapshot ?? null,
     conditionsSnapshot: item.conditions_snapshot ?? null,
     priceReason: item.price_reason ?? null,
-    laundryModelId: item.laundry_model_id ?? null,
-    laundryModelNameSnapshot: item.laundry_model_name_snapshot ?? null,
-    laundryModelTypeSnapshot: item.laundry_model_type_snapshot ?? null,
-    laundryWeightKg: item.laundry_weight_kg ?? null,
-    laundryPriceBreakdownSnapshot: item.laundry_price_breakdown_snapshot ?? null,
-    laundryServicesSnapshot: item.laundry_services_snapshot ?? null,
-    laundryPricePerKgSnapshot: item.laundry_price_per_kg_snapshot ?? null,
-    laundryPackagePriceSnapshot: item.laundry_package_price_snapshot ?? null,
-    laundryIncludedWeightKgSnapshot: item.laundry_included_weight_kg_snapshot ?? null,
-    laundryOveragePricePerKgSnapshot: item.laundry_overage_price_per_kg_snapshot ?? null,
-    laundryMinimumWeightKgSnapshot: item.laundry_minimum_weight_kg_snapshot ?? null,
-    laundryBillingIncrementKgSnapshot: item.laundry_billing_increment_kg_snapshot ?? null,
-    laundryMinimumChargeSnapshot: familyPackage?.minimum_charge_snapshot ?? item.laundry_minimum_charge_snapshot ?? null,
-    ...(familyPackage ? {
-      laundryModelId: familyPackage.laundry_model_id,
-      laundryModelNameSnapshot: familyPackage.model_name_snapshot,
-      laundryModelTypeSnapshot: 'FAMILY_PACKAGE' as const,
-      laundryWeightKg: null,
-      laundryPackagePriceSnapshot: familyPackage.package_price_snapshot,
-      laundryPriceBreakdownSnapshot: `${familyPackage.piece_count} pièce(s) · forfait famille`,
-      familyPackageSnapshot: {
-        modelId: familyPackage.laundry_model_id,
-        modelName: familyPackage.model_name_snapshot,
-        packagePrice: familyPackage.package_price_snapshot,
-        includedPieces: familyPackage.included_pieces_snapshot,
-        overagePricePerPiece: familyPackage.overage_price_per_piece_snapshot,
-        minimumCharge: familyPackage.minimum_charge_snapshot,
-        pieceCount: familyPackage.piece_count,
-        manualTotalPrice: familyPackage.overage_price_per_piece_snapshot === null && familyPackage.piece_count > familyPackage.included_pieces_snapshot ? item.price : null,
-        contents: familyContentsForItem.map((content) => ({
-          articleId: content.article_id,
-          articleName: content.article_name_snapshot,
-          familyName: content.family_name_snapshot,
-          quantity: content.quantity,
-          careInstructions: content.care_instructions_snapshot,
-        })),
-      },
-    } : { familyPackageSnapshot: null }),
-  })})
+    laundryModelId: null,
+    laundryModelNameSnapshot: null,
+    laundryModelTypeSnapshot: null,
+    laundryWeightKg: null,
+    laundryPriceBreakdownSnapshot: null,
+    laundryServicesSnapshot: null,
+    laundryPricePerKgSnapshot: null,
+    laundryPackagePriceSnapshot: null,
+    laundryIncludedWeightKgSnapshot: null,
+    laundryOveragePricePerKgSnapshot: null,
+    laundryMinimumWeightKgSnapshot: null,
+    laundryBillingIncrementKgSnapshot: null,
+    laundryMinimumChargeSnapshot: null,
+    familyPackageSnapshot: null,
+    garmentDetails: item.garment_details ?? [],
+  }))
 
   const localOrder: LocalOrder = {
     ...order,

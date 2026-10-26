@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { formatGarmentComposition } from '@/constants/garmentTypes'
 import PaymentButton from '@/components/PaymentButton'
 import QrCodeDisplay from '@/components/QrCodeDisplay'
 import OrderMeasurementEditor from '@/components/OrderMeasurementEditor'
@@ -205,6 +206,9 @@ export default function OrderDetail() {
             <li key={item.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
               <div className="min-w-0">
                 <p className="font-medium text-slate-800">{item.label}</p>
+                {item.serviceName && item.serviceName !== item.label && <p className="text-xs text-slate-600">Prestation : {item.serviceName}</p>}
+                {item.activityNameSnapshot && <p className="text-xs text-slate-600">Activité : {item.activityNameSnapshot}</p>}
+                {formatGarmentComposition(item.garmentDetails) && <p className="text-xs text-slate-600">Vêtements : {formatGarmentComposition(item.garmentDetails)}</p>}
                 <p className="text-xs text-slate-500">
                   {item.familyPackageSnapshot
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`

@@ -1,6 +1,7 @@
 import { ORDER_STATUSES, PAYMENT_METHOD_LABELS } from '@/constants/orders'
 import type { LocalCashPayment, LocalOrder, LocalOrderItem } from '@/db/localDb'
 import { computeBalance } from '@/services/cashService'
+import { formatGarmentComposition } from '@/constants/garmentTypes'
 
 /**
  * Facturation (écran facture A4).
@@ -30,8 +31,10 @@ export interface LigneFacture {
   prixUnitaire: number
   total: number
   poidsKg?: number
+  activiteSnapshot?: string
   detailCommercial?: string
   prestationsCommerciales?: string
+  compositionVetements?: string
 }
 
 export interface AcompteFacture {
@@ -96,7 +99,11 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
   const parCle = new Map<string, LigneFacture>()
 
   for (const item of items) {
-    const libelle = [item.articleName ?? item.label, item.serviceName]
+    const serviceKiloConfigure = item.billingUnit === 'KG' && Boolean(item.activityNameSnapshot)
+    const libelle = [
+      serviceKiloConfigure ? item.serviceName ?? item.label : item.articleName ?? item.label,
+      serviceKiloConfigure ? null : item.serviceName,
+    ]
       .filter((morceau): morceau is string => Boolean(morceau && morceau.trim()))
       .join(' — ')
     const quantiteMesuree = item.quantity ?? 1
@@ -104,9 +111,11 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
     const unite = item.billingUnit ?? 'PIECE'
     const prixStatut = item.priceStatus ?? 'CONFIRMED'
     const prixUnitaire = item.unitPrice ?? item.price
+    const compositionVetements = formatGarmentComposition(item.garmentDetails)
+    const activiteSnapshot = item.activityNameSnapshot?.trim() || undefined
     // Ne regroupe que des saisies aux quantités, tarifs, statuts et totaux
     // identiques : le minimum facturable peut rendre le total non multiplicatif.
-    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${item.laundryModelId ? item.id : ''}`
+    const cle = `${libelle}|${unite}|${prixUnitaire}|${prixStatut}|${item.price}|${quantiteMesuree}|${quantite}|${compositionVetements ?? ''}|${item.tenantServiceId ?? ''}|${activiteSnapshot ?? ''}|${item.laundryModelId ? item.id : ''}`
 
     const existante = parCle.get(cle)
     if (existante) {
@@ -122,6 +131,8 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
         prixStatut,
         prixUnitaire,
         total: item.price,
+        ...(compositionVetements ? { compositionVetements } : {}),
+        ...(activiteSnapshot ? { activiteSnapshot } : {}),
         ...(item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined
           ? {
               poidsKg: item.laundryWeightKg,

@@ -1,110 +1,54 @@
 -- =============================================================================
 -- 020_suppression_tarification_et_laundry_models.sql
 -- =============================================================================
--- Suppression définitive du système de tarification (grille des tarifs) et des
--- modèles commerciaux pressing (prix au kilo / forfait).
+-- Retire le catalogue tarifaire et les modèles commerciaux (au kilo, forfaits
+-- et forfaits famille). Les anciennes lignes de commande conservent leurs
+-- libellés, quantités, prix et snapshots génériques : les reçus déjà émis ne
+-- sont donc pas recalculés. Les clés et snapshots propres au catalogue/modèle
+-- sont supprimés.
 --
--- ATTENTION : opération irréversible. Toutes les données suivantes sont perdues :
---   • Tarifs configurés dans catalog_entries (grille de départ + tarifs saisis)
---   • Articles, prestations, familles du catalogue
---   • Modèles de pressing laundry_models (PER_KG, WEIGHT_PACKAGE)
---   • Toutes les colonnes de tarification sur order_items (instantanés, modèle, etc.)
---
--- Les commandes existantes conservent leur total (order_items.price) mais
--- perdent toute référence au catalogue et au modèle de pressing.
+-- Migration destructive : les tarifs, références du catalogue, modèles et
+-- compositions de forfaits sont définitivement supprimés.
 -- =============================================================================
 
 begin;
 
--- ---------------------------------------------------------------------------
--- 1. Retirer les colonnes de tarification / modèle pressing sur order_items
---    (doit se faire AVANT la suppression des tables référencées)
--- ---------------------------------------------------------------------------
+-- Retirer d'abord les automatismes qui consultent les tables supprimées.
+drop trigger if exists trg_order_items_guard_price on public.order_items;
+drop trigger if exists trg_order_items_guard_active_catalog on public.order_items;
+drop trigger if exists trg_order_items_z_laundry_model on public.order_items;
+drop trigger if exists trg_order_items_snapshot_service_operations on public.order_items;
+drop trigger if exists trg_order_items_zz_model_operations on public.order_items;
 
+-- Les tableaux de composition et leurs déclencheurs ne sont plus utilisés.
+drop table if exists public.order_item_family_package_contents cascade;
+drop table if exists public.order_item_family_packages cascade;
+
+-- Préserver la journalisation des corrections de prix sans dépendre du
+-- catalogue supprimé ni des snapshots de modèles.
+create or replace function public.log_order_item_price_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.price is distinct from old.price then
+    insert into public.order_price_history
+      (tenant_id, order_id, order_item_id, previous_price, new_price, reason, changed_by)
+    values
+      (new.tenant_id, new.order_id, new.id, old.price, new.price, new.price_reason, auth.uid());
+  end if;
+  return new;
+end;
+$$;
+
+-- Clé de catalogue et données propres aux modèles. Les snapshots tarifaires
+-- génériques (quantité, unité, prix unitaire, etc.) sont préservés pour
+-- compatibilité des reçus, de l'historique et des commandes hors ligne.
 alter table public.order_items
   drop constraint if exists order_items_catalog_fk,
-drop index if exists order_items_laundry_model_idx;
-drop index if exists idx_catalog_tenant;
-
--- ---------------------------------------------------------------------------
--- 2. Supprimer toutes les tables de tarification et de modèles pressing
---    (CASCADE supprime triggers, index, contraintes, RLS associés)
--- ---------------------------------------------------------------------------
-
-drop table if exists public.laundry_model_template_families cascade;
-drop table if exists public.laundry_model_template_services cascade;
-drop table if exists public.laundry_model_templates cascade;
-drop table if exists public.catalog_model_templates cascade;
-drop table if exists public.catalog_template_installations cascade;
-drop table if exists public.catalog_operation_definitions cascade;
-drop table if exists public.laundry_model_services cascade;
-drop table if exists public.laundry_models cascade;
-drop table if exists public.catalog_services cascade;
-drop table if exists public.catalog_articles cascade;
-drop table if exists public.catalog_families cascade;
-drop table if exists public.catalog_entries cascade;
-
--- ---------------------------------------------------------------------------
--- 3. Supprimer les fonctions SQL orphelines liées au catalogue / tarification
--- ---------------------------------------------------------------------------
-
-drop function if exists public.catalog_name_key(text) cascade;
-drop function if exists public.catalog_billable_quantity(numeric, text, numeric, numeric) cascade;
-drop function if exists public.catalog_line_total(numeric, integer, integer) cascade;
-drop function if exists public.guard_order_item_price() cascade;
-drop function if exists public.guard_catalog_service_scope() cascade;
-drop function if exists public.guard_catalog_reference_archive() cascade;
-drop function if exists public.guard_active_catalog_entry_references() cascade;
-drop function if exists public.guard_order_item_active_catalog() cascade;
-drop function if exists public.log_order_item_price_change() cascade;
-drop function if exists public.save_laundry_model(json, json) cascade;
-drop function if exists public.save_laundry_model(json, json, json) cascade;
-drop function if exists public.guard_laundry_model_order_item() cascade;
-drop function if exists public.apply_laundry_model_template(text, json, json) cascade;
-drop function if exists public.count_catalog_tarifs_dependants(uuid, text, uuid, boolean) cascade;
-drop function if exists public.compter_tarifs_dependants(uuid, text, uuid, boolean) cascade;
-
--- ---------------------------------------------------------------------------
--- 4. Nettoyer les vues qui auraient pu référencer ces tables
--- ---------------------------------------------------------------------------
-
-drop view if exists public.order_balances cascade;
-
-create or replace view public.order_balances
-with (security_invoker = true)
-as
-select
-  o.id                                        as order_id,
-  o.tenant_id,
-  o.total_amount,
-  case
-    when o.payment_status = 'paid' then o.total_amount
-    else coalesce(sum(pt.amount) filter (where pt.status = 'paid'), 0)
-  end                                         as paid_amount,
-  case
-    when o.payment_status = 'paid' then 0
-    else greatest(
-      o.total_amount - coalesce(sum(pt.amount) filter (where pt.status = 'paid'), 0),
-      0
-    )
-  end                                         as remaining_amount,
-  o.payment_status,
-  o.due_date,
-  o.status
-from public.orders o
-left join public.payment_transactions pt on pt.order_id = o.id
-group by o.id, o.tenant_id, o.total_amount, o.payment_status, o.due_date, o.status;
-
-grant select on public.order_balances to authenticated;
-
-comment on migration 020 is
-  'Suppression définitive de la grille des tarifs (catalog_*) et des modèles pressing (laundry_models_*).';
-
-commit;
-
-  drop constraint if exists order_items_laundry_model_fk;
-
-alter table public.order_items
+  drop constraint if exists order_items_laundry_model_fk,
   drop column if exists catalog_entry_id,
   drop column if exists laundry_model_id,
   drop column if exists laundry_model_name_snapshot,
@@ -118,7 +62,68 @@ alter table public.order_items
   drop column if exists laundry_overage_price_per_kg_snapshot,
   drop column if exists laundry_minimum_weight_kg_snapshot,
   drop column if exists laundry_billing_increment_kg_snapshot,
-  drop column if exists laundry_minimum_charge_snapshot;
+  drop column if exists laundry_minimum_charge_snapshot,
+  drop column if exists service_operations_snapshot;
 
-drop index if exists order_items_laundry_model_idx;
-drop index if exists idx_catalog_tenant;
+drop index if exists public.order_items_laundry_model_idx;
+drop index if exists public.idx_catalog_tenant;
+
+-- Référentiels, modèles, alias et réglages commerciaux.
+drop table if exists public.laundry_model_template_families cascade;
+drop table if exists public.laundry_model_template_services cascade;
+drop table if exists public.laundry_model_templates cascade;
+drop table if exists public.catalog_model_templates cascade;
+drop table if exists public.catalog_template_installations cascade;
+drop table if exists public.catalog_operation_definitions cascade;
+drop table if exists public.catalog_article_aliases cascade;
+drop table if exists public.catalog_service_operations cascade;
+drop table if exists public.laundry_model_catalog_scope cascade;
+drop table if exists public.laundry_model_services cascade;
+drop table if exists public.laundry_models cascade;
+drop table if exists public.catalog_services cascade;
+drop table if exists public.catalog_articles cascade;
+drop table if exists public.catalog_families cascade;
+drop table if exists public.catalog_entries cascade;
+
+-- Les routines de ces fonctionnalités peuvent avoir des dépendances PL/pgSQL
+-- non suivies automatiquement par PostgreSQL. Les retirer par famille de nom.
+do $$
+declare
+  fonction record;
+begin
+  for fonction in
+    select p.oid::regprocedure as signature
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prokind = 'f'
+       and (
+         p.proname like 'catalog\_%' escape '\'
+         or p.proname like 'laundry\_%' escape '\'
+         or p.proname like 'apply_catalog\_%' escape '\'
+         or p.proname like 'save_catalog\_%' escape '\'
+         or p.proname like 'guard_catalog\_%' escape '\'
+         or p.proname in (
+           'guard_order_item_price',
+           'guard_order_item_active_catalog',
+           'guard_laundry_model_order_item',
+           'snapshot_catalog_service_operations',
+           'snapshot_laundry_model_operations',
+           'prepare_family_package_snapshot',
+           'prepare_family_package_content_snapshot',
+           'validate_family_package_piece_count',
+           'create_family_package_order_item',
+           'count_catalog_tarifs_dependants',
+           'compter_tarifs_dependants'
+         )
+       )
+  loop
+    execute format('drop function %s cascade', fonction.signature);
+  end loop;
+end;
+$$;
+
+comment on table public.order_items is
+  'Lignes de commande avec prix et quantités figés ; aucun lien vers un catalogue tarifaire.';
+
+commit;

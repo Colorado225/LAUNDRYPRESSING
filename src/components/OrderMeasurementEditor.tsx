@@ -129,7 +129,7 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
             {quantiteFacturee === null
               ? 'La quantité saisie n’est pas compatible avec l’unité de cette ligne.'
               : `${quantiteFacturee} ${libelleUnite(item.billingUnit)} facturé${item.billingUnit === 'PIECE' ? 'e' : 's'} · nouveau montant : ${formatFcfa(totalPrevu ?? 0)}.`}
-            {' '}Le prix unitaire et l’instantané catalogue restent inchangés.
+            {' '}Le prix unitaire et les valeurs tarifaires de référence restent inchangés.
           </p>
 
           <div className="flex flex-wrap gap-2">

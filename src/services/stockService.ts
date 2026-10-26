@@ -174,7 +174,7 @@ export async function listRecentStockOrderItems(tenantId: string): Promise<Stock
   const orderIds = orderRows.map((order) => order.id)
   const { data: lines, error: linesError } = await supabase
     .from('order_items')
-    .select('id, order_id, label, service_name, laundry_model_name_snapshot, price')
+    .select('id, order_id, label, service_name, price')
     .eq('tenant_id', tenantId)
     .in('order_id', orderIds)
   if (linesError) throw new Error(stockErrorMessage(linesError.message))
@@ -188,7 +188,7 @@ export async function listRecentStockOrderItems(tenantId: string): Promise<Stock
       orderId: line.order_id,
       customerName: order.customer_name,
       createdAt: order.created_at,
-      label: line.laundry_model_name_snapshot || line.service_name || line.label,
+      label: line.service_name || line.label,
       amount: line.price,
     }]
   })

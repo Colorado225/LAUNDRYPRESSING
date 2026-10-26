@@ -16,6 +16,7 @@ import {
   ScanLine,
   Settings,
   Shirt,
+  Sparkles,
   Users,
   Wallet,
   X,
@@ -100,6 +101,10 @@ function buildNavigation(role: TenantRole | null, isPlatformAdmin: boolean): Nav
 
   if (can(role, 'support.contact')) {
     items.push({ to: '/support', label: 'Support', icon: LifeBuoy })
+  }
+
+  if (can(role, 'tenant.manage')) {
+    items.push({ to: '/prestations', label: 'Services & activités', icon: Sparkles })
   }
 
   if (isPlatformAdmin) {

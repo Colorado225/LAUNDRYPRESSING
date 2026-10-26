@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { formatGarmentComposition } from '@/constants/garmentTypes'
 import QrScanner from '@/components/QrScanner'
 import { useUpdateOrderStatus } from '@/db/hooks'
 import { findOrderByQrCode, getOrderWithItems, getWorkshopOrders } from '@/db/ordersRepository'
@@ -536,7 +537,12 @@ function ScanResult({
         <ul className="mt-3 divide-y divide-slate-100 text-sm">
           {items.map((item) => (
             <li key={item.id} className="flex flex-wrap justify-between gap-1 py-2">
-              <span className="font-medium text-slate-800">{item.label}</span>
+              <span className="font-medium text-slate-800">
+                {item.label}
+                {item.serviceName && item.serviceName !== item.label && <span className="block text-xs text-slate-600">Prestation : {item.serviceName}</span>}
+                {item.activityNameSnapshot && <span className="block text-xs text-slate-600">Activité : {item.activityNameSnapshot}</span>}
+                {formatGarmentComposition(item.garmentDetails) && <span className="block text-xs text-slate-600">Vêtements : {formatGarmentComposition(item.garmentDetails)}</span>}
+              </span>
               <span className="text-xs text-slate-500">
                 {[item.fabricType, item.specialInstructions].filter(Boolean).join(' · ') || '—'}
               </span>
