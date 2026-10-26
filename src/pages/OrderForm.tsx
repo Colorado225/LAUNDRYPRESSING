@@ -299,6 +299,18 @@ export default function OrderForm() {
   }
 
   const submit = async () => {
+    // Trace d'entrée : si aucun événement `clic_enregistrer` n'arrive alors que
+    // le comptoir clique, c'est que le clic n'atteint jamais ce gestionnaire
+    // (bouton inerte, élément superposé) — et non que le serveur refuse.
+    void signalerSonde({
+      evenement: 'clic_enregistrer',
+      etape,
+      lignes: items.length,
+      total,
+      peut_creer: canCreate,
+      en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+    })
+
     if (!canCreate) {
       const message = `Création refusée : votre rôle (${roleEffectif ?? 'inconnu'}) n'a pas le droit de créer une commande.`
       setErrors([message])
@@ -353,6 +365,7 @@ export default function OrderForm() {
       // Garde-fou : une écriture locale bloquée (stockage saturé, transaction
       // bloquée par un autre onglet) laisserait sinon le bouton tourner
       // indéfiniment sans jamais rien dire.
+      void signalerSonde({ evenement: 'creation_locale_demarree', etape })
       const { order } = await Promise.race([
         createOrder(parsed.data),
         new Promise<never>((_, rejeter) =>
@@ -371,6 +384,7 @@ export default function OrderForm() {
       // 2. Envoi immédiat vers Supabase, sans attendre la boucle de fond :
       //    la commande et ses lignes arrivent en base dans la seconde, et un
       //    échec est signalé tout de suite avec son motif.
+      void signalerSonde({ evenement: 'commande_creee_localement', commande: order.id })
       setEnregistrement('serveur')
       // L'envoi ne doit jamais interrompre le parcours : quoi qu'il arrive, la
       // commande existe sur l'appareil et le comptoir repart avec un message.
@@ -391,6 +405,7 @@ export default function OrderForm() {
         })
       }
 
+      void signalerSonde({ evenement: 'envoi_termine', commande: order.id, statut: envoi.statut })
       if (envoi.statut === 'synced') {
         toast.success('Commande enregistrée et synchronisée.', { icon: '✅' })
       } else {
