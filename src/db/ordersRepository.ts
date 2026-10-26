@@ -106,6 +106,8 @@ export async function createOrderLocal(
       serviceName: item.serviceName?.trim() ? item.serviceName.trim() : null,
       tenantServiceId: item.tenantServiceId ?? null,
       activityNameSnapshot: item.activityNameSnapshot?.trim() ? item.activityNameSnapshot.trim() : null,
+      categoryNameSnapshot: item.categoryNameSnapshot?.trim() ? item.categoryNameSnapshot.trim() : null,
+      packageSnapshot: item.packageSnapshot ?? null,
       familyNameSnapshot: item.familyNameSnapshot ?? null,
       catalogUnitPriceSnapshot: item.catalogUnitPriceSnapshot ?? null,
       minimumQuantitySnapshot: item.minimumQuantitySnapshot ?? null,
@@ -737,6 +739,16 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     service_name: item.serviceName,
     tenant_service_id: item.tenantServiceId ?? null,
     activity_name_snapshot: item.activityNameSnapshot ?? null,
+    category_name_snapshot: item.categoryNameSnapshot ?? null,
+    package_snapshot: item.packageSnapshot
+      ? {
+          tier_id: item.packageSnapshot.tierId,
+          label: item.packageSnapshot.label,
+          weight_kg: item.packageSnapshot.weightKg,
+          price_fcfa: item.packageSnapshot.priceFcfa,
+          service_name: item.packageSnapshot.serviceName,
+        }
+      : null,
     family_name_snapshot: item.familyNameSnapshot,
     catalog_unit_price_snapshot: item.catalogUnitPriceSnapshot,
     minimum_quantity_snapshot: item.minimumQuantitySnapshot,

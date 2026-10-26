@@ -20,7 +20,9 @@ export default function OrderMeasurementEditor({ orderId, item, editable }: Prop
   const [confirmee, setConfirmee] = useState(item.priceStatus === 'CONFIRMED')
   const [enregistrement, setEnregistrement] = useState(false)
 
-  if (!editable || item.billingUnit === 'FLAT') return null
+  // Un forfait poids est verrouillé par son snapshot (quantité 1, prix du
+  // palier) : corriger la mesure casserait la cohérence de la ligne.
+  if (!editable || item.billingUnit === 'FLAT' || item.billingUnit === 'PACKAGE') return null
 
   const ouvrir = () => {
     setQuantite(String(item.quantity))

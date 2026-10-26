@@ -127,6 +127,9 @@ FICHIERS=(
   "supabase/tests/kilogram_services.sql"
   "supabase/migrations/025_crud_complet.sql"
   "supabase/tests/crud_complet.sql"
+  "supabase/migrations/026_client_sync_events.sql"
+  "supabase/migrations/027_catalogue_categories_forfaits.sql"
+  "supabase/tests/catalogue_prestations.sql"
 )
 
 ECHECS=0

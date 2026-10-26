@@ -15,6 +15,8 @@ import type {
   PaymentStatus,
   TenantActivityCode,
   TenantServiceBillingUnit,
+  TenantServicePricingMode,
+  WeightPackageSnapshot,
 } from '@/types/database'
 
 /**
@@ -102,6 +104,10 @@ export interface LocalOrderItem {
   /** Référence et nom de l’activité figés depuis la prestation configurée. */
   tenantServiceId?: string | null
   activityNameSnapshot?: string | null
+  /** Catégorie figée au dépôt (migration 027). */
+  categoryNameSnapshot?: string | null
+  /** Palier de poids figé pour une ligne en forfait (migration 027). */
+  packageSnapshot?: WeightPackageSnapshot | null
   familyNameSnapshot: string | null
   catalogUnitPriceSnapshot: number | null
   minimumQuantitySnapshot: number | null
@@ -129,12 +135,22 @@ export interface LocalOrderItem {
   garmentDetails?: OrderGarmentDetail[]
 }
 
-/** Prestation configurée pour un pressing (cache hors ligne du référentiel). */
+/** Activité configurée pour un pressing (cache hors ligne du référentiel). */
 export interface LocalTenantActivity {
   id: string
   tenantId: string
   name: string
   sortOrder: number
+}
+
+/** Catégorie de prestations, rattachée à une activité (migration 027). */
+export interface LocalTenantServiceCategory {
+  id: string
+  tenantId: string
+  activityId: string
+  name: string
+  sortOrder: number
+  isActive: boolean
 }
 
 export interface LocalTenantService {
@@ -144,9 +160,26 @@ export interface LocalTenantService {
   activityName: string
   /** Identifiant historique conservé uniquement pour les lignes migrées. */
   activityCode: TenantActivityCode | null
+  categoryId: string | null
   serviceName: string
   billingUnit: TenantServiceBillingUnit
+  pricingMode: TenantServicePricingMode
   unitPrice: number | null
+  description: string | null
+  durationMinutes: number | null
+  isActive: boolean
+  sortOrder: number
+}
+
+/** Palier de poids d'une prestation en forfait (migration 027). */
+export interface LocalWeightTier {
+  id: string
+  tenantId: string
+  tenantServiceId: string
+  label: string
+  weightKg: number
+  priceFcfa: number
+  isActive: boolean
   sortOrder: number
 }
 
@@ -358,6 +391,8 @@ export class PressingDatabase extends Dexie {
   notifications!: Table<LocalNotification, string>
   tenantActivities!: Table<LocalTenantActivity, string>
   tenantServices!: Table<LocalTenantService, string>
+  tenantServiceCategories!: Table<LocalTenantServiceCategory, string>
+  weightTiers!: Table<LocalWeightTier, string>
 
   constructor() {
     super('pressing-pro')
@@ -583,6 +618,30 @@ export class PressingDatabase extends Dexie {
           if (item.activityNameSnapshot === undefined) item.activityNameSnapshot = null
         })
       })
+
+    // v16 (migration SQL 027) : catalogue configurable — catégories, prestations
+    // multi-mode (prix de référence à la pièce, forfaits poids, devis) et
+    // snapshots de forfait sur les lignes de commande.
+    this.version(16).stores({
+      tenantServiceCategories:
+        'id, tenantId, activityId, [tenantId+activityId]',
+      weightTiers:
+        'id, tenantId, tenantServiceId, [tenantId+tenantServiceId]',
+      tenantServices:
+        'id, tenantId, activityId, activityCode, categoryId, [tenantId+activityId]',
+    }).upgrade(async (tx) => {
+      await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+        if (item.categoryNameSnapshot === undefined) item.categoryNameSnapshot = null
+        if (item.packageSnapshot === undefined) item.packageSnapshot = null
+      })
+      await tx.table('tenantServices').toCollection().modify((service: LocalTenantService & Record<string, unknown>) => {
+        if (service.categoryId === undefined) service.categoryId = null
+        if (service.pricingMode === undefined) service.pricingMode = 'FIXED'
+        if (service.isActive === undefined) service.isActive = true
+        if (service.description === undefined) service.description = null
+        if (service.durationMinutes === undefined) service.durationMinutes = null
+      })
+    })
   }
 }
 
@@ -607,6 +666,8 @@ export async function clearLocalData(): Promise<void> {
       db.notifications,
       db.tenantActivities,
       db.tenantServices,
+      db.tenantServiceCategories,
+      db.weightTiers,
     ],
     async () => {
       await Promise.all([
@@ -622,6 +683,8 @@ export async function clearLocalData(): Promise<void> {
         db.notifications.clear(),
         db.tenantActivities.clear(),
         db.tenantServices.clear(),
+        db.tenantServiceCategories.clear(),
+        db.weightTiers.clear(),
       ])
     },
   )

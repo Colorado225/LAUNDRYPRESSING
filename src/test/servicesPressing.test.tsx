@@ -3,16 +3,27 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TenantOnboardingContextValue } from '@/lib/tenantOnboarding'
-import type { TenantServiceConfiguration } from '@/services/tenantServices'
+import type {
+  TenantServiceConfiguration,
+  TenantServiceOffering,
+} from '@/services/tenantServices'
 
 const serviceMocks = vi.hoisted(() => ({
   fetchTenantServiceConfiguration: vi.fn(),
   createTenantActivity: vi.fn(),
   updateTenantActivity: vi.fn(),
   deleteTenantActivity: vi.fn(),
+  createTenantCategory: vi.fn(),
+  updateTenantCategory: vi.fn(),
+  deleteTenantCategory: vi.fn(),
   createTenantService: vi.fn(),
   updateTenantService: vi.fn(),
   deleteTenantService: vi.fn(),
+  duplicateTenantService: vi.fn(),
+  createWeightTier: vi.fn(),
+  updateWeightTier: vi.fn(),
+  deleteWeightTier: vi.fn(),
+  importSuggestedCatalog: vi.fn(),
   completeTenantOnboarding: vi.fn(),
 }))
 
@@ -21,9 +32,17 @@ vi.mock('@/services/tenantServices', () => ({
   createTenantActivity: serviceMocks.createTenantActivity,
   updateTenantActivity: serviceMocks.updateTenantActivity,
   deleteTenantActivity: serviceMocks.deleteTenantActivity,
+  createTenantCategory: serviceMocks.createTenantCategory,
+  updateTenantCategory: serviceMocks.updateTenantCategory,
+  deleteTenantCategory: serviceMocks.deleteTenantCategory,
   createTenantService: serviceMocks.createTenantService,
   updateTenantService: serviceMocks.updateTenantService,
   deleteTenantService: serviceMocks.deleteTenantService,
+  duplicateTenantService: serviceMocks.duplicateTenantService,
+  createWeightTier: serviceMocks.createWeightTier,
+  updateWeightTier: serviceMocks.updateWeightTier,
+  deleteWeightTier: serviceMocks.deleteWeightTier,
+  importSuggestedCatalog: serviceMocks.importSuggestedCatalog,
   completeTenantOnboarding: serviceMocks.completeTenantOnboarding,
 }))
 
@@ -104,8 +123,27 @@ function unmount() {
   host.remove()
 }
 
+function offering(overrides: Partial<TenantServiceOffering>): TenantServiceOffering {
+  return {
+    id: `service-${Math.random().toString(36).slice(2)}`,
+    tenantId: 'tenant-new',
+    activityId: 'activity-1',
+    activityName: 'Blanchisserie',
+    categoryId: null,
+    serviceName: 'Prestation',
+    billingUnit: 'PIECE',
+    pricingMode: 'FIXED',
+    unitPrice: null,
+    description: null,
+    durationMinutes: null,
+    isActive: true,
+    sortOrder: 0,
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
-  configuration = { activities: [], services: [] }
+  configuration = { activities: [], categories: [], services: [], tiers: [] }
   serviceMocks.fetchTenantServiceConfiguration.mockReset().mockImplementation(async () => structuredClone(configuration))
   serviceMocks.createTenantActivity.mockReset().mockImplementation(async (_tenantId: string, name: string) => {
     configuration.activities.push({ id: 'activity-1', tenantId: 'tenant-new', name, sortOrder: 0 })
@@ -117,34 +155,70 @@ beforeEach(() => {
     configuration.activities = configuration.activities.filter((activity) => activity.id !== id)
     configuration.services = configuration.services.filter((service) => service.activityId !== id)
   })
+  serviceMocks.createTenantCategory.mockReset().mockImplementation(async (
+    _tenantId: string,
+    activityId: string,
+    name: string,
+  ) => {
+    configuration.categories.push({
+      id: 'category-1', tenantId: 'tenant-new', activityId, name, sortOrder: 0, isActive: true,
+    })
+  })
+  serviceMocks.updateTenantCategory.mockResolvedValue(undefined)
+  serviceMocks.deleteTenantCategory.mockReset().mockImplementation(async (_tenantId: string, id: string) => {
+    configuration.categories = configuration.categories.filter((category) => category.id !== id)
+  })
   serviceMocks.createTenantService.mockReset().mockImplementation(async (
     _tenantId: string,
     activityId: string,
     serviceName: string,
-    billingUnit: 'PIECE' | 'KG',
+    billingUnit: TenantServiceOffering['billingUnit'],
     unitPrice: number | null,
   ) => {
     const activity = configuration.activities.find((entry) => entry.id === activityId)
     if (!activity) return
-    configuration.services.push({
-      id: 'service-1', tenantId: 'tenant-new', activityId, activityName: activity.name, serviceName, billingUnit, unitPrice, sortOrder: 0,
-    })
+    configuration.services.push(
+      offering({
+        id: `service-${configuration.services.length + 1}`,
+        activityId,
+        activityName: activity.name,
+        serviceName,
+        billingUnit,
+        unitPrice,
+      }),
+    )
   })
-  serviceMocks.updateTenantService.mockReset().mockImplementation(async (
-    _tenantId: string,
-    id: string,
-    activityId: string,
-    name: string,
-    billingUnit: 'PIECE' | 'KG',
-    unitPrice: number | null,
-  ) => {
-    const activity = configuration.activities.find((entry) => entry.id === activityId)
-    configuration.services = configuration.services.map((service) => service.id === id
-      ? { ...service, activityId, activityName: activity?.name ?? '', serviceName: name, billingUnit, unitPrice }
-      : service)
-  })
+  serviceMocks.updateTenantService.mockResolvedValue(undefined)
+  serviceMocks.duplicateTenantService.mockResolvedValue(undefined)
   serviceMocks.deleteTenantService.mockReset().mockImplementation(async (_tenantId: string, id: string) => {
     configuration.services = configuration.services.filter((service) => service.id !== id)
+  })
+  serviceMocks.createWeightTier.mockReset().mockImplementation(async (
+    _tenantId: string,
+    tenantServiceId: string,
+    label: string,
+    weightKg: number,
+    priceFcfa: number,
+  ) => {
+    configuration.tiers.push({
+      id: `tier-${configuration.tiers.length + 1}`,
+      tenantId: 'tenant-new',
+      tenantServiceId,
+      label,
+      weightKg,
+      priceFcfa,
+      isActive: true,
+      sortOrder: configuration.tiers.length,
+    })
+  })
+  serviceMocks.updateWeightTier.mockResolvedValue(undefined)
+  serviceMocks.deleteWeightTier.mockResolvedValue(undefined)
+  serviceMocks.importSuggestedCatalog.mockResolvedValue({
+    activitiesCreated: 2,
+    categoriesCreated: 5,
+    servicesCreated: 26,
+    tiersCreated: 6,
+    skipped: 0,
   })
   serviceMocks.completeTenantOnboarding.mockReset().mockResolvedValue(undefined)
   vi.mocked(onboarding.markComplete).mockClear()
@@ -155,7 +229,7 @@ beforeEach(() => {
 describe('CRUD des activités et prestations du pressing', () => {
   it('crée une activité, lui rattache une prestation et termine l’onboarding', async () => {
     await mount()
-    expect(host.textContent).toContain('Services & activités')
+    expect(host.textContent).toContain('Catalogue de prestations')
     expect(host.querySelector('[role="tablist"]')).not.toBeNull()
 
     await saisir(input('Nom de la nouvelle activité'), 'Nettoyage de tapis')
@@ -163,9 +237,12 @@ describe('CRUD des activités et prestations du pressing', () => {
     expect(serviceMocks.createTenantActivity).toHaveBeenCalledWith('tenant-new', 'Nettoyage de tapis')
 
     await act(async () => button('Prestations').click())
-    await saisir(input('Nom de la nouvelle prestation'), 'Tapis grand format')
+    await saisir(input('Nom de la prestation'), 'Tapis grand format')
     await act(async () => button('Ajouter la prestation').click())
-    expect(serviceMocks.createTenantService).toHaveBeenCalledWith('tenant-new', 'activity-1', 'Tapis grand format', 'PIECE', null)
+    const appel = serviceMocks.createTenantService.mock.calls[0]
+    expect(appel?.slice(0, 5)).toEqual([
+      'tenant-new', 'activity-1', 'Tapis grand format', 'PIECE', null,
+    ])
 
     await act(async () => button('Terminer la configuration').click())
     expect(serviceMocks.completeTenantOnboarding).toHaveBeenCalledWith('tenant-new')
@@ -188,18 +265,88 @@ describe('CRUD des activités et prestations du pressing', () => {
     unmount()
   })
 
-  it('configure une prestation au kilo avec un tarif personnalisé optionnel', async () => {
+  it('configure une prestation au kilo avec un tarif de référence', async () => {
     configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0 }]
     await mount()
     await act(async () => button('Prestations').click())
-    await saisir(input('Nom de la nouvelle prestation'), 'Lavage et repassage au kilo')
-    await choisir(select('Mode de facturation de la nouvelle prestation'), 'KG')
-    await saisir(input('Tarif au kilo de la nouvelle prestation'), '1500')
+    await saisir(input('Nom de la prestation'), 'Lavage et repassage au kilo')
+    await choisir(select('Mode de facturation de la prestation'), 'KG')
+    await saisir(input('Tarif de référence de la prestation'), '1500')
     await act(async () => button('Ajouter la prestation').click())
 
     expect(serviceMocks.createTenantService).toHaveBeenCalledWith(
       'tenant-new', 'activity-1', 'Lavage et repassage au kilo', 'KG', 1500,
+      expect.objectContaining({ pricingMode: 'FIXED' }),
     )
+    unmount()
+  })
+
+  it('crée une catégorie rattachée à une activité', async () => {
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0 }]
+    await mount()
+    await act(async () => button('Catégories').click())
+
+    await saisir(input('Nom de la nouvelle catégorie'), 'Forfaits au poids')
+    await act(async () => button('Ajouter la catégorie').click())
+    expect(serviceMocks.createTenantCategory).toHaveBeenCalledWith(
+      'tenant-new', 'activity-1', 'Forfaits au poids',
+    )
+    unmount()
+  })
+
+  it('crée un forfait poids puis ses paliers', async () => {
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0 }]
+    configuration.services = [
+      offering({
+        id: 'service-forfait',
+        serviceName: 'Laver repasser (forfait poids)',
+        billingUnit: 'PACKAGE',
+      }),
+    ]
+    await mount()
+    await act(async () => button('Prestations').click())
+
+    // Création d'un forfait : aucun prix de référence possible.
+    await saisir(input('Nom de la prestation'), 'Laver plier (forfait poids)')
+    await choisir(select('Mode de facturation de la prestation'), 'PACKAGE')
+    expect(host.querySelector('[aria-label="Tarif de référence de la prestation"]')).toBeNull()
+    await act(async () => button('Ajouter la prestation').click())
+    expect(serviceMocks.createTenantService).toHaveBeenCalledWith(
+      'tenant-new', 'activity-1', 'Laver plier (forfait poids)', 'PACKAGE', null,
+      expect.objectContaining({ pricingMode: 'FIXED' }),
+    )
+
+    // Gestion des paliers sur la carte du forfait existant.
+    await act(async () => button('Gérer').click())
+    await saisir(input('Libellé du palier pour Laver repasser (forfait poids)'), '10 kg')
+    await saisir(input('Poids du palier pour Laver repasser (forfait poids)'), '10')
+    await saisir(input('Prix du palier pour Laver repasser (forfait poids)'), '15000')
+    const boutonAjout = [...host.querySelectorAll('button')].find(
+      (element) => (element.textContent ?? '').trim() === 'Ajouter',
+    ) as HTMLButtonElement
+    await act(async () => boutonAjout.click())
+    expect(serviceMocks.createWeightTier).toHaveBeenCalledWith(
+      'tenant-new', 'service-forfait', '10 kg', 10, 15000,
+    )
+    unmount()
+  })
+
+  it('un devis n’expose aucun tarif de référence', async () => {
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Pressing', sortOrder: 0 }]
+    await mount()
+    await act(async () => button('Prestations').click())
+
+    await saisir(input('Nom de la prestation'), 'Nettoyage canapé sur devis')
+    await choisir(select('Mode de facturation de la prestation'), 'FLAT')
+    expect(select('Mode de tarification de la prestation').value).toBe('QUOTE')
+    expect(host.querySelector('[aria-label="Tarif de référence de la prestation"]')).toBeNull()
+    unmount()
+  })
+
+  it('propose l’import explicite de la grille type', async () => {
+    await mount()
+    await act(async () => button('Importer la grille type').click())
+    expect(serviceMocks.importSuggestedCatalog).toHaveBeenCalledOnce()
     unmount()
   })
 })

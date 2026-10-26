@@ -67,9 +67,22 @@ export const orderItemInputSchema = z.object({
     type: z.enum([
       'CHEMISE', 'T_SHIRT', 'PANTALON', 'JEAN', 'ROBE', 'JUPE',
       'VESTE', 'COSTUME', 'BOUBOU', 'DRAP', 'SERVIETTE', 'AUTRE',
+      'COUETTE', 'POLO', 'DEBARDEUR', 'CULOTTE', 'CHAUSSETTES',
+      'CHAUSSURES', 'BLOUSON', 'MANTEAU', 'ENSEMBLE', 'TAIE',
+      'TAPIS', 'LINGE_DE_MAISON',
     ]),
     quantity: z.number().int().min(1).max(1000),
   })).max(100).optional(),
+  /** Catégorie de la prestation figée au dépôt. */
+  categoryNameSnapshot: z.string().trim().max(80).nullable().optional(),
+  /** Palier de poids figé pour une ligne facturée en forfait (`PACKAGE`). */
+  packageSnapshot: z.object({
+    tierId: z.string().uuid('Palier de forfait invalide'),
+    label: z.string().trim().min(1).max(40),
+    weightKg: z.number().positive().max(10_000),
+    priceFcfa: z.number().int().min(1).max(10_000_000),
+    serviceName: z.string().trim().min(2).max(80),
+  }).nullable().optional(),
   /** Quantité réellement pesée/mesurée ; 1 par défaut pour les anciennes lignes. */
   quantity: z
     .number()
@@ -219,6 +232,43 @@ export const orderItemInputSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['quantity'],
       message: 'Une prestation forfaitaire se facture une seule fois.',
+    })
+  }
+  if (item.packageSnapshot) {
+    const snapshot = item.packageSnapshot
+    if (unite !== 'PACKAGE') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billingUnit'],
+        message: 'Un palier de poids ne s’applique qu’à une prestation en forfait.',
+      })
+    }
+    if (quantite !== 1 || item.billedQuantity !== undefined && item.billedQuantity !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['quantity'],
+        message: 'Un forfait poids se facture en une seule ligne.',
+      })
+    }
+    if (item.unitPrice !== snapshot.priceFcfa || item.price !== snapshot.priceFcfa) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: `Le total du forfait « ${snapshot.label} » doit être de ${snapshot.priceFcfa} FCFA.`,
+      })
+    }
+    if (item.priceStatus === 'ESTIMATED') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['priceStatus'],
+        message: 'Le prix d’un forfait poids est confirmé à la sélection du palier.',
+      })
+    }
+  } else if (unite === 'PACKAGE') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['packageSnapshot'],
+      message: 'Sélectionnez un palier de poids pour cette prestation en forfait.',
     })
   }
   if (item.pricingMode === 'UNCONFIGURED') {

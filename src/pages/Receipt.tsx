@@ -137,6 +137,11 @@ export default function Receipt() {
                 {formatGarmentComposition(item.garmentDetails) && (
                   <span className="block text-[9px]">Vêtements : {formatGarmentComposition(item.garmentDetails)}</span>
                 )}
+                {item.packageSnapshot && (
+                  <span className="block text-[9px]">
+                    Forfait : {item.packageSnapshot.label} · {item.packageSnapshot.weightKg} kg
+                  </span>
+                )}
                 <span className="block text-[10px]">
                   {item.familyPackageSnapshot
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
@@ -144,7 +149,9 @@ export default function Receipt() {
                     ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
                     : item.billingUnit === 'FLAT'
                       ? `Forfait ${formatFcfa(item.unitPrice)}`
-                      : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé × ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                      : item.billingUnit === 'PACKAGE' && item.packageSnapshot
+                        ? `Forfait ${item.packageSnapshot.label} (${item.packageSnapshot.weightKg} kg)`
+                        : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé × ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ' : ''}
                 </span>
                 {item.laundryServicesSnapshot && <span className="block text-[9px]">Prestations : {item.laundryServicesSnapshot}</span>}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -13,24 +13,32 @@ import { useTenantStore } from '@/lib/tenantContext'
 import {
   fetchTenantServiceConfiguration,
   type TenantActivity,
+  type TenantServiceCategory,
   type TenantServiceOffering,
+  type WeightTier,
 } from '@/services/tenantServices'
 import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
-import type { OrderGarmentDetail, OrderGarmentType } from '@/types/database'
+import type {
+  OrderGarmentDetail,
+  OrderGarmentType,
+  WeightPackageSnapshot,
+} from '@/types/database'
 
 /** Formulaire local-first de création d'une commande en trois étapes. */
-interface OrderItemDraft extends Omit<OrderItemInput, 'garmentDetails'> {
+interface OrderItemDraft extends Omit<OrderItemInput, 'garmentDetails' | 'packageSnapshot'> {
   quantity: number
   unitPrice: number
   selectedActivityId: string
   selectedOfferingId: string
+  selectedTierId: string
   garmentDetails: Array<{ type: OrderGarmentType | ''; quantity: number }>
+  packageSnapshot: WeightPackageSnapshot | null
 }
 
 const formatDraftComposition = (details: OrderItemDraft['garmentDetails']) =>
   formatGarmentComposition(details.filter((detail): detail is OrderGarmentDetail => detail.type !== ''))
 
-const createEmptyItem = (): OrderItemDraft => ({
+const createEmptyItem = (activityId = ''): OrderItemDraft => ({
   label: '',
   fabricType: '',
   specialInstructions: '',
@@ -43,8 +51,11 @@ const createEmptyItem = (): OrderItemDraft => ({
   serviceName: '',
   tenantServiceId: null,
   activityNameSnapshot: null,
-  selectedActivityId: '',
+  categoryNameSnapshot: null,
+  packageSnapshot: null,
+  selectedActivityId: activityId,
   selectedOfferingId: '',
+  selectedTierId: '',
   garmentDetails: [],
 })
 
@@ -55,6 +66,8 @@ const ETAPES = [
   { titre: 'Vêtements', icon: Shirt },
   { titre: 'Paiement', icon: Wallet },
 ] as const
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export default function OrderForm() {
   const navigate = useNavigate()
@@ -72,7 +85,10 @@ export default function OrderForm() {
   const canCreate = can(roleEffectif, 'orders.create')
 
   const [activites, setActivites] = useState<TenantActivity[]>([])
+  const [categories, setCategories] = useState<TenantServiceCategory[]>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
+  const [paliers, setPaliers] = useState<WeightTier[]>([])
+  const [activiteCommande, setActiviteCommande] = useState('')
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -94,8 +110,25 @@ export default function OrderForm() {
     void fetchTenantServiceConfiguration(tenantId)
       .then((configuration) => {
         if (!active) return
-        setActivites(configuration.activities)
+        const sortedActivities = [...configuration.activities].sort((a, b) =>
+          a.name.localeCompare(b.name, 'fr'),
+        )
+        setActivites(sortedActivities)
+        setCategories(configuration.categories)
         setPrestations(configuration.services)
+        setPaliers(configuration.tiers)
+        setActiviteCommande((current) =>
+          sortedActivities.some((activity) => activity.id === current)
+            ? current
+            : (sortedActivities[0]?.id ?? ''),
+        )
+        setItems((current) =>
+          current.map((item) =>
+            item.selectedActivityId
+              ? item
+              : { ...item, selectedActivityId: sortedActivities[0]?.id ?? '' },
+          ),
+        )
       })
       .catch(() => undefined)
     return () => {
@@ -117,85 +150,187 @@ export default function OrderForm() {
     })
   }, [role, roleEffectif, roleBoutique, tenantId, canCreate])
 
-  const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
-
   const total = items.reduce((sum, item) => sum + item.price, 0)
 
   const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
     setItems((current) => current.map((item, itemIndex) => {
       if (itemIndex !== index) return item
       const updated = { ...item, ...patch }
+      // Les forfaits et devis figent leur montant via le palier/le montant saisi.
+      if (patch.unitPrice === undefined && patch.quantity === undefined) return updated
       updated.price = Math.round(updated.quantity * updated.unitPrice)
       return updated
     }))
   }
 
-  const choisirActivite = (index: number, activityId: string) => {
-    const item = items[index]
-    updateItem(index, {
-      selectedActivityId: activityId,
-      label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
-      selectedOfferingId: '',
-      serviceName: '',
-      tenantServiceId: null,
-      activityNameSnapshot: null,
-      billingUnit: 'PIECE',
-      quantity: 1,
-      unitPrice: 0,
-      garmentDetails: [],
-    })
+  /** Change l'activité principale de la commande et réoriente les lignes. */
+  const changerActiviteCommande = (activityId: string) => {
+    setActiviteCommande(activityId)
+    setItems((current) =>
+      current.map((item) => {
+        if (item.selectedActivityId !== activiteCommande) return item
+        return { ...createEmptyItem(activityId) }
+      }),
+    )
   }
+
+  const choisirActiviteLigne = (index: number, activityId: string) => {
+    setItems((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index ? { ...createEmptyItem(activityId) } : item,
+      ),
+    )
+  }
+
+  const resetLigneTarifaire = (activityId: string): OrderItemDraft => ({
+    ...createEmptyItem(activityId),
+  })
 
   const choisirPrestation = (index: number, offeringId: string) => {
     const item = items[index]
-    const selectedActivity = activitesDisponibles.find((activity) => activity.id === item?.selectedActivityId)
-    if (offeringId === '__free__') {
+    if (!item) return
+    const activityId = item.selectedActivityId
+    const selectedActivity = activites.find((activity) => activity.id === activityId)
+
+    if (offeringId === '__free__' || offeringId === '') {
       updateItem(index, {
+        ...resetLigneTarifaire(activityId),
         selectedOfferingId: offeringId,
-        label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
-        serviceName: '',
-        tenantServiceId: null,
         activityNameSnapshot: selectedActivity?.name ?? null,
-        billingUnit: 'PIECE',
-        quantity: 1,
-        unitPrice: 0,
-        garmentDetails: [],
       })
       return
     }
-    const offering = prestations.find((service) => service.id === offeringId && service.activityId === item?.selectedActivityId)
+
+    const offering = prestations.find(
+      (service) => service.id === offeringId && service.activityId === activityId,
+    )
     if (!offering) {
-      updateItem(index, {
-        selectedOfferingId: '',
-        label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
-        serviceName: '',
-        tenantServiceId: null,
-        activityNameSnapshot: null,
-        billingUnit: 'PIECE',
-        quantity: 1,
-        unitPrice: 0,
-        garmentDetails: [],
-      })
+      updateItem(index, resetLigneTarifaire(activityId))
       return
     }
-    const auKilo = offering.billingUnit === 'KG'
-    let label = item?.label ?? ''
-    if (auKilo) label = offering.serviceName
-    else if (item?.billingUnit === 'KG') label = ''
-    updateItem(index, {
+
+    const category = categories.find((entry) => entry.id === offering.categoryId)
+    const base: Partial<OrderItemDraft> = {
       selectedOfferingId: offering.id,
       serviceName: offering.serviceName,
-      tenantServiceId: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(offering.id)
-        ? offering.id
-        : null,
+      tenantServiceId: UUID_RE.test(offering.id) ? offering.id : null,
       activityNameSnapshot: offering.activityName,
-      label,
+      categoryNameSnapshot: category?.name ?? null,
+      fabricType: '',
+      specialInstructions: item.specialInstructions,
+    }
+
+    if (offering.billingUnit === 'KG') {
+      updateItem(index, {
+        ...base,
+        label: offering.serviceName,
+        billingUnit: 'KG',
+        pricingMode: offering.pricingMode === 'FROM' ? 'FROM' : 'FIXED',
+        priceStatus: offering.pricingMode === 'FROM' ? 'ESTIMATED' : 'CONFIRMED',
+        quantity: 1,
+        unitPrice: offering.unitPrice ?? 0,
+        price: offering.unitPrice ?? 0,
+        garmentDetails: [{ type: '', quantity: 1 }],
+        packageSnapshot: null,
+        selectedTierId: '',
+      })
+      return
+    }
+
+    if (offering.billingUnit === 'PACKAGE') {
+      updateItem(index, {
+        ...base,
+        label: offering.serviceName,
+        billingUnit: 'PACKAGE',
+        pricingMode: 'FIXED',
+        priceStatus: 'CONFIRMED',
+        quantity: 1,
+        unitPrice: 0,
+        price: 0,
+        garmentDetails: [],
+        packageSnapshot: null,
+        selectedTierId: '',
+      })
+      return
+    }
+
+    if (offering.billingUnit === 'FLAT') {
+      updateItem(index, {
+        ...base,
+        label: offering.serviceName,
+        billingUnit: 'FLAT',
+        pricingMode: 'QUOTE',
+        priceStatus: 'CONFIRMED',
+        quantity: 1,
+        unitPrice: 0,
+        price: 0,
+        garmentDetails: [],
+        packageSnapshot: null,
+        selectedTierId: '',
+      })
+      return
+    }
+
+    // Pièce, paire, ensemble : prix de référence pré-rempli, modifiable.
+    updateItem(index, {
+      ...base,
+      label: item.label,
       billingUnit: offering.billingUnit,
+      pricingMode: offering.pricingMode === 'FROM' ? 'FROM' : 'FIXED',
+      priceStatus: offering.pricingMode === 'FROM' ? 'ESTIMATED' : 'CONFIRMED',
       quantity: 1,
       unitPrice: offering.unitPrice ?? 0,
-      garmentDetails: auKilo ? [{ type: '', quantity: 1 }] : [],
+      price: offering.unitPrice ?? 0,
+      garmentDetails: [],
+      packageSnapshot: null,
+      selectedTierId: '',
     })
   }
+
+  const choisirPalier = (index: number, tierId: string) => {
+    const item = items[index]
+    if (!item || tierId === '') {
+      updateItem(index, { selectedTierId: '', packageSnapshot: null, unitPrice: 0, price: 0 })
+      return
+    }
+    const tier = paliers.find((entry) => entry.id === tierId && entry.tenantServiceId === item.selectedOfferingId)
+    if (!tier) return
+    const snapshot: WeightPackageSnapshot = {
+      tierId: tier.id,
+      label: tier.label,
+      weightKg: tier.weightKg,
+      priceFcfa: tier.priceFcfa,
+      serviceName: item.serviceName || tier.label,
+    }
+    updateItem(index, {
+      selectedTierId: tier.id,
+      packageSnapshot: snapshot,
+      quantity: 1,
+      unitPrice: tier.priceFcfa,
+      price: tier.priceFcfa,
+    })
+  }
+
+  const paliersOfferte = (item: OrderItemDraft): WeightTier[] =>
+    paliers
+      .filter((tier) => tier.tenantServiceId === item.selectedOfferingId && tier.isActive)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+
+  /** Prestations actives de l'activité de ligne, groupées par catégorie. */
+  const prestationsGroupees = useMemo(() => {
+    const groups = new Map<string, { category: TenantServiceCategory | null; services: TenantServiceOffering[] }>()
+    for (const service of prestations) {
+      if (!service.isActive) continue
+      const category = categories.find((entry) => entry.id === service.categoryId) ?? null
+      const key = category?.id ?? 'sans-categorie'
+      const group = groups.get(key) ?? { category, services: [] }
+      group.services.push(service)
+      groups.set(key, group)
+    }
+    return [...groups.values()].sort((a, b) =>
+      (a.category?.name ?? 'zzz').localeCompare(b.category?.name ?? 'zzz', 'fr'),
+    )
+  }, [prestations, categories])
 
   /**
    * Contrôle l'étape en cours **sans jamais bloquer la navigation**.
@@ -210,8 +345,8 @@ export default function OrderForm() {
   /**
    * Motifs de refus tarifaires (prix unitaire à zéro, total incohérent).
    *
-   * PostgreSQL rejette ces lignes avec `guard_order_item_price` : on les arrête
-   * ici pour que le comptoir corrige au lieu de découvrir l'échec à l'envoi.
+   * PostgreSQL rejette ces lignes avec ses contraintes : on les arrête ici
+   * pour que le comptoir corrige au lieu de découvrir l'échec à l'envoi.
    */
   const problemesTarifaires = (): string[] =>
     items.flatMap((item) => {
@@ -434,6 +569,8 @@ export default function OrderForm() {
     }
   }
 
+  const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header>
@@ -531,108 +668,179 @@ export default function OrderForm() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">Vêtements et prestations</h2>
-                <p className="text-sm text-slate-500">Pour une prestation au kilo, énumérez les vêtements, pesez le lot et confirmez le tarif par kilo.</p>
+                <p className="text-sm text-slate-500">Choisissez l’activité puis la prestation du catalogue. Les forfaits poids proposent leurs paliers ; une ligne libre reste possible.</p>
               </div>
-              <button type="button" onClick={() => setItems((current) => [...current, createEmptyItem()])} disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"><Plus size={17} aria-hidden /> Ajouter une ligne</button>
+              <button type="button" onClick={() => setItems((current) => [...current, createEmptyItem(activiteCommande)])} disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"><Plus size={17} aria-hidden /> Ajouter une ligne</button>
             </div>
 
+            {activitesDisponibles.length > 1 && (
+              <label className="block space-y-1.5 rounded-xl border border-brand-teal/20 bg-teal-50/40 p-3">
+                <span className="text-sm font-bold text-brand-navy">Activité de la commande</span>
+                <select value={activiteCommande} onChange={(event) => changerActiviteCommande(event.target.value)} aria-label="Activité de la commande" className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal">
+                  {activitesDisponibles.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
+                </select>
+              </label>
+            )}
+            {activitesDisponibles.length === 1 && (
+              <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                Activité : {activitesDisponibles[0]?.name}
+              </p>
+            )}
+
             <div className="space-y-3">
-              {items.map((item, index) => (
-                <fieldset key={index} className="rounded-xl border border-slate-200 p-3 sm:p-4">
-                  <legend className="px-1 text-sm font-semibold text-slate-600">Ligne {index + 1}</legend>
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_170px_44px]">
-                    {item.billingUnit === 'KG' ? (
-                      <div className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
-                        <p className="min-h-11 rounded-lg bg-slate-50 px-3 py-2.5 font-semibold text-slate-800">{item.serviceName || 'Lavage au kilo'}</p>
-                      </div>
-                    ) : (
-                      <label className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Article / vêtement</span>
-                        <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                      </label>
-                    )}
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Poids total (kg)' : 'Quantité'}</span>
-                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => updateItem(index, { quantity: item.billingUnit === 'KG' ? Math.max(0, Number(event.target.value) || 0) : Math.max(1, Number(event.target.value) || 1) })} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Tarif/kg (FCFA)' : 'Prix unitaire (FCFA)'}</span>
-                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                    <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Activité <span className="font-normal">(facultatif)</span></span>
-                      <select value={item.selectedActivityId} onChange={(event) => choisirActivite(index, event.target.value)} aria-label={`Activité de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
-                        <option value="">Choisir une activité</option>
-                        {activitesDisponibles.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
-                      <select value={item.selectedOfferingId} onChange={(event) => choisirPrestation(index, event.target.value)} aria-label={`Prestation de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
-                        <option value="">Choisir une prestation</option>
-                        <option value="__free__">Saisir une prestation libre</option>
-                        {prestations.filter((service) => service.activityId === item.selectedActivityId).map((service) => <option key={service.id} value={service.id}>{service.serviceName}{service.billingUnit === 'KG' ? ' — au kilo' : ''}</option>)}
-                      </select>
-                      {item.selectedOfferingId === '__free__' && (
-                        <input value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" aria-label={`Libellé de la prestation libre ${index + 1}`} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                      )}
-                    </label>
-                    {item.billingUnit !== 'KG' && (
-                      <label className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Type de tissu <span className="font-normal">(facultatif)</span></span>
-                        <input value={item.fabricType ?? ''} onChange={(event) => updateItem(index, { fabricType: event.target.value })} placeholder="Ex. Bazin, Wax" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                      </label>
-                    )}
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Instructions <span className="font-normal">(facultatif)</span></span>
-                      <input value={item.specialInstructions ?? ''} onChange={(event) => updateItem(index, { specialInstructions: event.target.value })} placeholder="Ex. Empèsage fort" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                  </div>
-                  {item.billingUnit === 'KG' && (
-                    <div className="mt-4 rounded-xl border border-brand-teal/20 bg-teal-50/40 p-3">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-800">Vêtements dans le lot</h3>
-                          <p className="text-xs text-slate-500">Le tarif est calculé sur le poids total; ce détail sert au suivi du linge.</p>
+              {items.map((item, index) => {
+                const ligneGroupee = prestationsGroupees
+                  .map((group) => ({
+                    ...group,
+                    services: group.services.filter((service) => service.activityId === item.selectedActivityId),
+                  }))
+                  .filter((group) => group.services.length > 0)
+                return (
+                  <fieldset key={index} className="rounded-xl border border-slate-200 p-3 sm:p-4">
+                    <legend className="px-1 text-sm font-semibold text-slate-600">Ligne {index + 1}</legend>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_170px_44px]">
+                      {item.billingUnit === 'KG' ? (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
+                          <p className="min-h-11 rounded-lg bg-slate-50 px-3 py-2.5 font-semibold text-slate-800">{item.serviceName || 'Lavage au kilo'}</p>
                         </div>
-                        <button type="button" onClick={() => updateItem(index, { garmentDetails: [...item.garmentDetails, { type: '', quantity: 1 }] })} className="min-h-9 rounded-lg border border-brand-teal/40 px-3 text-xs font-bold text-brand-navy hover:bg-white">+ Ajouter un type</button>
-                      </div>
-                      {item.garmentDetails.map((garment, garmentIndex) => (
-                        <div key={`${index}-garment-${garmentIndex}`} className="mb-2 grid grid-cols-[minmax(0,1fr)_90px_40px] gap-2 last:mb-0">
+                      ) : item.billingUnit === 'PACKAGE' ? (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold text-slate-600">Forfait poids</span>
+                          <p className="min-h-11 rounded-lg bg-slate-50 px-3 py-2.5 font-semibold text-slate-800">{item.serviceName}</p>
+                        </div>
+                      ) : item.billingUnit === 'FLAT' ? (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold text-slate-600">Prestation sur devis</span>
+                          <p className="min-h-11 rounded-lg bg-slate-50 px-3 py-2.5 font-semibold text-slate-800">{item.serviceName}</p>
+                        </div>
+                      ) : (
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold text-slate-600">Article / vêtement</span>
+                          <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" maxLength={120} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                        </label>
+                      )}
+                      {item.billingUnit === 'PACKAGE' ? (
+                        <label className="space-y-1 sm:col-span-2">
+                          <span className="text-xs font-semibold text-slate-600">Palier de poids</span>
+                          <select value={item.selectedTierId} onChange={(event) => choisirPalier(index, event.target.value)} aria-label={`Palier de poids ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
+                            <option value="">Choisir un palier</option>
+                            {paliersOfferte(item).map((tier) => <option key={tier.id} value={tier.id}>{tier.label} — {formatFcfa(tier.priceFcfa)}</option>)}
+                          </select>
+                        </label>
+                      ) : item.billingUnit === 'FLAT' ? (
+                        <label className="space-y-1 sm:col-span-2">
+                          <span className="text-xs font-semibold text-slate-600">Montant du devis (FCFA)</span>
+                          <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)), price: Math.floor(Number(event.target.value) || 0) })} aria-label={`Montant du devis ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                        </label>
+                      ) : (
+                        <>
                           <label className="space-y-1">
-                            <span className="sr-only">Type de vêtement {garmentIndex + 1}</span>
-                            <select value={garment.type} onChange={(event) => {
-                              const garmentDetails = [...item.garmentDetails]
-                              garmentDetails[garmentIndex] = { ...garment, type: event.target.value as OrderGarmentType | '' }
-                              updateItem(index, { garmentDetails })
-                            }} aria-label={`Type de vêtement ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal">
-                              <option value="">Sélectionner un type</option>
-                              {GARMENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-                            </select>
+                            <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Poids total (kg)' : 'Quantité'}</span>
+                            <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => updateItem(index, { quantity: item.billingUnit === 'KG' ? Math.max(0, Number(event.target.value) || 0) : Math.max(1, Number(event.target.value) || 1) })} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                           </label>
                           <label className="space-y-1">
-                            <span className="sr-only">Nombre d’articles {garmentIndex + 1}</span>
-                            <input type="number" min="1" max="1000" step="1" value={garment.quantity} onChange={(event) => {
-                              const garmentDetails = [...item.garmentDetails]
-                              garmentDetails[garmentIndex] = { ...garment, quantity: Math.min(1000, Math.max(1, Math.floor(Number(event.target.value) || 1))) }
-                              updateItem(index, { garmentDetails })
-                            }} aria-label={`Nombre d’articles ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm outline-none focus:border-brand-teal" />
+                            <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Tarif/kg (FCFA)' : 'Prix unitaire (FCFA)'}</span>
+                            <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
                           </label>
-                          <button type="button" onClick={() => updateItem(index, { garmentDetails: item.garmentDetails.filter((_, detailIndex) => detailIndex !== garmentIndex) })} aria-label={`Supprimer le type de vêtement ${garmentIndex + 1}`} className="flex min-h-10 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={16} aria-hidden /></button>
-                        </div>
-                      ))}
-                      {formatDraftComposition(item.garmentDetails) && (
-                        <p className="mt-2 text-xs font-medium text-slate-700">Composition : {formatDraftComposition(item.garmentDetails)}</p>
+                        </>
                       )}
+                      <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
                     </div>
-                  )}
-                  <p className="mt-3 text-right text-sm font-semibold text-slate-700">Total de la ligne : {formatFcfa(item.price)}</p>
-                </fieldset>
-              ))}
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <label className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Activité <span className="font-normal">(facultatif)</span></span>
+                        <select value={item.selectedActivityId} onChange={(event) => choisirActiviteLigne(index, event.target.value)} aria-label={`Activité de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
+                          <option value="">Choisir une activité</option>
+                          {activitesDisponibles.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
+                        <select value={item.selectedOfferingId} onChange={(event) => choisirPrestation(index, event.target.value)} aria-label={`Prestation de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
+                          <option value="">Choisir une prestation</option>
+                          <option value="__free__">Saisir une prestation libre</option>
+                          {ligneGroupee.map((group) => (
+                            <optgroup key={group.category?.id ?? 'sans-categorie'} label={group.category?.name ?? 'Sans catégorie'}>
+                              {group.services.map((service) => (
+                                <option key={service.id} value={service.id}>
+                                  {service.serviceName}
+                                  {service.billingUnit === 'KG' ? ' — au kilo' : service.billingUnit === 'PACKAGE' ? ' — forfait poids' : service.billingUnit === 'FLAT' ? ' — sur devis' : ''}
+                                  {service.unitPrice !== null && service.billingUnit !== 'PACKAGE' && service.billingUnit !== 'FLAT'
+                                    ? ` · ${service.unitPrice.toLocaleString('fr-FR')} FCFA`
+                                    : ''}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        {item.selectedOfferingId === '__free__' && (
+                          <input value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" aria-label={`Libellé de la prestation libre ${index + 1}`} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                        )}
+                      </label>
+                      {item.billingUnit !== 'KG' && item.billingUnit !== 'PACKAGE' && item.billingUnit !== 'FLAT' && (
+                        <label className="space-y-1">
+                          <span className="text-xs font-semibold text-slate-600">Type de tissu <span className="font-normal">(facultatif)</span></span>
+                          <input value={item.fabricType ?? ''} onChange={(event) => updateItem(index, { fabricType: event.target.value })} placeholder="Ex. Bazin, Wax" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                        </label>
+                      )}
+                      <label className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-600">Instructions <span className="font-normal">(facultatif)</span></span>
+                        <input value={item.specialInstructions ?? ''} onChange={(event) => updateItem(index, { specialInstructions: event.target.value })} placeholder="Ex. Empèsage fort" maxLength={200} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
+                      </label>
+                    </div>
+                    {item.billingUnit === 'KG' && (
+                      <div className="mt-4 rounded-xl border border-brand-teal/20 bg-teal-50/40 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-800">Vêtements dans le lot</h3>
+                            <p className="text-xs text-slate-500">Le tarif est calculé sur le poids total; ce détail sert au suivi du linge.</p>
+                          </div>
+                          <button type="button" onClick={() => updateItem(index, { garmentDetails: [...item.garmentDetails, { type: '', quantity: 1 }] })} className="min-h-9 rounded-lg border border-brand-teal/40 px-3 text-xs font-bold text-brand-navy hover:bg-white">+ Ajouter un type</button>
+                        </div>
+                        {item.garmentDetails.map((garment, garmentIndex) => (
+                          <div key={`${index}-garment-${garmentIndex}`} className="mb-2 grid grid-cols-[minmax(0,1fr)_90px_40px] gap-2 last:mb-0">
+                            <label className="space-y-1">
+                              <span className="sr-only">Type de vêtement {garmentIndex + 1}</span>
+                              <select value={garment.type} onChange={(event) => {
+                                const garmentDetails = [...item.garmentDetails]
+                                garmentDetails[garmentIndex] = { ...garment, type: event.target.value as OrderGarmentType | '' }
+                                updateItem(index, { garmentDetails })
+                              }} aria-label={`Type de vêtement ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal">
+                                <option value="">Sélectionner un type</option>
+                                {GARMENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="space-y-1">
+                              <span className="sr-only">Nombre d’articles {garmentIndex + 1}</span>
+                              <input type="number" min="1" max="1000" step="1" value={garment.quantity} onChange={(event) => {
+                                const garmentDetails = [...item.garmentDetails]
+                                garmentDetails[garmentIndex] = { ...garment, quantity: Math.min(1000, Math.max(1, Math.floor(Number(event.target.value) || 1))) }
+                                updateItem(index, { garmentDetails })
+                              }} aria-label={`Nombre d’articles ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm outline-none focus:border-brand-teal" />
+                            </label>
+                            <button type="button" onClick={() => updateItem(index, { garmentDetails: item.garmentDetails.filter((_, detailIndex) => detailIndex !== garmentIndex) })} aria-label={`Supprimer le type de vêtement ${garmentIndex + 1}`} className="flex min-h-10 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={16} aria-hidden /></button>
+                          </div>
+                        ))}
+                        {formatDraftComposition(item.garmentDetails) && (
+                          <p className="mt-2 text-xs font-medium text-slate-700">Composition : {formatDraftComposition(item.garmentDetails)}</p>
+                        )}
+                      </div>
+                    )}
+                    {item.packageSnapshot && (
+                      <p className="mt-3 rounded-lg bg-teal-50 px-3 py-2 text-xs font-semibold text-brand-navy">
+                        Forfait figé : {item.packageSnapshot.label} ({item.packageSnapshot.weightKg} kg) — le prix de {formatFcfa(item.packageSnapshot.priceFcfa)} suit la commande même si le catalogue change.
+                      </p>
+                    )}
+                    {item.pricingMode === 'FROM' && item.priceStatus === 'ESTIMATED' && (
+                      <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                        Tarif « à partir de » : le montant est estimé et sera confirmé à la réception.
+                      </p>
+                    )}
+                    <p className="mt-3 text-right text-sm font-semibold text-slate-700">Total de la ligne : {formatFcfa(item.price)}</p>
+                  </fieldset>
+                )
+              })}
             </div>
             {prestations.length === 0 && (
               <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée. Vous pouvez laisser la ligne sans prestation ou en saisir une librement.</p>

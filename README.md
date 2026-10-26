@@ -2,7 +2,7 @@
 
 Application web installable (PWA) pour gérer les commandes d’un pressing. Le projet cible en priorité les téléphones et tablettes Android, une interface française et les connexions intermittentes.
 
-> **État de cette révision (26 octobre 2026).** Le catalogue tarifaire et les modèles commerciaux ont été retirés du produit. Les commandes utilisent désormais des lignes librement saisies (libellé, quantité, prix unitaire). La migration 020 supprime ces données de la base : elle est destructive et doit être précédée d’une sauvegarde lorsqu’elle est appliquée à un projet existant. Voir [`docs/AUDIT-COURANT.md`](docs/AUDIT-COURANT.md) pour les contrôles et limites connus.
+> **État de cette révision (26 octobre 2026).** Un nouveau catalogue propriétaire par activités (pressing / blanchisserie) est introduit par la migration additive `027_catalogue_categories_forfaits.sql` : activités → catégories → prestations → tarification (pièce, kilo linéaire, forfaits à paliers de poids, quantité, options, devis), avec snapshots immuables sur chaque ligne de commande. Les lignes librement saisies issues de la révision précédente restent entièrement supportées (historique et nouvelles saisies). La migration 020, qui a supprimé l’ancien catalogue, n’est pas modifiée. Voir [`docs/PROJET-BLANCHISSERIE.md`](docs/PROJET-BLANCHISSERIE.md) pour le modèle de données, les règles métier et l’état de recette. L’ancien catalogue retiré en migration 020 reste documenté à titre d’archive dans [`docs/ARCHITECTURE_CATALOGUE.md`](docs/ARCHITECTURE_CATALOGUE.md).
 
 ## Fonctionnalités
 
@@ -20,7 +20,7 @@ Application web installable (PWA) pour gérer les commandes d’un pressing. Le 
 - Authentification Supabase, rôles et isolation multi-tenant avec politiques RLS.
 - PWA installable avec écran de repli hors ligne.
 
-Les prix sont saisis sur les lignes de commande. Il n’existe plus de grille de prix ou de modèles au kilo/forfait dans l’interface actuelle.
+Le catalogue est administré par le propriétaire dans l’écran Prestations (trois onglets : activités, catégories, prestations) ; le réceptionniste ne peut que consulter les tarifs de référence, pré-remplis mais ajustables au comptoir. Les lignes libres (saisie directe sans catalogue) restent possibles et conservées dans l’historique. Une importation optionnelle et idempotente propose des grilles tarifaires de démarrage, jamais imposées.
 
 ## Stack
 
@@ -78,6 +78,15 @@ La migration `025_crud_complet.sql` est **additive** : elle ajoute les politique
 déclencheurs et fonctions des écritures de gestion manquantes, sans supprimer de
 données. Elle doit être appliquée avant de déployer le frontend correspondant.
 
+La migration `027_catalogue_categories_forfaits.sql` est également **additive** :
+elle crée les tables du catalogue propriétaire (`tenant_activities`,
+`tenant_service_categories`, `tenant_services`, `tenant_weight_tiers`), élargit les
+énumérations (`PACKAGE`, `SET`, `KG`/`L`/`M3`…) et ajoute les colonnes de snapshot
+(`package_snapshot`, `tenant_service_id`, `category_name_snapshot`…). Aucune table ni
+colonne existante n’est supprimée ; la migration 020 n’est pas modifiée. Les tarifs
+sont validés côté serveur (contraintes CHECK, RLS owner-only, trigger de cohérence des
+paliers) et les tests SQL correspondants sont dans `supabase/tests/catalogue_prestations.sql`.
+
 La migration `020_suppression_tarification_et_laundry_models.sql` supprime les tables de catalogue, les modèles commerciaux, les compositions de forfaits et leurs références spécifiques sur les lignes. Les libellés, quantités, montants vendus et snapshots génériques des lignes sont conservés. **Faire une sauvegarde et vérifier le projet ciblé avant d’appliquer cette migration** : sa suppression de données commerciales est irréversible.
 
 La recette locale et les tests automatisés ne remplacent pas un test de bout en bout sur le projet Supabase et le compte marchand CinetPay de production. La procédure est détaillée dans [`docs/DEPLOIEMENT-FONCTIONS.md`](docs/DEPLOIEMENT-FONCTIONS.md) et [`docs/RECETTE-SUPABASE.md`](docs/RECETTE-SUPABASE.md).
@@ -96,7 +105,7 @@ src/
   test/           tests Vitest
 supabase/
   functions/      fonctions Edge CinetPay
-  migrations/     migrations SQL 001 à 025
+  migrations/     migrations SQL 001 à 027
   tests/          recettes et vérifications SQL
 scripts/          installation, base, recette et déploiement
 ```

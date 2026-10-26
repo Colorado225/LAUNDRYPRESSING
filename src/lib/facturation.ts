@@ -133,13 +133,18 @@ export function lignesFacture(items: LocalOrderItem[]): LigneFacture[] {
         total: item.price,
         ...(compositionVetements ? { compositionVetements } : {}),
         ...(activiteSnapshot ? { activiteSnapshot } : {}),
-        ...(item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined
+        ...(item.packageSnapshot
           ? {
-              poidsKg: item.laundryWeightKg,
-              ...(item.laundryPriceBreakdownSnapshot ? { detailCommercial: item.laundryPriceBreakdownSnapshot } : {}),
-              ...(item.laundryServicesSnapshot ? { prestationsCommerciales: item.laundryServicesSnapshot } : {}),
+              poidsKg: item.packageSnapshot.weightKg,
+              detailCommercial: `Forfait ${item.packageSnapshot.label}`,
             }
-          : {}),
+          : item.laundryModelId && item.laundryWeightKg !== null && item.laundryWeightKg !== undefined
+            ? {
+                poidsKg: item.laundryWeightKg,
+                ...(item.laundryPriceBreakdownSnapshot ? { detailCommercial: item.laundryPriceBreakdownSnapshot } : {}),
+                ...(item.laundryServicesSnapshot ? { prestationsCommerciales: item.laundryServicesSnapshot } : {}),
+              }
+            : {}),
       })
     }
   }

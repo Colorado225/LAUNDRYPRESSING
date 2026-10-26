@@ -172,7 +172,7 @@ export default function Facture() {
                 )}
               </td>
               <td className="py-2 text-center">
-                {ligne.unite === 'FLAT'
+                {ligne.unite === 'FLAT' || ligne.unite === 'PACKAGE'
                   ? 'Forfait'
                   : `${ligne.quantite} ${libelleUnite(ligne.unite)}`}
               </td>

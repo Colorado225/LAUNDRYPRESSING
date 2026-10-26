@@ -62,7 +62,21 @@ export type TenantRow = {
   onboarding_completed_at: string | null
 }
 
-export type TenantServiceBillingUnit = 'PIECE' | 'KG'
+/**
+ * Unités de facturation des prestations configurées (migration 027).
+ * `PACKAGE` = forfait poids avec paliers, `FLAT` = devis à montant global.
+ */
+export type TenantServiceBillingUnit =
+  | 'PIECE'
+  | 'PAIR'
+  | 'SET'
+  | 'KG'
+  | 'PACKAGE'
+  | 'FLAT'
+
+/** Mode de tarification d'une prestation configurée par le pressing. */
+export type TenantServicePricingMode = 'FIXED' | 'FROM' | 'QUOTE'
+
 export type OrderGarmentType =
   | 'CHEMISE'
   | 'T_SHIRT'
@@ -76,6 +90,36 @@ export type OrderGarmentType =
   | 'DRAP'
   | 'SERVIETTE'
   | 'AUTRE'
+  | 'COUETTE'
+  | 'POLO'
+  | 'DEBARDEUR'
+  | 'CULOTTE'
+  | 'CHAUSSETTES'
+  | 'CHAUSSURES'
+  | 'BLOUSON'
+  | 'MANTEAU'
+  | 'ENSEMBLE'
+  | 'TAIE'
+  | 'TAPIS'
+  | 'LINGE_DE_MAISON'
+
+/** Palier de poids figé sur une ligne de commande en forfait (format applicatif camelCase). */
+export type WeightPackageSnapshot = {
+  tierId: string
+  label: string
+  weightKg: number
+  priceFcfa: number
+  serviceName: string
+}
+
+/** Format filaire PostgreSQL du snapshot (clés snake_case validées par la migration 027). */
+export type WeightPackageSnapshotRecord = {
+  tier_id: string
+  label: string
+  weight_kg: number
+  price_fcfa: number
+  service_name: string
+}
 
 export type OrderGarmentDetail = {
   type: OrderGarmentType
@@ -92,14 +136,43 @@ export type TenantActivityRow = {
   updated_at: string
 }
 
+export type TenantServiceCategoryRow = {
+  id: string
+  tenant_id: string
+  activity_id: string
+  name: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type TenantServiceRow = {
   id: string
   tenant_id: string
   activity_id: string
   activity_code: TenantActivityCode | null
+  category_id: string | null
   service_name: string
   billing_unit: TenantServiceBillingUnit
+  pricing_mode: TenantServicePricingMode
   unit_price: number | null
+  description: string | null
+  duration_minutes: number | null
+  is_active: boolean
+  sort_order: number
+  created_at: string
+}
+
+/** Palier de poids d'une prestation en forfait (table `tenant_weight_tiers`, migration 027). */
+export type TenantWeightTierRow = {
+  id: string
+  tenant_id: string
+  tenant_service_id: string
+  label: string
+  weight_kg: number
+  price_fcfa: number
+  is_active: boolean
   sort_order: number
   created_at: string
 }
@@ -165,6 +238,10 @@ export type OrderItemRow = {
   service_name: string | null
   tenant_service_id: string | null
   activity_name_snapshot: string | null
+  /** Catégorie de la prestation figée au dépôt (migration 027). */
+  category_name_snapshot: string | null
+  /** Palier forfaitaire figé à la vente pour une ligne `PACKAGE` (migration 027). */
+  package_snapshot: WeightPackageSnapshotRecord | null
   family_name_snapshot: string | null
   catalog_unit_price_snapshot: number | null
   minimum_quantity_snapshot: number | null
@@ -772,10 +849,41 @@ export interface Database {
         Update: Partial<Omit<TenantActivityRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
+      tenant_service_categories: {
+        Row: TenantServiceCategoryRow
+        Insert: InsertOf<
+          TenantServiceCategoryRow,
+          'id' | 'sort_order' | 'is_active' | 'created_at' | 'updated_at'
+        >
+        Update: Partial<Omit<TenantServiceCategoryRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
       tenant_services: {
         Row: TenantServiceRow
-        Insert: InsertOf<TenantServiceRow, 'id' | 'activity_code' | 'billing_unit' | 'unit_price' | 'sort_order' | 'created_at'>
+        Insert: InsertOf<
+          TenantServiceRow,
+          | 'id'
+          | 'activity_code'
+          | 'category_id'
+          | 'billing_unit'
+          | 'pricing_mode'
+          | 'unit_price'
+          | 'description'
+          | 'duration_minutes'
+          | 'is_active'
+          | 'sort_order'
+          | 'created_at'
+        >
         Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
+      tenant_weight_tiers: {
+        Row: TenantWeightTierRow
+        Insert: InsertOf<
+          TenantWeightTierRow,
+          'id' | 'is_active' | 'sort_order' | 'created_at'
+        >
+        Update: Partial<Omit<TenantWeightTierRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
       tenant_users: {

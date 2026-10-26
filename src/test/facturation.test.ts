@@ -224,6 +224,38 @@ describe('lignesFacture', () => {
     })
   })
 
+  it('retranscrit le palier de forfait poids (snapshot immuable) sur la facture', () => {
+    const [forfait] = lignesFacture([
+      ligne({
+        id: 'forfait-1',
+        label: 'Laver repasser (forfait poids)',
+        articleName: null,
+        serviceName: null,
+        billingUnit: 'PACKAGE',
+        pricingMode: 'FIXED',
+        quantity: 1,
+        billedQuantity: 1,
+        unitPrice: 15_000,
+        price: 15_000,
+        packageSnapshot: {
+          tierId: '44444444-4444-4444-8444-444444444444',
+          label: '10 kg',
+          weightKg: 10,
+          priceFcfa: 15_000,
+          serviceName: 'Laver repasser (forfait poids)',
+        },
+      }),
+    ])
+    expect(forfait).toMatchObject({
+      libelle: 'Laver repasser (forfait poids)',
+      unite: 'PACKAGE',
+      poidsKg: 10,
+      detailCommercial: 'Forfait 10 kg',
+      prixUnitaire: 15_000,
+      total: 15_000,
+    })
+  })
+
   it('renvoie une liste vide sans ligne', () => {
     expect(lignesFacture([])).toEqual([])
   })

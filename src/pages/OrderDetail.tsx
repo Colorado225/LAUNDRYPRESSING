@@ -356,6 +356,12 @@ export default function OrderDetail() {
                 <p className="font-medium text-slate-800">{item.label}</p>
                 {item.serviceName && item.serviceName !== item.label && <p className="text-xs text-slate-600">Prestation : {item.serviceName}</p>}
                 {item.activityNameSnapshot && <p className="text-xs text-slate-600">Activité : {item.activityNameSnapshot}</p>}
+                {item.categoryNameSnapshot && <p className="text-xs text-slate-600">Catégorie : {item.categoryNameSnapshot}</p>}
+                {item.packageSnapshot && (
+                  <p className="text-xs font-semibold text-brand-navy">
+                    Forfait : {item.packageSnapshot.label} · {item.packageSnapshot.weightKg} kg
+                  </p>
+                )}
                 {formatGarmentComposition(item.garmentDetails) && <p className="text-xs text-slate-600">Vêtements : {formatGarmentComposition(item.garmentDetails)}</p>}
                 <p className="text-xs text-slate-500">
                   {item.familyPackageSnapshot
@@ -364,7 +370,9 @@ export default function OrderDetail() {
                       ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`
                       : item.billingUnit === 'FLAT'
                         ? `Forfait · ${formatFcfa(item.unitPrice)}`
-                        : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
+                        : item.billingUnit === 'PACKAGE' && item.packageSnapshot
+                          ? `Forfait ${item.packageSnapshot.label} (${item.packageSnapshot.weightKg} kg) · ${formatFcfa(item.packageSnapshot.priceFcfa)}`
+                          : `${item.quantity} ${libelleUnite(item.billingUnit)} mesuré · ${item.billedQuantity} facturé · ${formatFcfa(item.unitPrice)}/${libelleUnite(item.billingUnit)}`}
                   {item.priceStatus === 'ESTIMATED' ? ' · ESTIMÉ — à confirmer' : ''}
                 </p>
                 <p className="text-xs text-slate-500">
@@ -435,7 +443,7 @@ export default function OrderDetail() {
           <a
             href={generateWhatsAppUrl(
               order.customerPhone,
-              generateReceiptText(order, items, tenantName)
+              generateReceiptText(order, items, tenantName ?? 'Pressing')
             )}
             target="_blank"
             rel="noopener noreferrer"
@@ -447,7 +455,7 @@ export default function OrderDetail() {
           <button
             onClick={() => {
               try {
-                const receiptHtml = generatePrintableReceipt(order, items, tenantName)
+                const receiptHtml = generatePrintableReceipt(order, items, tenantName ?? 'Pressing')
                 printReceipt(receiptHtml)
               } catch (error) {
                 toast.error(error instanceof Error ? error.message : "Impression impossible")
