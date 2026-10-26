@@ -435,7 +435,7 @@ export default function OrderDetail() {
           <a
             href={generateWhatsAppUrl(
               order.customerPhone,
-              generateReceiptText(order, items, tenantName)
+              generateReceiptText(order, items, tenantName ?? 'Pressing')
             )}
             target="_blank"
             rel="noopener noreferrer"
@@ -447,7 +447,7 @@ export default function OrderDetail() {
           <button
             onClick={() => {
               try {
-                const receiptHtml = generatePrintableReceipt(order, items, tenantName)
+                const receiptHtml = generatePrintableReceipt(order, items, tenantName ?? 'Pressing')
                 printReceipt(receiptHtml)
               } catch (error) {
                 toast.error(error instanceof Error ? error.message : "Impression impossible")
