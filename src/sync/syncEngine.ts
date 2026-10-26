@@ -195,6 +195,15 @@ async function pushOrder(order: LocalOrder): Promise<PushResult> {
     photo_url: payload.photo_url,
     total_amount: payload.total_amount,
     due_date: payload.due_date,
+    // L'attribution est décidée à l'atelier, souvent hors ligne : sans ces deux
+    // colonnes, le serveur ne la recevait jamais et le prochain rapatriement
+    // effaçait l'artisan sélectionné sur la tablette.
+    assigned_to: payload.assigned_to,
+    assigned_at: payload.assigned_at,
+    // `status_reason` est un champ de **transport** : le déclencheur serveur le
+    // recopie dans l'historique puis le remet à NULL. L'omettre ici perdait le
+    // motif d'annulation saisi au comptoir.
+    status_reason: payload.status_reason,
     updated_at: payload.updated_at,
     synced_from_local: payload.synced_from_local,
   }
@@ -480,6 +489,22 @@ async function runSync(): Promise<SyncResult> {
           .from('order_items')
           .upsert(items.map(toSupabaseOrderItem), { onConflict: 'id' })
         if (itemsError) throw new Error(itemsError.message)
+
+        // Une ligne retirée au comptoir doit aussi disparaître du serveur :
+        // l'upsert ne fait qu'ajouter et mettre à jour. On supprime donc les
+        // lignes distantes absentes de la liste locale (jamais l'inverse : la
+        // liste locale est la référence de cette tablette). Rien à purger lors
+        // du premier envoi : la commande n'existe pas encore côté serveur.
+        if (order.serverVersion > 0) {
+          // UUID : ni guillemets ni virgule possible, la liste reste sûre.
+          const ids = items.map((ligne) => ligne.id).join(',')
+          const { error: purgeError } = await supabase
+            .from('order_items')
+            .delete()
+            .eq('order_id', order.id)
+            .not('id', 'in', `(${ids})`)
+          if (purgeError) throw new Error(purgeError.message)
+        }
       }
 
       await markOrderSynced(order.id, pushed.version)

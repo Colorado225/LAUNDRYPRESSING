@@ -4,8 +4,10 @@ import type { OrderStatus } from '@/types/database'
 import type { UpdateOrderItemMeasurementInput } from '@/schemas/order'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
+  addOrderItemLocal,
   countPendingOrders,
   createOrderLocal,
+  removeOrderItemLocal,
   updateOrderAssignmentLocal,
   updateOrderItemMeasurementLocal,
   updateOrderStatusLocal,
@@ -183,6 +185,37 @@ export function useQueueCashPayment() {
         throw new Error("Aucun pressing sélectionné : impossible d'encaisser.")
       }
       return queueCashPayment(tenantId, orderId, amount, note)
+    },
+    [tenantId],
+  )
+}
+
+/**
+ * Ajoute une ligne libre à une commande (écriture locale immédiate).
+ *
+ * L'écran Fiche commande s'en sert pour la pièce rapportée au comptoir ; la
+ * ligne part au serveur avec le prochain envoi de la commande.
+ */
+export function useAddOrderItem() {
+  const tenantId = useTenantStore((state) => state.tenantId)
+
+  return useCallback(
+    async (orderId: string, input: { label: string; quantity: number; unitPrice: number }) => {
+      if (!tenantId) throw new Error('Aucun pressing sélectionné.')
+      return addOrderItemLocal(tenantId, orderId, input)
+    },
+    [tenantId],
+  )
+}
+
+/** Retire une ligne d'une commande (le serveur s'aligne à l'envoi suivant). */
+export function useRemoveOrderItem() {
+  const tenantId = useTenantStore((state) => state.tenantId)
+
+  return useCallback(
+    async (orderId: string, itemId: string) => {
+      if (!tenantId) throw new Error('Aucun pressing sélectionné.')
+      return removeOrderItemLocal(tenantId, orderId, itemId)
     },
     [tenantId],
   )

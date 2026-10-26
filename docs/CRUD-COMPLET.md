@@ -17,7 +17,7 @@ protège (interface, service, RLS, déclencheur).
 
 | Module | Créer | Lire | Modifier | Supprimer | Rôles |
 |---|---|---|---|---|---|
-| Commandes | Formulaire libre + QR | Liste, fiche, atelier | Statut, échéance, attribution, lignes/mesures | **Propriétaire**, si aucun encaissement ni remboursement | comptoir + atelier |
+| Commandes | Formulaire libre + QR | Liste, fiche, atelier | Statut, échéance, attribution, lignes (ajout/retrait) et mesures | **Propriétaire**, si aucun encaissement ni remboursement | comptoir + atelier |
 | Réclamations | « Signaler » sur la fiche | Fiche commande | Clôture / réouverture (réparé, dédommagé, sans suite) | **Propriétaire** | atelier constate, comptoir clôture |
 | Clients | « Nouveau client » (fiche sans commande) | Liste locale + fiches serveur | Nom, téléphone, e-mail, adresse, préférences | **Propriétaire** | comptoir |
 | Stock — articles | « Nouvel article » | Liste, alertes de seuil | Nom, catégorie, unité, seuil, coût | **Propriétaire**, si aucun mouvement | propriétaire crée, comptoir mouvemente |
@@ -75,6 +75,26 @@ existantes et protège l'historique.
      écritures passent par ces fonctions.
 
 5. **Commandes**
+   - Aucune migration nécessaire pour l'édition : `orders_update_tenant`,
+     `order_items_write_tenant`, `order_items_update_tenant` et
+     `order_items_delete_tenant` existaient déjà. Le travail a donc porté sur
+     le **frontend et le moteur de synchronisation** :
+     - `pushOrder` transmet désormais `assigned_to`, `assigned_at` et
+       `status_reason`. Ces colonnes étaient absentes de la charge utile de mise
+       à jour : l'attribution faite à l'atelier n'arrivait jamais au serveur (et
+       le rapatriement suivant l'effaçait), et le motif d'annulation saisi au
+       comptoir n'atteignait pas l'historique.
+     - Après l'upsert des lignes, le moteur **purge les lignes distantes
+       absentes de la liste locale** (`delete … not in (ids)`). Sans cela, une
+       ligne retirée continuait d'exister sur les autres appareils.
+   - Nouvelle correction possible depuis la fiche : « Modifier l'échéance »
+     (`updateOrderDueDateLocal`, jusqu'ici présent mais jamais appelé par
+     l'écran) et le panneau **Articles** (`addOrderItemLocal`,
+     `removeOrderItemLocal`).
+   - Garde-fous : une commande livrée, annulée ou soldée n'est plus modifiable ;
+     la dernière ligne ne peut pas être retirée ; une ligne libre porte un
+     motif de prix d'au moins 10 caractères, exigé par le déclencheur serveur
+     `guard_order_item_price` (vérifié sur la base réelle).
    - La politique `orders_delete_owner` existait déjà (001), mais les clés
      étrangères de `payment_transactions` et `payment_refunds` sont en
      `on delete cascade` : supprimer une commande effaçait en silence ses
@@ -104,7 +124,11 @@ existantes et protège l'historique.
 - suppression locale qui nettoie lignes, réclamations, notifications, file
   d'encaissement et remboursements (aucun orphelin dans les agrégats) ;
 - clôture de réclamation locale en mode démonstration et refus tant que la
-  réclamation n'est pas synchronisée.
+  réclamation n'est pas synchronisée ;
+- ajout d'une ligne au comptoir, retrait d'une ligne et total recalculé, y
+  compris le refus de retirer la dernière ligne ;
+- envoi de l'attribution et du motif de statut, et purge des lignes retirées
+  côté serveur (`src/test/syncEngine.test.ts`).
 
 ## 4. Ordre d'application et compatibilité
 

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/localDb'
 import {
+  addOrderItemLocal,
   createOrderLocal,
+  removeOrderItemLocal,
   toSupabaseOrder,
   toSupabaseOrderItem,
+  updateOrderAssignmentLocal,
   updateOrderItemMeasurementLocal,
   updateOrderStatusLocal,
 } from '@/db/ordersRepository'
@@ -29,8 +32,10 @@ const OTHER_TENANT = '22222222-2222-4222-8222-222222222222'
 
 interface Call {
   table: string
-  mode: 'insert' | 'update' | 'upsert'
+  mode: 'insert' | 'update' | 'upsert' | 'delete'
   rows: unknown
+  /** Filtre de la purge (`not('id','in', …)`) pour les suppressions. */
+  filtre?: { colonne: string; operateur: string; valeur: string }
 }
 
 const remote = vi.hoisted(() => ({
@@ -123,6 +128,20 @@ vi.mock('@/lib/supabaseClient', () => {
           remote.calls.push({ table, mode: 'upsert', rows })
           const message = remote.failure?.(table, rows) ?? null
           return Promise.resolve({ error: message ? { message } : null })
+        },
+        delete: () => {
+          const appel: Call = { table, mode: 'delete', rows: null }
+          remote.calls.push(appel)
+          const builder = {
+            eq: () => builder,
+            not: (colonne: string, operateur: string, valeur: string) => {
+              appel.filtre = { colonne, operateur, valeur }
+              return Promise.resolve({ data: null, error: null })
+            },
+            then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+              Promise.resolve({ data: null, error: null }).then(resolve, reject),
+          }
+          return builder
         },
         select: () => {
           // Lecture descendante, relecture d'idempotence et arbitrage des conflits.
@@ -344,6 +363,7 @@ describe('syncPendingOrders — envoi nominal', () => {
     expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
       'orders:update',
       'order_items:upsert',
+      'order_items:delete',
     ])
     const sentItems = remote.calls[1]?.rows as Array<Record<string, unknown>>
     expect(sentItems[0]).toMatchObject({
@@ -379,6 +399,61 @@ describe('syncPendingOrders — envoi nominal', () => {
     const stored = await db.orders.get(order.id)
     expect(stored?.serverVersion).toBe(2)
     expect(stored?.synced).toBe(1)
+  })
+
+  it('transmet l’attribution et le motif de statut, jamais le statut de paiement', async () => {
+    const { order } = await seedOrder()
+    await syncPendingOrders()
+
+    const artisan = '99999999-9999-4999-8999-999999999999'
+    await updateOrderAssignmentLocal(order.id, artisan)
+    await updateOrderStatusLocal(order.id, 'cancelled', 'Client injoignable')
+    remote.calls.length = 0
+
+    const result = await syncPendingOrders()
+
+    expect(result.succeeded).toBe(1)
+    const payload = remote.calls[0]?.rows as Record<string, unknown>
+    expect(payload['assigned_to']).toBe(artisan)
+    expect(typeof payload['assigned_at']).toBe('string')
+    expect(payload['status_reason']).toBe('Client injoignable')
+    // Le paiement reste la propriété du serveur (guard_order_update).
+    expect(payload).not.toHaveProperty('payment_status')
+  })
+
+  it('purge côté serveur les lignes retirées de la commande', async () => {
+    const { order, items } = await seedOrder()
+    await syncPendingOrders()
+
+    // Deux lignes, puis retrait de celle d'origine : la purge distante doit
+    // supprimer la ligne retirée sans toucher à celle qui reste.
+    await addOrderItemLocal(TENANT, order.id, {
+      label: 'Pantalon',
+      quantity: 1,
+      unitPrice: 4000,
+    })
+    await removeOrderItemLocal(TENANT, order.id, items[0]!.id)
+    remote.calls.length = 0
+
+    const result = await syncPendingOrders()
+
+    expect(result.succeeded).toBe(1)
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
+      'orders:update',
+      'order_items:upsert',
+      'order_items:delete',
+    ])
+
+    const ligneEnvoyee = (remote.calls[1]?.rows as Array<Record<string, unknown>>)[0]!
+    expect(ligneEnvoyee['label']).toBe('Pantalon')
+    expect(ligneEnvoyee['price']).toBe(4000)
+
+    // La purge ne conserve que l'identifiant encore présent localement.
+    const purge = remote.calls[2]?.filtre
+    expect(purge?.colonne).toBe('id')
+    expect(purge?.operateur).toBe('in')
+    expect(purge?.valeur).toContain(ligneEnvoyee['id'] as string)
+    expect(purge?.valeur).not.toContain(items[0]!.id)
   })
 
   it('n’envoie jamais les commandes d’un autre pressing', async () => {
@@ -488,6 +563,7 @@ describe('syncPendingOrders — conflits', () => {
     expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
       'orders:update',
       'order_items:upsert',
+      'order_items:delete',
     ])
     expect((remote.calls[1]?.rows as Array<Record<string, unknown>>)[0]).toMatchObject({
       quantity: 3,

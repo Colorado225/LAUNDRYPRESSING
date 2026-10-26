@@ -30,6 +30,8 @@ va avec.
   modification, désactivation et suppression des fournisseurs inutilisés.
 - **Dépenses** — correction d'une dépense existante (formulaire prérempli) en
   plus de la création et de la suppression.
+- **Commandes (édition)** — « Modifier l'échéance » et panneau **Articles**
+  (ajout d'une pièce rapportée, retrait d'une ligne, total recalculé).
 - **Commandes** — suppression définitive réservée au propriétaire, refusée dès
   qu'un encaissement, un remboursement ou un paiement Mobile Money est rattaché ;
   nettoyage local des lignes, réclamations, notifications et files associées.
@@ -42,6 +44,16 @@ va avec.
   Le dernier propriétaire et la limite de comptes de la formule sont protégés
   côté serveur.
 
+### Corrigé
+
+- **Synchronisation** — `pushOrder` transmet désormais `assigned_to`,
+  `assigned_at` et `status_reason` : l'attribution faite hors ligne et le motif
+  d'annulation atteignent enfin le serveur (ils étaient silencieusement perdus,
+  puis effacés au rapatriement suivant).
+- **Synchronisation** — les lignes retirées au comptoir sont purgées côté
+  serveur après l'upsert ; elles ne réapparaissent plus sur les autres
+  appareils.
+
 ### Modifié
 
 - Matrice des permissions : nouvelle capacité `customers.delete`, réservée au
@@ -51,7 +63,7 @@ va avec.
 
 ### Vérifié
 
-- 625 tests sur 59 fichiers Vitest ; typecheck, lint et build réussis.
+- 634 tests sur 60 fichiers Vitest ; typecheck, lint et build réussis.
 - `supabase/tests/crud_complet.sql` : 19 contrôles RLS et déclencheurs, rejoués
   avec toute la chaîne de migrations sur PostgreSQL (PGlite, `pgcrypto` omis)
   puis par la CI sur PostgreSQL 16 réel (`npm run sql:verify`, PR #8) : tout

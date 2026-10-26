@@ -53,6 +53,8 @@ La liste permet de consulter et de rechercher les commandes. Ouvrir une commande
 
 Les transitions disponibles suivent le flux de traitement. Le personnel d’atelier peut mettre à jour les étapes autorisées par son rôle. Si plusieurs appareils modifient une commande hors ligne, l’application signale un conflit et propose de conserver la version locale ou d’adopter celle du serveur : ne pas fermer ce choix sans vérifier les modifications.
 
+Toujours depuis la fiche, **Modifier l’échéance** change la date promise (ou la retire), et le panneau **Articles** permet d’ajouter une pièce rapportée au dépôt (libellé, quantité, prix unitaire) ou de retirer une ligne saisie par erreur : le total et le reçu sont recalculés, puis la correction se synchronise comme le reste de la commande. Une commande livrée, annulée ou entièrement payée n’est plus modifiable, et la dernière ligne ne peut pas être retirée.
+
 Le propriétaire peut **supprimer définitivement** une commande depuis sa fiche, mais seulement si aucun encaissement ni remboursement n’y est rattaché. Une commande qui porte de l’argent doit être **annulée** : elle reste dans l’historique et conserve ses reçus.
 
 ## 5. Atelier et QR code

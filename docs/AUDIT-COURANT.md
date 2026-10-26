@@ -18,7 +18,7 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 |---|---|
 | `npm run typecheck` | Réussi |
 | `npm run lint` | Réussi |
-| `npm test` | **625 tests réussis / 625**, 59 fichiers |
+| `npm test` | **634 tests réussis / 634**, 60 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
 | CI PostgreSQL 16 | Réussie sur la PR #8 : migrations 001→025 et 19 contrôles CRUD passés |
@@ -43,7 +43,7 @@ protection (fiches clients, stock et fournisseurs, suppression de commande) et s
 fonctions `security definer` contrôlées par le rôle. Le détail de la matrice et les règles métier sont
 dans [`CRUD-COMPLET.md`](CRUD-COMPLET.md).
 
-Contrôles rejoués : typecheck, lint, build et suite Vitest (625 tests / 59
+Contrôles rejoués : typecheck, lint, build et suite Vitest (634 tests / 60
 fichiers). La chaîne complète des migrations et des tests SQL, y compris
 `supabase/tests/crud_complet.sql` (19 contrôles), a été exécutée avec succès sur
 PostgreSQL via PGlite, puis confirmée par la CI sur PostgreSQL 16 réel
@@ -66,7 +66,11 @@ La base distante était en retard de deux migrations. Elle a été alignée :
 Vérifications faites directement sur le projet, dans une transaction annulée :
 `prepare_customer_row` transforme `+225 07 00 00 00 99` en `0700000099` ;
 supprimer une commande portant un encaissement renvoie bien `23503` et
-l'annulation est acceptée. Aucune ligne de test n'a été conservée.
+l'annulation est acceptée. Une seconde transaction a confirmé, **en tant que
+propriétaire authentifié**, que l'attribution, le motif d'annulation et la
+suppression d'une ligne (`order_items`) passent la RLS et les déclencheurs, et
+que `guard_order_item_price` exige bien un motif de prix pour une ligne libre.
+Aucune ligne de test n'a été conservée.
 
 La configuration Auth a été étendue : `site_url` et la liste de redirection
 couvrent l'origine de prévisualisation et `localhost:3000`, en plus de
