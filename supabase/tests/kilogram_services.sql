@@ -91,6 +91,37 @@ begin
     raise exception 'ECHEC 6 : la validation du détail des vêtements manque sur order_items';
   end if;
   raise notice 'OK 4 — la composition JSON est validée et protégée par une contrainte SQL.';
+
+  insert into public.orders (
+    id, tenant_id, customer_name, customer_phone, qr_code, total_amount
+  ) values (
+    '44444444-4444-4444-8444-444444444442',
+    '44444444-4444-4444-8444-444444444441',
+    'Client test', '0700000001', 'CMD-KILO-SNAPSHOT', 1500
+  );
+  insert into public.order_items (
+    id, order_id, tenant_id, label, price, quantity, billed_quantity,
+    billing_unit, unit_price, pricing_mode, price_status, service_name,
+    tenant_service_id, activity_name_snapshot
+  ) values (
+    '44444444-4444-4444-8444-444444444443',
+    '44444444-4444-4444-8444-444444444442',
+    '44444444-4444-4444-8444-444444444441',
+    'Lavage et repassage au kilo', 1500, 1, 1,
+    'KG', 1500, 'FIXED', 'CONFIRMED', 'Lavage et repassage au kilo',
+    v_service, 'Blanchisserie'
+  );
+  delete from public.tenant_services where id = v_service;
+  if not exists (
+    select 1 from public.order_items
+     where id = '44444444-4444-4444-8444-444444444443'
+       and tenant_service_id is null
+       and service_name = 'Lavage et repassage au kilo'
+       and activity_name_snapshot = 'Blanchisserie'
+  ) then
+    raise exception 'ECHEC 7 : la suppression de la prestation a détruit l’instantané de commande';
+  end if;
+  raise notice 'OK 5 — la commande conserve service et activité après suppression de la configuration.';
 end $$;
 
 rollback;

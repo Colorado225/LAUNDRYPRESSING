@@ -4,20 +4,23 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const tenantServiceMock = vi.hoisted(() => ({
-  rows: [] as Array<{
-    id: string
-    tenantId: string
-    activityId: string
-    activityName: string
-    serviceName: string
-    billingUnit: 'PIECE' | 'KG'
-    unitPrice: number | null
-    sortOrder: number
-  }>,
+  configuration: {
+    activities: [] as Array<{ id: string; tenantId: string; name: string; sortOrder: number }>,
+    services: [] as Array<{
+      id: string
+      tenantId: string
+      activityId: string
+      activityName: string
+      serviceName: string
+      billingUnit: 'PIECE' | 'KG'
+      unitPrice: number | null
+      sortOrder: number
+    }>,
+  },
 }))
 
 vi.mock('@/services/tenantServices', () => ({
-  fetchTenantServices: vi.fn(async () => tenantServiceMock.rows),
+  fetchTenantServiceConfiguration: vi.fn(async () => tenantServiceMock.configuration),
 }))
 import OrderForm from '@/pages/OrderForm'
 import { db } from '@/db/localDb'
@@ -86,7 +89,7 @@ beforeEach(async () => {
   await db.orderItems.clear()
   await db.tenantActivities.clear()
   await db.tenantServices.clear()
-  tenantServiceMock.rows = []
+  tenantServiceMock.configuration = { activities: [], services: [] }
   useTenantStore.setState({ tenantId: TENANT, tenantName: 'Pressing Cocody', role: 'owner' })
 })
 
@@ -117,16 +120,24 @@ describe('OrderForm — création libre', () => {
   })
 
   it('énumère les vêtements, pèse le lot et calcule une prestation au kilo', async () => {
-    tenantServiceMock.rows = [{
-      id: 'service-kilo',
-      tenantId: TENANT,
-      activityId: 'activity-blanchisserie',
-      activityName: 'Blanchisserie',
-      serviceName: 'Lavage et repassage au kilo',
-      billingUnit: 'KG',
-      unitPrice: 1500,
-      sortOrder: 0,
-    }]
+    tenantServiceMock.configuration = {
+      activities: [{
+        id: 'activity-blanchisserie',
+        tenantId: TENANT,
+        name: 'Blanchisserie',
+        sortOrder: 0,
+      }],
+      services: [{
+        id: '77777777-7777-4777-8777-777777777777',
+        tenantId: TENANT,
+        activityId: 'activity-blanchisserie',
+        activityName: 'Blanchisserie',
+        serviceName: 'Lavage et repassage au kilo',
+        billingUnit: 'KG',
+        unitPrice: 1500,
+        sortOrder: 0,
+      }],
+    }
     await mount()
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 
@@ -135,9 +146,12 @@ describe('OrderForm — création libre', () => {
     setInput(clientInputs[1]!, '0700000001')
     await act(async () => button('Suivant').click())
 
+    const selectActivite = host.querySelector<HTMLSelectElement>('[aria-label="Activité de la ligne 1"]')
     const selectPrestation = host.querySelector<HTMLSelectElement>('[aria-label="Prestation de la ligne 1"]')
+    expect(selectActivite).not.toBeNull()
     expect(selectPrestation).not.toBeNull()
-    setSelect(selectPrestation!, 'service-kilo')
+    setSelect(selectActivite!, 'activity-blanchisserie')
+    setSelect(selectPrestation!, '77777777-7777-4777-8777-777777777777')
     const poids = host.querySelector<HTMLInputElement>('[aria-label="Poids total (kg) ligne 1"]')
     const tarif = host.querySelector<HTMLInputElement>('[aria-label="Tarif au kilo ligne 1 (FCFA)"]')
     expect(poids).not.toBeNull()
@@ -165,12 +179,64 @@ describe('OrderForm — création libre', () => {
     expect(item?.billingUnit).toBe('KG')
     expect(item?.quantity).toBe(1)
     expect(item?.unitPrice).toBe(1500)
+    expect(item?.tenantServiceId).toBe('77777777-7777-4777-8777-777777777777')
+    expect(item?.activityNameSnapshot).toBe('Blanchisserie')
     const composition = [
       { type: 'CHEMISE', quantity: 1 },
       { type: 'PANTALON', quantity: 2 },
     ]
     expect(item?.garmentDetails).toEqual(composition)
     expect(item && toSupabaseOrderItem(item).garment_details).toEqual(composition)
+    expect(item && toSupabaseOrderItem(item).tenant_service_id).toBe('77777777-7777-4777-8777-777777777777')
+    expect(item && toSupabaseOrderItem(item).activity_name_snapshot).toBe('Blanchisserie')
+    unmount()
+  })
+
+  it('filtre les prestations par activité et enregistre les identifiants configurés', async () => {
+    tenantServiceMock.configuration = {
+      activities: [
+        { id: 'activity-blanchisserie', tenantId: TENANT, name: 'Blanchisserie', sortOrder: 0 },
+        { id: 'activity-repassage', tenantId: TENANT, name: 'Repassage', sortOrder: 1 },
+      ],
+      services: [{
+        id: '88888888-8888-4888-8888-888888888888',
+        tenantId: TENANT,
+        activityId: 'activity-repassage',
+        activityName: 'Repassage',
+        serviceName: 'Repassage simple',
+        billingUnit: 'PIECE',
+        unitPrice: null,
+        sortOrder: 0,
+      }],
+    }
+    await mount()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+
+    setInput(host.querySelectorAll('input')[0]!, 'Awa Koné')
+    setInput(host.querySelectorAll('input')[1]!, '0700000001')
+    await act(async () => button('Suivant').click())
+    const article = host.querySelector<HTMLInputElement>('fieldset input')!
+    setInput(article, 'Chemise')
+    const activity = host.querySelector<HTMLSelectElement>('[aria-label="Activité de la ligne 1"]')!
+    const service = host.querySelector<HTMLSelectElement>('[aria-label="Prestation de la ligne 1"]')!
+    setSelect(activity, 'activity-blanchisserie')
+    expect([...service.options].some((option) => option.textContent === 'Repassage simple')).toBe(false)
+    setSelect(activity, 'activity-repassage')
+    expect([...service.options].some((option) => option.textContent === 'Repassage simple')).toBe(true)
+    setSelect(service, '88888888-8888-4888-8888-888888888888')
+    expect(article.value).toBe('Chemise')
+    setInput(host.querySelectorAll<HTMLInputElement>('fieldset input')[2]!, '2500')
+
+    await act(async () => button('Suivant').click())
+    await act(async () => {
+      button('Enregistrer la commande').click()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    const item = await db.orderItems.toCollection().first()
+    expect(item?.label).toBe('Chemise')
+    expect(item?.serviceName).toBe('Repassage simple')
+    expect(item?.tenantServiceId).toBe('88888888-8888-4888-8888-888888888888')
+    expect(item?.activityNameSnapshot).toBe('Repassage')
     unmount()
   })
 

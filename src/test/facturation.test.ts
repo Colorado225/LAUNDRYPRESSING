@@ -180,6 +180,31 @@ describe('lignesFacture', () => {
     })
   })
 
+  it('fige l’activité et la prestation choisies dans la facture au kilo', () => {
+    const [serviceKilo] = lignesFacture([
+      ligne({
+        id: 'service-kilo',
+        label: 'Lavage au kilo',
+        articleName: null,
+        serviceName: 'Lavage au kilo',
+        billingUnit: 'KG',
+        quantity: 1,
+        billedQuantity: 1,
+        unitPrice: 1500,
+        price: 1500,
+        tenantServiceId: '77777777-7777-4777-8777-777777777777',
+        activityNameSnapshot: 'Blanchisserie',
+      }),
+    ])
+    expect(serviceKilo).toMatchObject({
+      libelle: 'Lavage au kilo',
+      activiteSnapshot: 'Blanchisserie',
+      unite: 'KG',
+      prixUnitaire: 1500,
+      total: 1500,
+    })
+  })
+
   it('conserve le poids et les prestations du modèle commercial sur la facture', () => {
     const [commerciale] = lignesFacture([
       ligne({

@@ -146,6 +146,9 @@ export default function Facture() {
             <tr key={`${ligne.libelle}-${ligne.poidsKg ?? ''}-${ligne.prixUnitaire}-${index}`} className="border-b border-slate-100">
               <td className="py-2 pr-2">
                 {ligne.libelle}
+                {ligne.activiteSnapshot && (
+                  <span className="block text-[8px] text-slate-500">Activité : {ligne.activiteSnapshot}</span>
+                )}
                 {ligne.compositionVetements && (
                   <span className="block text-[8px] text-slate-500">Vêtements : {ligne.compositionVetements}</span>
                 )}

@@ -163,6 +163,8 @@ export type OrderItemRow = {
   /** Références et paramètres tarifaires figés avec la ligne. */
   article_name: string | null
   service_name: string | null
+  tenant_service_id: string | null
+  activity_name_snapshot: string | null
   family_name_snapshot: string | null
   catalog_unit_price_snapshot: number | null
   minimum_quantity_snapshot: number | null
@@ -812,6 +814,8 @@ export interface Database {
           | 'special_instructions'
           | 'article_name'
           | 'service_name'
+          | 'tenant_service_id'
+          | 'activity_name_snapshot'
           | 'price_reason'
           | 'quantity'
           | 'billed_quantity'

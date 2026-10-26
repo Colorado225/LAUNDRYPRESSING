@@ -99,6 +99,9 @@ export interface LocalOrderItem {
   catalogEntryId: string | null
   articleName: string | null
   serviceName: string | null
+  /** Référence et nom de l’activité figés depuis la prestation configurée. */
+  tenantServiceId?: string | null
+  activityNameSnapshot?: string | null
   familyNameSnapshot: string | null
   catalogUnitPriceSnapshot: number | null
   minimumQuantitySnapshot: number | null
@@ -568,6 +571,16 @@ export class PressingDatabase extends Dexie {
         await tx.table('tenantServices').toCollection().modify((service: LocalTenantService & Record<string, unknown>) => {
           if (service.billingUnit === undefined) service.billingUnit = 'PIECE'
           if (service.unitPrice === undefined) service.unitPrice = null
+        })
+      })
+
+    // v15 : liaison souple à la prestation de configuration et instantané de l’activité.
+    this.version(15)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table('orderItems').toCollection().modify((item: LocalOrderItem & Record<string, unknown>) => {
+          if (item.tenantServiceId === undefined) item.tenantServiceId = null
+          if (item.activityNameSnapshot === undefined) item.activityNameSnapshot = null
         })
       })
   }

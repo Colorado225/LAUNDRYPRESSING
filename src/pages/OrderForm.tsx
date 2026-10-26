@@ -8,7 +8,11 @@ import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/o
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
-import { fetchTenantServices, type TenantServiceOffering } from '@/services/tenantServices'
+import {
+  fetchTenantServiceConfiguration,
+  type TenantActivity,
+  type TenantServiceOffering,
+} from '@/services/tenantServices'
 import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
 import type { OrderGarmentDetail, OrderGarmentType } from '@/types/database'
 
@@ -16,6 +20,7 @@ import type { OrderGarmentDetail, OrderGarmentType } from '@/types/database'
 interface OrderItemDraft extends Omit<OrderItemInput, 'garmentDetails'> {
   quantity: number
   unitPrice: number
+  selectedActivityId: string
   selectedOfferingId: string
   garmentDetails: Array<{ type: OrderGarmentType | ''; quantity: number }>
 }
@@ -34,6 +39,9 @@ const createEmptyItem = (): OrderItemDraft => ({
   pricingMode: 'FIXED',
   priceStatus: 'CONFIRMED',
   serviceName: '',
+  tenantServiceId: null,
+  activityNameSnapshot: null,
+  selectedActivityId: '',
   selectedOfferingId: '',
   garmentDetails: [],
 })
@@ -54,6 +62,7 @@ export default function OrderForm() {
   const tenantId = useTenantStore((state) => state.tenantId)
   const canCreate = can(role, 'orders.create')
 
+  const [activites, setActivites] = useState<TenantActivity[]>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
@@ -67,15 +76,19 @@ export default function OrderForm() {
   useEffect(() => {
     if (!tenantId) return
     let active = true
-    void fetchTenantServices(tenantId)
-      .then((rows) => {
-        if (active) setPrestations(rows)
+    void fetchTenantServiceConfiguration(tenantId)
+      .then((configuration) => {
+        if (!active) return
+        setActivites(configuration.activities)
+        setPrestations(configuration.services)
       })
       .catch(() => undefined)
     return () => {
       active = false
     }
   }, [tenantId])
+
+  const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 
   const total = items.reduce((sum, item) => sum + item.price, 0)
 
@@ -88,11 +101,32 @@ export default function OrderForm() {
     }))
   }
 
+  const choisirActivite = (index: number, activityId: string) => {
+    const item = items[index]
+    updateItem(index, {
+      selectedActivityId: activityId,
+      label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
+      selectedOfferingId: '',
+      serviceName: '',
+      tenantServiceId: null,
+      activityNameSnapshot: null,
+      billingUnit: 'PIECE',
+      quantity: 1,
+      unitPrice: 0,
+      garmentDetails: [],
+    })
+  }
+
   const choisirPrestation = (index: number, offeringId: string) => {
+    const item = items[index]
+    const selectedActivity = activitesDisponibles.find((activity) => activity.id === item?.selectedActivityId)
     if (offeringId === '__free__') {
       updateItem(index, {
         selectedOfferingId: offeringId,
+        label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
         serviceName: '',
+        tenantServiceId: null,
+        activityNameSnapshot: selectedActivity?.name ?? null,
         billingUnit: 'PIECE',
         quantity: 1,
         unitPrice: 0,
@@ -100,11 +134,14 @@ export default function OrderForm() {
       })
       return
     }
-    const offering = prestations.find((service) => service.id === offeringId)
+    const offering = prestations.find((service) => service.id === offeringId && service.activityId === item?.selectedActivityId)
     if (!offering) {
       updateItem(index, {
         selectedOfferingId: '',
+        label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
         serviceName: '',
+        tenantServiceId: null,
+        activityNameSnapshot: null,
         billingUnit: 'PIECE',
         quantity: 1,
         unitPrice: 0,
@@ -113,10 +150,17 @@ export default function OrderForm() {
       return
     }
     const auKilo = offering.billingUnit === 'KG'
+    let label = item?.label ?? ''
+    if (auKilo) label = offering.serviceName
+    else if (item?.billingUnit === 'KG') label = ''
     updateItem(index, {
       selectedOfferingId: offering.id,
       serviceName: offering.serviceName,
-      label: auKilo ? offering.serviceName : '',
+      tenantServiceId: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(offering.id)
+        ? offering.id
+        : null,
+      activityNameSnapshot: offering.activityName,
+      label,
       billingUnit: offering.billingUnit,
       quantity: 1,
       unitPrice: offering.unitPrice ?? 0,
@@ -267,13 +311,20 @@ export default function OrderForm() {
                     </label>
                     <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-600">Activité <span className="font-normal">(facultatif)</span></span>
+                      <select value={item.selectedActivityId} onChange={(event) => choisirActivite(index, event.target.value)} aria-label={`Activité de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
+                        <option value="">Choisir une activité</option>
+                        {activitesDisponibles.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
+                      </select>
+                    </label>
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
                       <select value={item.selectedOfferingId} onChange={(event) => choisirPrestation(index, event.target.value)} aria-label={`Prestation de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
-                        <option value="">Sans prestation configurée</option>
+                        <option value="">Choisir une prestation</option>
                         <option value="__free__">Saisir une prestation libre</option>
-                        {prestations.map((service) => <option key={service.id} value={service.id}>{service.activityName} · {service.serviceName}{service.billingUnit === 'KG' ? ' — au kilo' : ''}</option>)}
+                        {prestations.filter((service) => service.activityId === item.selectedActivityId).map((service) => <option key={service.id} value={service.id}>{service.serviceName}{service.billingUnit === 'KG' ? ' — au kilo' : ''}</option>)}
                       </select>
                       {item.selectedOfferingId === '__free__' && (
                         <input value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" aria-label={`Libellé de la prestation libre ${index + 1}`} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />

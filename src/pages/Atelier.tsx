@@ -539,6 +539,8 @@ function ScanResult({
             <li key={item.id} className="flex flex-wrap justify-between gap-1 py-2">
               <span className="font-medium text-slate-800">
                 {item.label}
+                {item.serviceName && item.serviceName !== item.label && <span className="block text-xs text-slate-600">Prestation : {item.serviceName}</span>}
+                {item.activityNameSnapshot && <span className="block text-xs text-slate-600">Activité : {item.activityNameSnapshot}</span>}
                 {formatGarmentComposition(item.garmentDetails) && <span className="block text-xs text-slate-600">Vêtements : {formatGarmentComposition(item.garmentDetails)}</span>}
               </span>
               <span className="text-xs text-slate-500">

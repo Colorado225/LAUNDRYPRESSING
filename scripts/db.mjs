@@ -64,6 +64,7 @@ export const FICHIERS_SCHEMA = [
   'supabase/migrations/021_tenant_onboarding_services.sql',
   'supabase/migrations/022_tenant_activity_service_crud.sql',
   'supabase/migrations/023_kilogram_services_and_garment_details.sql',
+  'supabase/migrations/024_order_item_service_snapshots.sql',
 ]
 
 /** Tests SQL rejoués par `db:verifier`, après le schéma. */

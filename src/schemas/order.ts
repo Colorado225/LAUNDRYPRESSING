@@ -38,7 +38,10 @@ export const orderItemInputSchema = z.object({
   /** Entrée de catalogue utilisée (prix historisé), absente pour une ligne libre. */
   catalogEntryId: z.string().uuid("Référence de catalogue invalide").optional(),
   articleName: z.string().trim().max(60).optional(),
-  serviceName: z.string().trim().max(60).optional(),
+  serviceName: z.string().trim().max(80).optional(),
+  /** Prestation configurée source et nom de son activité figé au dépôt. */
+  tenantServiceId: z.string().uuid('Référence de prestation invalide').nullable().optional(),
+  activityNameSnapshot: z.string().trim().max(80).nullable().optional(),
   /** Types et quantités énumérés pour une ligne de prestation au kilo. */
   garmentDetails: z.array(z.object({
     type: z.enum([
@@ -155,6 +158,13 @@ export const orderItemInputSchema = z.object({
     item.laundryModelNameSnapshot != null || item.laundryModelTypeSnapshot != null || item.laundryWeightKg != null || item.familyPackageSnapshot != null
   ) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['laundryModelId'], message: 'La référence du modèle commercial est manquante.' })
+  }
+  if (item.tenantServiceId && (!item.serviceName?.trim() || !item.activityNameSnapshot?.trim())) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['tenantServiceId'],
+      message: 'Rechargez la prestation sélectionnée pour conserver son activité et son libellé.',
+    })
   }
   if (unite === 'KG' && (item.unitPrice ?? 0) <= 0) {
     context.addIssue({

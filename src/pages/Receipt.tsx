@@ -130,6 +130,9 @@ export default function Receipt() {
               <td className="pr-1">
                 {item.billingUnit === 'KG' ? (item.serviceName ?? item.label) : item.articleName ?? item.label}
                 {item.billingUnit !== 'KG' && item.serviceName ? ` — ${item.serviceName}` : ''}
+                {item.activityNameSnapshot && (
+                  <span className="block text-[9px]">Activité : {item.activityNameSnapshot}</span>
+                )}
                 {item.fabricType ? ` (${item.fabricType})` : ''}
                 {formatGarmentComposition(item.garmentDetails) && (
                   <span className="block text-[9px]">Vêtements : {formatGarmentComposition(item.garmentDetails)}</span>

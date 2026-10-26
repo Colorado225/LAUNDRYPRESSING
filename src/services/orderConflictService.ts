@@ -108,6 +108,8 @@ export async function takeServerVersion(order: LocalOrder): Promise<void> {
     catalogEntryId: null,
     articleName: item.article_name ?? null,
     serviceName: item.service_name ?? null,
+    tenantServiceId: item.tenant_service_id ?? null,
+    activityNameSnapshot: item.activity_name_snapshot ?? null,
     familyNameSnapshot: item.family_name_snapshot ?? null,
     catalogUnitPriceSnapshot: item.catalog_unit_price_snapshot ?? null,
     minimumQuantitySnapshot: item.minimum_quantity_snapshot ?? null,
