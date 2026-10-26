@@ -1,6 +1,6 @@
 # Recette sur un projet Supabase réel
 
-> ⚠️ **Relevé historique du 23 octobre 2026.** Les chiffres et l’état du projet ci-dessous ne sont plus le relevé courant : le projet Supabase relié est maintenant actif, ses migrations vont jusqu’à 019 et la migration 020 n’est pas encore déployée. Les contrôles applicatifs et SQL de la PR #7 ont passé la CI (PostgreSQL 16). Voir [`ANALYSE-PROJET-WORKFLOW.md`](ANALYSE-PROJET-WORKFLOW.md) pour l’état vérifié au 26 octobre 2026. Ne pas réappliquer les instructions historiques de migrations sans vérifier la cible et sauvegarder la base.
+> ⚠️ **Relevé historique du 23 octobre 2026.** Les chiffres et l’état du projet ci-dessous ne sont plus le relevé courant : le projet Supabase relié est actif ; la migration additive des prestations 021 a été appliquée le 26 octobre (version distante `20261026085329`), tandis que la migration destructive 020 reste non appliquée. La migration 021 a marqué les pressings existants comme déjà configurés. Les contrôles applicatifs et SQL de la PR #7 ont passé la CI (PostgreSQL 16). Voir [`ANALYSE-PROJET-WORKFLOW.md`](ANALYSE-PROJET-WORKFLOW.md) pour l’état vérifié. Ne pas réappliquer les instructions historiques de migrations sans vérifier la cible et sauvegarder la base.
 
 **Objet :** ce que la machine ne peut pas vérifier, et comment le vérifier en
 45 minutes sur un vrai projet, avant de livrer à un pressing.

@@ -62,10 +62,21 @@ export type TenantRow = {
   onboarding_completed_at: string | null
 }
 
+export type TenantActivityRow = {
+  id: string
+  tenant_id: string
+  name: string
+  legacy_code: TenantActivityCode | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 export type TenantServiceRow = {
   id: string
   tenant_id: string
-  activity_code: TenantActivityCode
+  activity_id: string
+  activity_code: TenantActivityCode | null
   service_name: string
   sort_order: number
   created_at: string
@@ -729,10 +740,16 @@ export interface Database {
         Update: Partial<Omit<TenantRow, 'id'>>
         Relationships: []
       }
+      tenant_activities: {
+        Row: TenantActivityRow
+        Insert: InsertOf<TenantActivityRow, 'id' | 'legacy_code' | 'sort_order' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<TenantActivityRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
       tenant_services: {
         Row: TenantServiceRow
-        Insert: InsertOf<TenantServiceRow, 'id' | 'sort_order' | 'created_at'>
-        Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id'>>
+        Insert: InsertOf<TenantServiceRow, 'id' | 'activity_code' | 'sort_order' | 'created_at'>
+        Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
       tenant_users: {
@@ -975,6 +992,10 @@ export interface Database {
       }
     }
     Functions: {
+      complete_tenant_onboarding: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       save_tenant_services: {
         Args: { p_services: Json }
         Returns: string

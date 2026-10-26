@@ -123,10 +123,20 @@ export interface LocalOrderItem {
 }
 
 /** Prestation configurée pour un pressing (cache hors ligne du référentiel). */
+export interface LocalTenantActivity {
+  id: string
+  tenantId: string
+  name: string
+  sortOrder: number
+}
+
 export interface LocalTenantService {
   id: string
   tenantId: string
-  activityCode: TenantActivityCode
+  activityId: string
+  activityName: string
+  /** Identifiant historique conservé uniquement pour les lignes migrées. */
+  activityCode: TenantActivityCode | null
   serviceName: string
   sortOrder: number
 }
@@ -337,6 +347,7 @@ export class PressingDatabase extends Dexie {
   orderIssues!: Table<LocalOrderIssue, string>
   refunds!: Table<LocalRefund, string>
   notifications!: Table<LocalNotification, string>
+  tenantActivities!: Table<LocalTenantActivity, string>
   tenantServices!: Table<LocalTenantService, string>
 
   constructor() {
@@ -534,6 +545,12 @@ export class PressingDatabase extends Dexie {
     this.version(12).stores({
       tenantServices: 'id, tenantId, activityCode, [tenantId+activityCode]',
     })
+
+    // v13 : référentiel d'activités personnalisées et relation service → activité.
+    this.version(13).stores({
+      tenantActivities: 'id, tenantId, [tenantId+name]',
+      tenantServices: 'id, tenantId, activityId, activityCode, [tenantId+activityId]',
+    })
   }
 }
 
@@ -556,6 +573,7 @@ export async function clearLocalData(): Promise<void> {
       db.orderIssues,
       db.refunds,
       db.notifications,
+      db.tenantActivities,
       db.tenantServices,
     ],
     async () => {
@@ -570,6 +588,7 @@ export async function clearLocalData(): Promise<void> {
         db.orderIssues.clear(),
         db.refunds.clear(),
         db.notifications.clear(),
+        db.tenantActivities.clear(),
         db.tenantServices.clear(),
       ])
     },

@@ -3,7 +3,7 @@
 **Date :** 26 octobre 2026  
 **Branche examinée :** `arena/e64723d6-laundrypressing`  
 **Révision locale :** `8daf93a`  
-**Méthode :** lecture des routes, services, hooks Dexie, synchronisation, migrations, fonctions Edge, tests et documentation ; vérifications Supabase limitées à des métadonnées non sensibles (état des services, historique des migrations, schéma, politiques et noms des secrets). Aucune donnée client n’a été consultée et aucune configuration/base Supabase n’a été modifiée.
+**Méthode :** lecture des routes, services, hooks Dexie, synchronisation, migrations, fonctions Edge, tests et documentation ; vérifications Supabase limitées à des métadonnées non sensibles (état des services, historique des migrations, schéma, politiques et noms des secrets). Aucune donnée client n’a été consultée. **Mise à jour du 26 octobre :** la migration additive 021 a été appliquée au projet connecté après confirmation de l’utilisateur ; elle a marqué l’onboarding des pressings existants comme terminé et créé le référentiel des prestations.
 
 ## 1. Synthèse
 
@@ -11,7 +11,7 @@ Pressing Pro est une application web installable (PWA) pour téléphone/tablette
 
 Le périmètre applicatif actuel est centré sur les commandes à lignes libres, l’avancement atelier, la caisse, les clients, le stock, les dépenses, les rapports et l’administration. Le catalogue de prix et les modèles commerciaux ne font plus partie du parcours courant. La migration 020 les retire du schéma Supabase, tout en conservant les données génériques des lignes de commande.
 
-**Connexion Supabase : oui, elle est possible et le connecteur Supabase est relié à un projet actif.** Le projet `Pressing_Pro` est sain pour Auth, Postgres, REST et Storage, en région `eu-west-1`, sur PostgreSQL 17. Les migrations enregistrées vont jusqu’à 019. La migration 020 n’est pas déployée sur ce projet ; ses anciennes tables et colonnes de catalogue/modèles sont encore présentes. L’application de 020 supprimerait définitivement ces objets et leurs données : elle ne doit pas être faite sans sauvegarde, environnement de préproduction et validation explicite.
+**Connexion Supabase : opérationnelle sur le projet actif `Pressing_Pro`.** Auth, Postgres, REST et Storage sont sains, en région `eu-west-1`, sur PostgreSQL 17. Après l’audit, la migration additive 021 a été appliquée le 26 octobre 2026 (entrée distante `20261026085329 / tenant_onboarding_services`). Elle ajoute le marqueur d’onboarding, la table `tenant_services`, ses politiques RLS et la fonction d’enregistrement. Tous les pressings déjà présents sont marqués comme configurés ; aucun n’est resté sans marqueur. La migration destructive 020 reste non appliquée : ses anciennes tables et colonnes de catalogue/modèles sont encore présentes. 021 n’en dépend pas et n’a pas supprimé ces objets ; appliquer 020 reste soumis à sauvegarde, préproduction et validation explicite.
 
 La CI de la PR #7 a réussi ses deux jobs : application et suite SQL sur PostgreSQL 16. Les contrôles locaux précédents donnent 578 tests réussis sur 55 fichiers, typecheck, lint et build réussis. Le build signale encore un chunk JavaScript principal supérieur à 500 kB.
 
@@ -91,7 +91,8 @@ Le moteur tente une synchronisation au démarrage, au retour du réseau, au reto
 
 - Connecteur Supabase activé ; projet `Pressing_Pro` listé comme `ACTIVE_HEALTHY`.
 - Auth, DB, REST et Storage sont signalés sains. Le service Realtime est signalé sain mais sa métadonnée indique `db_connected = false` ; aucun abonnement Realtime n’est actuellement utilisé par le code.
-- Historique distant : migrations `001` à `019` ; les colonnes `catalog_entry_id`, `laundry_model_id` et `service_operations_snapshot` existent encore sur `order_items`.
+- Historique distant : migrations `001` à `019`, puis migration `tenant_onboarding_services` enregistrée sous la version `20261026085329`. Les colonnes `catalog_entry_id`, `laundry_model_id` et `service_operations_snapshot` existent encore sur `order_items` : 020 n’a pas été appliquée.
+- Vérification après application de 021 : colonne `tenants.onboarding_completed_at`, table `tenant_services`, RLS et fonction `save_tenant_services(jsonb)` présentes ; les pressings existants ont tous un marqueur d’onboarding non nul. Les politiques autorisent la lecture aux membres et les écritures au propriétaire.
 - RLS est activée sur les tables métier principales vérifiées.
 - Les fonctions Edge `cinetpay-init` et `cinetpay-webhook` sont actives ; la première exige un JWT et le webhook est configuré sans vérification JWT, comme requis par l’appel fournisseur.
 - La liste des secrets contient les secrets Supabase et les réglages `APP_URL`, `APP_ENV`, `CINETPAY_MODE`, `CINETPAY_NOTIFY_URL`, mais pas les secrets marchands `CINETPAY_API_KEY`, `CINETPAY_SITE_ID` et `CINETPAY_SECRET_KEY`. Les paiements réels ne sont donc pas prêts à être validés avec les éléments actuellement configurés. Aucune valeur secrète n’est reproduite dans ce rapport ni utilisée pour configurer l’application.

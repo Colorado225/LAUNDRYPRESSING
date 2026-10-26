@@ -3,15 +3,28 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TenantOnboardingContextValue } from '@/lib/tenantOnboarding'
+import type { TenantServiceConfiguration } from '@/services/tenantServices'
 
 const serviceMocks = vi.hoisted(() => ({
-  fetchTenantServices: vi.fn(),
-  saveTenantServices: vi.fn(),
+  fetchTenantServiceConfiguration: vi.fn(),
+  createTenantActivity: vi.fn(),
+  updateTenantActivity: vi.fn(),
+  deleteTenantActivity: vi.fn(),
+  createTenantService: vi.fn(),
+  updateTenantService: vi.fn(),
+  deleteTenantService: vi.fn(),
+  completeTenantOnboarding: vi.fn(),
 }))
 
 vi.mock('@/services/tenantServices', () => ({
-  fetchTenantServices: serviceMocks.fetchTenantServices,
-  saveTenantServices: serviceMocks.saveTenantServices,
+  fetchTenantServiceConfiguration: serviceMocks.fetchTenantServiceConfiguration,
+  createTenantActivity: serviceMocks.createTenantActivity,
+  updateTenantActivity: serviceMocks.updateTenantActivity,
+  deleteTenantActivity: serviceMocks.deleteTenantActivity,
+  createTenantService: serviceMocks.createTenantService,
+  updateTenantService: serviceMocks.updateTenantService,
+  deleteTenantService: serviceMocks.deleteTenantService,
+  completeTenantOnboarding: serviceMocks.completeTenantOnboarding,
 }))
 
 const { useTenantStore } = await import('@/lib/tenantContext')
@@ -20,17 +33,35 @@ const { default: ServicesPressing } = await import('@/pages/ServicesPressing')
 
 let root: Root
 let host: HTMLDivElement
+let configuration: TenantServiceConfiguration
 const onboarding: TenantOnboardingContextValue = {
   state: 'required',
   markComplete: vi.fn(),
 }
 
-function textButton(label: string): HTMLButtonElement {
-  const button = [...host.querySelectorAll('button')].find((element) =>
+function button(label: string): HTMLButtonElement {
+  const result = [...host.querySelectorAll('button')].find((element) =>
     (element.textContent ?? '').includes(label),
   )
-  if (!button) throw new Error(`Bouton « ${label} » introuvable`)
-  return button
+  if (!result) throw new Error(`Bouton « ${label} » introuvable`)
+  return result
+}
+
+function input(label: string): HTMLInputElement {
+  const result = [...host.querySelectorAll('input')].find((element) =>
+    element.getAttribute('aria-label') === label,
+  )
+  if (!result) throw new Error(`Champ « ${label} » introuvable`)
+  return result
+}
+
+async function saisir(champ: HTMLInputElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(champ, value)
+    champ.dispatchEvent(new Event('input', { bubbles: true }))
+    champ.dispatchEvent(new Event('change', { bubbles: true }))
+  })
 }
 
 async function mount() {
@@ -49,6 +80,7 @@ async function mount() {
       </MemoryRouter>,
     )
   })
+  await act(async () => { await Promise.resolve() })
 }
 
 function unmount() {
@@ -57,33 +89,73 @@ function unmount() {
 }
 
 beforeEach(() => {
-  serviceMocks.fetchTenantServices.mockReset().mockResolvedValue([])
-  serviceMocks.saveTenantServices.mockReset().mockResolvedValue(undefined)
+  configuration = { activities: [], services: [] }
+  serviceMocks.fetchTenantServiceConfiguration.mockReset().mockImplementation(async () => structuredClone(configuration))
+  serviceMocks.createTenantActivity.mockReset().mockImplementation(async (_tenantId: string, name: string) => {
+    configuration.activities.push({ id: 'activity-1', tenantId: 'tenant-new', name, sortOrder: 0 })
+  })
+  serviceMocks.updateTenantActivity.mockReset().mockImplementation(async (_tenantId: string, id: string, name: string) => {
+    configuration.activities = configuration.activities.map((activity) => activity.id === id ? { ...activity, name } : activity)
+  })
+  serviceMocks.deleteTenantActivity.mockReset().mockImplementation(async (_tenantId: string, id: string) => {
+    configuration.activities = configuration.activities.filter((activity) => activity.id !== id)
+    configuration.services = configuration.services.filter((service) => service.activityId !== id)
+  })
+  serviceMocks.createTenantService.mockReset().mockImplementation(async (_tenantId: string, activityId: string, serviceName: string) => {
+    const activity = configuration.activities.find((entry) => entry.id === activityId)
+    if (!activity) return
+    configuration.services.push({
+      id: 'service-1', tenantId: 'tenant-new', activityId, activityName: activity.name, serviceName, sortOrder: 0,
+    })
+  })
+  serviceMocks.updateTenantService.mockReset().mockImplementation(async (_tenantId: string, id: string, activityId: string, name: string) => {
+    const activity = configuration.activities.find((entry) => entry.id === activityId)
+    configuration.services = configuration.services.map((service) => service.id === id
+      ? { ...service, activityId, activityName: activity?.name ?? '', serviceName: name }
+      : service)
+  })
+  serviceMocks.deleteTenantService.mockReset().mockImplementation(async (_tenantId: string, id: string) => {
+    configuration.services = configuration.services.filter((service) => service.id !== id)
+  })
+  serviceMocks.completeTenantOnboarding.mockReset().mockResolvedValue(undefined)
   vi.mocked(onboarding.markComplete).mockClear()
   useTenantStore.setState({ tenantId: 'tenant-new', role: 'owner', tenantName: 'Pressing Cocody' })
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
-describe('onboarding des prestations du pressing', () => {
-  it('permet de choisir une activité, personnaliser ses prestations et terminer', async () => {
+describe('CRUD des activités et prestations du pressing', () => {
+  it('crée une activité, lui rattache une prestation et termine l’onboarding', async () => {
+    await mount()
+    expect(host.textContent).toContain('Services & activités')
+    expect(host.querySelector('[role="tablist"]')).not.toBeNull()
+
+    await saisir(input('Nom de la nouvelle activité'), 'Nettoyage de tapis')
+    await act(async () => button('Ajouter l’activité').click())
+    expect(serviceMocks.createTenantActivity).toHaveBeenCalledWith('tenant-new', 'Nettoyage de tapis')
+
+    await act(async () => button('Prestations').click())
+    await saisir(input('Nom de la nouvelle prestation'), 'Tapis grand format')
+    await act(async () => button('Ajouter la prestation').click())
+    expect(serviceMocks.createTenantService).toHaveBeenCalledWith('tenant-new', 'activity-1', 'Tapis grand format')
+
+    await act(async () => button('Terminer la configuration').click())
+    expect(serviceMocks.completeTenantOnboarding).toHaveBeenCalledWith('tenant-new')
+    expect(onboarding.markComplete).toHaveBeenCalledOnce()
+    unmount()
+  })
+
+  it('permet de renommer et supprimer une activité', async () => {
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Pressing', sortOrder: 0 }]
     await mount()
 
-    await act(async () => {
-      await Promise.resolve()
-    })
+    await act(async () => button('Modifier').click())
+    await saisir(input('Nouveau nom de Pressing'), 'Blanchisserie')
+    await act(async () => button('Enregistrer').click())
+    expect(serviceMocks.updateTenantActivity).toHaveBeenCalledWith('tenant-new', 'activity-1', 'Blanchisserie')
+    expect(host.textContent).toContain('Blanchisserie')
 
-    expect(host.textContent).toContain('Quelles activités proposez-vous ?')
-    await act(async () => textButton('Pressing').click())
-    await act(async () => textButton('Continuer vers les prestations').click())
-
-    expect(host.textContent).toContain('Personnalisez vos prestations')
-    await act(async () => textButton('Terminer la configuration').click())
-
-    expect(serviceMocks.saveTenantServices).toHaveBeenCalledWith('tenant-new', expect.arrayContaining([
-      { activityCode: 'pressing', serviceName: 'Lavage et repassage' },
-      { activityCode: 'pressing', serviceName: 'Détachage' },
-    ]))
-    expect(onboarding.markComplete).toHaveBeenCalledOnce()
-
+    await act(async () => button('Supprimer').click())
+    expect(serviceMocks.deleteTenantActivity).toHaveBeenCalledWith('tenant-new', 'activity-1')
     unmount()
   })
 })

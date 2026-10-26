@@ -120,6 +120,7 @@ FICHIERS=(
   "supabase/migrations/020_suppression_tarification_et_laundry_models.sql"
   "supabase/tests/suppression_tarification.sql"
   "supabase/migrations/021_tenant_onboarding_services.sql"
+  "supabase/migrations/022_tenant_activity_service_crud.sql"
   "supabase/tests/tenant_onboarding_services.sql"
 )
 
