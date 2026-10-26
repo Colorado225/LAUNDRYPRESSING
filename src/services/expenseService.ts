@@ -128,6 +128,47 @@ export async function createExpense(
   return data
 }
 
+/** Modification d'une dépense : un montant mal saisi se corrige, il ne s'efface pas. */
+export async function updateExpense(
+  tenantId: string,
+  expenseId: string,
+  patch: Partial<CreateExpenseInput>,
+): Promise<ExpenseRow> {
+  const valeurs: Partial<
+    Pick<ExpenseRow, 'label' | 'category' | 'amount' | 'spent_on' | 'supplier_id' | 'note'>
+  > = {}
+  if (patch.label !== undefined) {
+    const libelle = patch.label.trim()
+    if (libelle.length < 2) throw new Error('Donnez un libellé à la dépense.')
+    if (libelle.length > 120) throw new Error('Le libellé ne peut pas dépasser 120 caractères.')
+    valeurs.label = libelle
+  }
+  if (patch.category !== undefined) valeurs.category = patch.category
+  if (patch.amount !== undefined) {
+    if (!Number.isInteger(patch.amount) || patch.amount <= 0) {
+      throw new Error('Indiquez un montant entier positif, en FCFA.')
+    }
+    valeurs.amount = patch.amount
+  }
+  if (patch.spentOn !== undefined) valeurs.spent_on = patch.spentOn || todayIso()
+  if (patch.supplierId !== undefined) valeurs.supplier_id = patch.supplierId
+  if (patch.note !== undefined) valeurs.note = patch.note?.trim() ? patch.note.trim() : null
+
+  if (Object.keys(valeurs).length === 0) throw new Error('Aucune modification à enregistrer.')
+
+  const { data, error } = await requireClient()
+    .from('expenses')
+    .update(valeurs)
+    .eq('tenant_id', tenantId)
+    .eq('id', expenseId)
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw new Error(expenseErrorMessage(error.message))
+  if (!data) throw new Error('Dépense introuvable ou non modifiable.')
+  return data
+}
+
 export async function deleteExpense(tenantId: string, expenseId: string): Promise<void> {
   const { error } = await requireClient()
     .from('expenses')

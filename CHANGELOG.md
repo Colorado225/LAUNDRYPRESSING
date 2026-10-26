@@ -6,6 +6,81 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.16.0] — 2026-10-26
+
+CRUD complet des modules de gestion : chaque bouton d'écriture annoncé par un
+écran existe désormais de l'interface jusqu'à la base, avec la règle métier qui
+va avec.
+
+### Ajouté
+
+- **Migration 025 (`025_crud_complet.sql`, additive)** — politiques d'insertion
+  et de suppression des clients, normalisation serveur de `phone_key`, garde-fous
+  `guard_stock_item_delete`, `guard_supplier_delete` et `guard_order_delete`
+  (fin de la cascade silencieuse des paiements), fonctions
+  `tenant_close_support_request`, `tenant_delete_support_request`,
+  `tenant_team`, `tenant_set_member`, `tenant_attach_member_by_email` et
+  `tenant_remove_member`.
+- **Clients** — bouton « Nouveau client » (fiche sans commande), modification du
+  nom, du téléphone, de l'e-mail, de l'adresse et des préférences, suppression
+  réservée au propriétaire. Les fiches serveur sont fusionnées à l'historique
+  local, y compris pour un client qui n'a aucune commande.
+- **Stock** — édition complète d'un article (nom, catégorie, unité, seuil, coût),
+  archivage/réactivation et suppression refusée dès qu'un mouvement existe ;
+  modification, désactivation et suppression des fournisseurs inutilisés.
+- **Dépenses** — correction d'une dépense existante (formulaire prérempli) en
+  plus de la création et de la suppression.
+- **Commandes (édition)** — « Modifier l'échéance » et panneau **Articles**
+  (ajout d'une pièce rapportée, retrait d'une ligne, total recalculé).
+- **Commandes** — suppression définitive réservée au propriétaire, refusée dès
+  qu'un encaissement, un remboursement ou un paiement Mobile Money est rattaché ;
+  nettoyage local des lignes, réclamations, notifications et files associées.
+- **Réclamations** — clôture (réparé, dédommagé, sans suite), réouverture et
+  suppression (propriétaire) depuis la fiche commande.
+- **Support** — clôture d'une demande par le pressing et retrait d'une demande
+  encore ouverte (auteur ou propriétaire).
+- **Équipe (Paramètres)** — rattachement d'un compte existant par e-mail,
+  modification du rôle et du nom affiché, détachement, annuaire avec e-mails.
+  Le dernier propriétaire et la limite de comptes de la formule sont protégés
+  côté serveur.
+
+### Corrigé
+
+- **Nouvelle commande** — « Suivant » et les onglets d'étape changent
+  désormais **toujours** d'étape : la navigation n'est plus conditionnée à la
+  validation. Les trois étapes (`Client`, `Vêtements`, `Paiement`) sont de vrais
+  boutons, un défaut de saisie est annoncé (toast + message + champ surligné
+  `aria-invalid`) sans retenir l'utilisateur, et l'enregistrement reste strict :
+  il ramène sur l'étape du premier champ fautif. Auparavant, un numéro mal saisi
+  laissait l'écran identique, ce qui se confondait avec un bouton cassé.
+- **Téléphone** — la normalisation ne conserve plus que les chiffres : un numéro
+  collé depuis un carnet de contacts (espaces insécables, espaces de largeur
+  nulle, tirets, points, `+225`/`00225`) est accepté au lieu d'être refusé.
+- **Synchronisation** — `pushOrder` transmet désormais `assigned_to`,
+  `assigned_at` et `status_reason` : l'attribution faite hors ligne et le motif
+  d'annulation atteignent enfin le serveur (ils étaient silencieusement perdus,
+  puis effacés au rapatriement suivant).
+- **Synchronisation** — les lignes retirées au comptoir sont purgées côté
+  serveur après l'upsert ; elles ne réapparaissent plus sur les autres
+  appareils.
+
+### Modifié
+
+- Matrice des permissions : nouvelle capacité `customers.delete`, réservée au
+  propriétaire.
+- La lecture de l'équipe utilise `tenant_team()` et retombe sur `tenant_users`
+  si la migration n'est pas encore appliquée.
+
+### Vérifié
+
+- 639 tests sur 60 fichiers Vitest ; typecheck, lint et build réussis.
+- `supabase/tests/crud_complet.sql` : 19 contrôles RLS et déclencheurs, rejoués
+  avec toute la chaîne de migrations sur PostgreSQL (PGlite, `pgcrypto` omis)
+  puis par la CI sur PostgreSQL 16 réel (`npm run sql:verify`, PR #8) : tout
+  passe.
+
+---
+
 ## [0.15.0] — 2026-10-24
 
 Accès à la supervision SaaS réservé à un seul compte super-administrateur.

@@ -71,6 +71,9 @@ export default function OrderForm() {
   const [items, setItems] = useState<OrderItemDraft[]>([createEmptyItem()])
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
   const [errors, setErrors] = useState<string[]>([])
+  // Chemins Zod des champs refusés : sert à marquer les champs en rouge et à
+  // placer le focus, pour qu'un « Suivant » sans effet ne soit jamais muet.
+  const [champsInvalides, setChampsInvalides] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -168,8 +171,17 @@ export default function OrderForm() {
     })
   }
 
-  const validateStep = (step: number): boolean => {
-    setErrors([])
+  /**
+   * Contrôle l'étape en cours **sans jamais bloquer la navigation**.
+   *
+   * Choix assumé après un retour de terrain : le bouton « Suivant » d'un
+   * formulaire en trois étapes doit toujours produire quelque chose. Une
+   * validation qui refuse d'avancer laisse l'écran identique, ce qui se
+   * confond avec un bouton cassé. On signale donc les champs à corriger
+   * (message, toast, champ surligné) et on laisse l'utilisateur circuler ;
+   * l'enregistrement, lui, reste strict et ramène sur l'étape fautive.
+   */
+  const controlerEtape = (step: number): boolean => {
     const parsed = step === 0
       ? createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
           customerName,
@@ -178,11 +190,61 @@ export default function OrderForm() {
         })
       : createOrderSchema.pick({ items: true }).safeParse({ items })
 
-    if (!parsed.success) {
-      setErrors(zodMessages(parsed.error))
-      return false
+    if (parsed.success) {
+      return true
     }
-    return true
+
+    const messages = zodMessages(parsed.error)
+    setErrors(messages)
+    setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
+    toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
+    return false
+  }
+
+  /**
+   * Amène l'utilisateur sur le premier champ fautif, sinon sur le bloc d'erreurs.
+   * Chaque étape rend son propre `StepErrors` (`role="alert"`) : la recherche se
+   * fait donc dans le document, sans référence liée à une étape précise.
+   */
+  const signalerBlocage = () => {
+    window.requestAnimationFrame(() => {
+      const premierChamp = document.querySelector<HTMLElement>('[aria-invalid="true"]')
+      const cible = premierChamp ?? document.querySelector<HTMLElement>('[role="alert"]')
+      if (!cible) return
+
+      if (premierChamp) premierChamp.focus()
+      cible.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    })
+  }
+
+  /**
+   * Change d'étape. Les onglets d'étape, « Suivant » et « Précédent » passent
+   * tous par ici : la navigation est **toujours** possible, dans les deux sens.
+   * Avancer déclenche seulement un contrôle d'affichage des champs de l'étape
+   * quittée (sans jamais retenir l'utilisateur). Un défaut réellement bloquant
+   * est arrêté au moment d'enregistrer.
+   */
+  const changerEtape = (cible: number) => {
+    if (submitting || cible === etape || cible < 0 || cible >= ETAPES.length) return
+
+    // En avant : on contrôle les étapes traversées. En arrière : on ne touche à
+    // rien, pour que le champ fautif reste surligné et son motif lisible.
+    if (cible > etape) {
+      let toutValide = true
+      for (let index = etape; index < cible; index += 1) {
+        if (!controlerEtape(index)) {
+          toutValide = false
+          break
+        }
+      }
+      if (toutValide) {
+        setErrors([])
+        setChampsInvalides([])
+      }
+    }
+
+    setEtape(cible)
+    window.scrollTo?.({ top: 0, behavior: 'smooth' })
   }
 
   const submit = async () => {
@@ -201,7 +263,16 @@ export default function OrderForm() {
         dueDate: dueDate || undefined,
       })
       if (!parsed.success) {
-        setErrors(zodMessages(parsed.error))
+        const messages = zodMessages(parsed.error)
+        setErrors(messages)
+        setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
+        toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
+
+        // Retour sur l'étape qui contient la première erreur : au comptoir, un
+        // message affiché sur une autre étape n'est jamais lu.
+        const premiere = String(parsed.error.issues[0]?.path[0] ?? '')
+        setEtape(premiere === 'items' ? 1 : 0)
+        window.setTimeout(signalerBlocage, 0)
         return
       }
 
@@ -239,10 +310,17 @@ export default function OrderForm() {
           const complete = index < etape
           return (
             <li key={titre}>
-              <div className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold ${active ? 'border-brand-teal bg-brand-teal/5 text-brand-navy' : complete ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500'}`}>
+              <button
+                type="button"
+                onClick={() => changerEtape(index)}
+                aria-current={active ? 'step' : undefined}
+                aria-label={`Étape ${index + 1} : ${titre}`}
+                disabled={submitting}
+                className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold transition-colors disabled:opacity-60 ${active ? 'border-brand-teal bg-brand-teal/5 text-brand-navy' : complete ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-200 bg-white text-slate-500 hover:border-brand-teal hover:text-brand-navy'}`}
+              >
                 {complete ? <Check size={17} aria-hidden /> : <Icon size={17} aria-hidden />}
                 <span>{index + 1}. {titre}</span>
-              </div>
+              </button>
             </li>
           )
         })}
@@ -254,11 +332,26 @@ export default function OrderForm() {
             <h2 className="text-lg font-semibold text-slate-800">Informations client</h2>
             <label className="block space-y-1.5">
               <span className="text-sm font-semibold text-slate-700">Nom du client</span>
-              <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Ex. Mme Awa Koné" autoComplete="name" className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal" />
+              <input
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+                placeholder="Ex. Mme Awa Koné"
+                autoComplete="name"
+                aria-invalid={champsInvalides.includes('customerName') || undefined}
+                className={`min-h-12 w-full rounded-xl border px-3 text-base outline-none focus:border-brand-teal ${champsInvalides.includes('customerName') ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}
+              />
             </label>
             <label className="block space-y-1.5">
               <span className="text-sm font-semibold text-slate-700">Téléphone</span>
-              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="07 00 00 00 00" inputMode="tel" autoComplete="tel" className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal" />
+              <input
+                value={customerPhone}
+                onChange={(event) => setCustomerPhone(event.target.value)}
+                placeholder="07 00 00 00 00"
+                inputMode="tel"
+                autoComplete="tel"
+                aria-invalid={champsInvalides.includes('customerPhone') || undefined}
+                className={`min-h-12 w-full rounded-xl border px-3 text-base outline-none focus:border-brand-teal ${champsInvalides.includes('customerPhone') ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}
+              />
               {customerPhone && suggestCustomersByPhone(localOrders ?? [], customerPhone).length > 0 && (
                 <span className="block text-xs text-slate-500">Un client connu utilise déjà ce numéro.</span>
               )}
@@ -270,7 +363,7 @@ export default function OrderForm() {
             <StepErrors errors={errors} />
             <div className="flex justify-between gap-3 pt-2">
               <button type="button" onClick={() => navigate('/commandes')} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Annuler</button>
-              <button type="button" onClick={() => { if (validateStep(0)) setEtape(1) }} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">Suivant</button>
+              <button type="button" onClick={() => changerEtape(etape + 1)} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">Suivant</button>
             </div>
           </div>
         )}
@@ -393,8 +486,8 @@ export default function OrderForm() {
             </div>
             <StepErrors errors={errors} />
             <div className="flex justify-between gap-3 pt-2">
-              <button type="button" onClick={() => setEtape(0)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
-              <button type="button" onClick={() => { if (validateStep(1)) setEtape(2) }} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">Suivant</button>
+              <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
+              <button type="button" onClick={() => changerEtape(etape + 1)} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">Suivant</button>
             </div>
           </div>
         )}
@@ -422,7 +515,7 @@ export default function OrderForm() {
             </div>
             <StepErrors errors={errors} />
             <div className="flex justify-between gap-3 pt-2">
-              <button type="button" onClick={() => setEtape(1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
+              <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
               <button type="button" onClick={submit} disabled={submitting || !canCreate} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{submitting ? 'Enregistrement…' : 'Enregistrer la commande'}</button>
             </div>
           </div>

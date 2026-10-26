@@ -257,6 +257,164 @@ export async function updateOrderItemMeasurementLocal(
 }
 
 /**
+ * Contrôles communs aux corrections de lignes déjà déposées.
+ *
+ * Une commande livrée, annulée ou entièrement payée ne se réécrit plus depuis
+ * la fiche : la caisse et les reçus ont déjà été produits avec ces montants.
+ */
+function verifierLigneModifiable(order: LocalOrder): void {
+  if (order.status === 'delivered' || order.status === 'cancelled') {
+    throw new Error('Une commande terminée ou annulée ne peut plus être corrigée.')
+  }
+  if (order.paymentStatus === 'paid') {
+    throw new Error('La commande est soldée : corrigez-la après régularisation du paiement.')
+  }
+}
+
+/** Recalcule le total de la commande à partir de ses lignes locales. */
+async function recalculerTotalLocal(
+  order: LocalOrder,
+  lignes: LocalOrderItem[],
+): Promise<LocalOrder> {
+  const total = lignes.reduce((somme, ligne) => somme + ligne.price, 0)
+  if (!Number.isSafeInteger(total)) {
+    throw new Error('Le total de la commande dépasse le montant pris en charge.')
+  }
+
+  const commandeMiseAJour: LocalOrder = {
+    ...order,
+    totalAmount: total,
+    updatedAt: nowIso(),
+    synced: 0,
+    syncError: null,
+  }
+  await db.orders.put(commandeMiseAJour)
+  return commandeMiseAJour
+}
+
+/**
+ * Ajoute une ligne libre à une commande déjà déposée.
+ *
+ * Cas d'usage : le client rapporte une pièce supplémentaire au moment du
+ * dépôt, ou le comptoir a oublié un article. La ligne est créée « au prix
+ * fixé » (mode `FIXED`, unité `PIECE`) : aucun catalogue n'est requis, ce qui
+ * la rend utilisable même hors ligne, sans configuration de prestation.
+ */
+export async function addOrderItemLocal(
+  tenantId: string,
+  orderId: string,
+  input: { label: string; quantity: number; unitPrice: number },
+): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
+  const label = input.label.trim()
+  if (!label) throw new Error('Indiquez le libellé de l’article.')
+  if (!Number.isInteger(input.quantity) || input.quantity < 1) {
+    throw new Error('La quantité doit être un nombre entier supérieur à zéro.')
+  }
+  if (!Number.isInteger(input.unitPrice) || input.unitPrice < 0) {
+    throw new Error('Le prix unitaire doit être un montant entier en FCFA.')
+  }
+
+  return db.transaction('rw', db.orders, db.orderItems, async () => {
+    const order = await db.orders.get(orderId)
+    if (!order || order.tenantId !== tenantId) {
+      throw new Error('Commande introuvable pour ce pressing.')
+    }
+    verifierLigneModifiable(order)
+
+    const prix = input.quantity * input.unitPrice
+    if (!Number.isSafeInteger(prix)) {
+      throw new Error('Le montant de la ligne dépasse ce qui est pris en charge.')
+    }
+
+    const item: LocalOrderItem = {
+      id: newId(),
+      orderId,
+      tenantId,
+      label,
+      fabricType: null,
+      specialInstructions: null,
+      price: prix,
+      quantity: input.quantity,
+      billedQuantity: input.quantity,
+      billingUnit: 'PIECE',
+      unitPrice: input.unitPrice,
+      pricingMode: 'FIXED',
+      priceStatus: 'CONFIRMED',
+      catalogEntryId: null,
+      articleName: label,
+      serviceName: null,
+      tenantServiceId: null,
+      activityNameSnapshot: null,
+      familyNameSnapshot: null,
+      catalogUnitPriceSnapshot: null,
+      minimumQuantitySnapshot: null,
+      billingIncrementSnapshot: null,
+      minimumChargeSnapshot: null,
+      conditionsSnapshot: null,
+      priceReason: 'Ligne ajoutée au comptoir',
+      laundryModelId: null,
+      laundryModelNameSnapshot: null,
+      laundryModelTypeSnapshot: null,
+      laundryWeightKg: null,
+      laundryPriceBreakdownSnapshot: null,
+      laundryServicesSnapshot: null,
+      laundryPricePerKgSnapshot: null,
+      laundryPackagePriceSnapshot: null,
+      laundryIncludedWeightKgSnapshot: null,
+      laundryOveragePricePerKgSnapshot: null,
+      laundryMinimumWeightKgSnapshot: null,
+      laundryBillingIncrementKgSnapshot: null,
+      laundryMinimumChargeSnapshot: null,
+      familyPackageSnapshot: null,
+      garmentDetails: [],
+    }
+
+    const lignes = await db.orderItems.where('orderId').equals(orderId).toArray()
+    await db.orderItems.put(item)
+    const commande = await recalculerTotalLocal(order, [...lignes, item])
+    return { order: commande, item }
+  })
+}
+
+/**
+ * Retire une ligne d'une commande déjà déposée.
+ *
+ * La dernière ligne ne peut pas être supprimée : une commande sans article
+ * n'aurait ni QR code utile ni total cohérent. La suppression distante est
+ * faite par le moteur de synchronisation, qui aligne `order_items` sur la
+ * liste locale (voir `pushOrder`).
+ */
+export async function removeOrderItemLocal(
+  tenantId: string,
+  orderId: string,
+  itemId: string,
+): Promise<{ order: LocalOrder; item: LocalOrderItem }> {
+  return db.transaction('rw', db.orders, db.orderItems, async () => {
+    const order = await db.orders.get(orderId)
+    const item = await db.orderItems.get(itemId)
+    if (!order || !item || item.orderId !== orderId) {
+      throw new Error('Commande ou ligne introuvable dans la base locale.')
+    }
+    if (order.tenantId !== tenantId || item.tenantId !== tenantId) {
+      throw new Error('Cette ligne n’appartient pas au pressing sélectionné.')
+    }
+    verifierLigneModifiable(order)
+
+    const lignes = await db.orderItems.where('orderId').equals(orderId).toArray()
+    if (lignes.length <= 1) {
+      throw new Error(
+        'Une commande doit garder au moins un article. Annulez la commande si elle n’a plus lieu d’être.',
+      )
+    }
+
+    await db.orderItems.delete(itemId)
+    const restantes = lignes.filter((ligne) => ligne.id !== itemId)
+    const commande = await recalculerTotalLocal(order, restantes)
+    return { order: commande, item }
+  })
+}
+
+/**
  * Change le statut d'une commande, en local uniquement.
  *
  * La commande redevient « à synchroniser » (synced = 0) : le moteur enverra
@@ -341,6 +499,42 @@ export async function updateOrderAssignmentLocal(
 }
 
 /** Récupère une commande et ses vêtements. */
+/**
+ * Supprime une commande **et ses dépendances locales**.
+ *
+ * Dexie ne connaît pas les clés étrangères : sans ce nettoyage, des lignes,
+ * encaissements, réclamations et notifications resteraient orphelins et
+ * réapparaîtraient dans les agrégats de caisse ou de rapports.
+ *
+ * L'appelant a déjà vérifié qu'aucun encaissement réel n'était rattaché et,
+ * pour une commande synchronisée, que la suppression distante a réussi.
+ */
+export async function deleteOrderLocal(orderId: string): Promise<void> {
+  await db.transaction(
+    'rw',
+    [
+      db.orders,
+      db.orderItems,
+      db.cashPayments,
+      db.orderIssues,
+      db.notifications,
+      db.pendingPayments,
+      db.refunds,
+    ],
+    async () => {
+      await Promise.all([
+        db.orders.delete(orderId),
+        db.orderItems.where('orderId').equals(orderId).delete(),
+        db.cashPayments.where('orderId').equals(orderId).delete(),
+        db.orderIssues.where('orderId').equals(orderId).delete(),
+        db.notifications.where('orderId').equals(orderId).delete(),
+        db.pendingPayments.where('orderId').equals(orderId).delete(),
+        db.refunds.where('orderId').equals(orderId).delete(),
+      ])
+    },
+  )
+}
+
 export async function getOrderWithItems(orderId: string): Promise<LocalOrderWithItems | null> {
   const order = await db.orders.get(orderId)
   if (!order) return null

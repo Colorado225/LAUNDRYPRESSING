@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   ArrowDownToLine,
   ArrowUpFromLine,
   Boxes,
   CloudOff,
   Loader2,
   PackagePlus,
+  Pencil,
   Plus,
+  Trash2,
   Truck,
+  X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { can } from '@/lib/permissions'
@@ -21,13 +26,18 @@ import {
   STOCK_UNITS,
   createStockItem,
   createSupplier,
+  deleteStockItem,
+  deleteSupplier,
   isLowStock,
   listStockItems,
   listStockMovements,
   listRecentStockOrderItems,
   listSuppliers,
   recordStockMovement,
+  setStockItemActive,
   stockErrorMessage,
+  updateStockItem,
+  updateSupplier,
 } from '@/services/stockService'
 import type {
   StockCategory,
@@ -77,6 +87,20 @@ export default function Stock() {
   const [fournisseurOuvert, setFournisseurOuvert] = useState(false)
   const [nomFournisseur, setNomFournisseur] = useState('')
   const [telFournisseur, setTelFournisseur] = useState('')
+
+  // Édition d'un article existant : nom, catégorie, unité, seuil et coût.
+  // La quantité reste hors du formulaire : elle ne s'écrit que par mouvement.
+  const [articleEnEdition, setArticleEnEdition] = useState<StockItemRow | null>(null)
+  const [editNom, setEditNom] = useState('')
+  const [editCategorie, setEditCategorie] = useState<StockCategory>('produit')
+  const [editUnite, setEditUnite] = useState<StockUnit>('pièce')
+  const [editSeuil, setEditSeuil] = useState('0')
+  const [editCout, setEditCout] = useState('')
+
+  const [fournisseurEnEdition, setFournisseurEnEdition] = useState<SupplierRow | null>(null)
+  const [editFourNom, setEditFourNom] = useState('')
+  const [editFourTel, setEditFourTel] = useState('')
+  const [editFourNotes, setEditFourNotes] = useState('')
 
   const charger = useCallback(async () => {
     if (!tenantId) {
@@ -225,6 +249,148 @@ export default function Stock() {
       toast.error(
         error instanceof Error ? stockErrorMessage(error.message) : 'Enregistrement impossible.',
       )
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const ouvrirEditionArticle = (article: StockItemRow) => {
+    setArticleEnEdition(article)
+    setEditNom(article.name)
+    setEditCategorie(article.category)
+    setEditUnite(article.unit)
+    setEditSeuil(String(Number(article.min_quantity)))
+    setEditCout(article.unit_cost === null ? '' : String(article.unit_cost))
+    setArticleOuvert(false)
+  }
+
+  const enregistrerArticle = async () => {
+    if (!tenantId || !articleEnEdition) return
+
+    const coutValeur = editCout.trim() ? Number(editCout.replace(/\s/g, '')) : null
+    if (editNom.trim().length < 2) {
+      toast.error('Donnez un nom à l’article.')
+      return
+    }
+    if (coutValeur !== null && (!Number.isInteger(coutValeur) || coutValeur < 0)) {
+      toast.error('Coût unitaire invalide.')
+      return
+    }
+
+    setEnvoi(true)
+    try {
+      await updateStockItem(tenantId, articleEnEdition.id, {
+        name: editNom,
+        category: editCategorie,
+        unit: editUnite,
+        min_quantity: Number(editSeuil.replace(/\s/g, '') || 0),
+        unit_cost: coutValeur,
+      })
+      toast.success('Article mis à jour', { icon: '📦' })
+      setArticleEnEdition(null)
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? stockErrorMessage(error.message) : 'Modification impossible.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const archiverArticle = async (article: StockItemRow) => {
+    if (!tenantId) return
+    setEnvoi(true)
+    try {
+      await setStockItemActive(tenantId, article.id, !article.is_active)
+      toast.success(article.is_active ? 'Article archivé' : 'Article réactivé')
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? stockErrorMessage(error.message) : 'Action impossible.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const supprimerArticle = async (article: StockItemRow) => {
+    if (!tenantId) return
+    const confirme = window.confirm(
+      `Supprimer l’article « ${article.name} » ? Un article déjà mouvementé doit être archivé.`,
+    )
+    if (!confirme) return
+
+    setEnvoi(true)
+    try {
+      await deleteStockItem(tenantId, article.id)
+      toast.success('Article supprimé')
+      if (articleEnEdition?.id === article.id) setArticleEnEdition(null)
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? stockErrorMessage(error.message) : 'Suppression impossible.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const ouvrirEditionFournisseur = (fournisseur: SupplierRow) => {
+    setFournisseurEnEdition(fournisseur)
+    setEditFourNom(fournisseur.name)
+    setEditFourTel(fournisseur.phone ?? '')
+    setEditFourNotes(fournisseur.notes ?? '')
+    setFournisseurOuvert(false)
+  }
+
+  const enregistrerFournisseur = async () => {
+    if (!tenantId || !fournisseurEnEdition) return
+    if (editFourNom.trim().length < 2) {
+      toast.error('Donnez un nom au fournisseur.')
+      return
+    }
+
+    setEnvoi(true)
+    try {
+      await updateSupplier(tenantId, fournisseurEnEdition.id, {
+        name: editFourNom,
+        phone: editFourTel || null,
+        notes: editFourNotes || null,
+      })
+      toast.success('Fournisseur mis à jour', { icon: '🚚' })
+      setFournisseurEnEdition(null)
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? stockErrorMessage(error.message) : 'Modification impossible.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const basculerFournisseur = async (fournisseur: SupplierRow) => {
+    if (!tenantId) return
+    setEnvoi(true)
+    try {
+      await updateSupplier(tenantId, fournisseur.id, { is_active: !fournisseur.is_active })
+      toast.success(fournisseur.is_active ? 'Fournisseur désactivé' : 'Fournisseur réactivé')
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? stockErrorMessage(error.message) : 'Action impossible.')
+    } finally {
+      setEnvoi(false)
+    }
+  }
+
+  const supprimerFournisseur = async (fournisseur: SupplierRow) => {
+    if (!tenantId) return
+    const confirme = window.confirm(
+      `Supprimer le fournisseur « ${fournisseur.name} » ? S’il a déjà des dépenses ou des mouvements, désactivez-le plutôt.`,
+    )
+    if (!confirme) return
+
+    setEnvoi(true)
+    try {
+      await deleteSupplier(tenantId, fournisseur.id)
+      toast.success('Fournisseur supprimé')
+      if (fournisseurEnEdition?.id === fournisseur.id) setFournisseurEnEdition(null)
+      await charger()
+    } catch (error) {
+      toast.error(error instanceof Error ? stockErrorMessage(error.message) : 'Suppression impossible.')
     } finally {
       setEnvoi(false)
     }
@@ -419,6 +585,118 @@ export default function Stock() {
         </section>
       )}
 
+      {articleEnEdition && peutGerer && (
+        <section className="rounded-2xl border border-brand-teal/40 bg-white p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+              <Pencil size={16} aria-hidden /> Modifier « {articleEnEdition.name} »
+            </h2>
+            <button
+              type="button"
+              onClick={() => setArticleEnEdition(null)}
+              aria-label="Fermer la modification"
+              className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-300 text-slate-500 hover:bg-slate-50"
+            >
+              <X size={16} aria-hidden />
+            </button>
+          </div>
+
+          <p className="mt-1 text-xs text-slate-500">
+            La quantité ({Number(articleEnEdition.quantity)} {articleEnEdition.unit}) ne se modifie
+            que par une entrée ou une sortie, pour garder le journal juste.
+          </p>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Nom</span>
+              <input
+                value={editNom}
+                onChange={(event) => setEditNom(event.target.value)}
+                maxLength={120}
+                className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Catégorie</span>
+              <select
+                value={editCategorie}
+                onChange={(event) => setEditCategorie(event.target.value as StockCategory)}
+                className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+              >
+                {Object.entries(STOCK_CATEGORY_LABELS).map(([valeur, libelle]) => (
+                  <option key={valeur} value={valeur}>
+                    {libelle}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">Unité</span>
+              <select
+                value={editUnite}
+                onChange={(event) => setEditUnite(event.target.value as StockUnit)}
+                className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+              >
+                {STOCK_UNITS.map((valeur) => (
+                  <option key={valeur} value={valeur}>
+                    {valeur}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">
+                Seuil d’alerte
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editSeuil}
+                onChange={(event) => setEditSeuil(event.target.value)}
+                className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-600">
+                Coût unitaire (FCFA, facultatif)
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editCout}
+                onChange={(event) => setEditCout(event.target.value)}
+                className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void enregistrerArticle()}
+              disabled={envoi}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+            >
+              {envoi ? <Loader2 className="animate-spin" size={16} aria-hidden /> : null}
+              Enregistrer les modifications
+            </button>
+            <button
+              type="button"
+              onClick={() => setArticleEnEdition(null)}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700"
+            >
+              Annuler
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="rounded-2xl border border-slate-200 bg-white">
         {articles.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-500">
@@ -432,10 +710,17 @@ export default function Stock() {
                 <li key={article.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-800">
-                      {article.name}
+                      <span className={article.is_active ? '' : 'text-slate-400 line-through'}>
+                        {article.name}
+                      </span>
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {STOCK_CATEGORY_LABELS[article.category]}
                       </span>
+                      {!article.is_active && (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-600">
+                          archivé
+                        </span>
+                      )}
                       {bas && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900">
                           <AlertTriangle size={11} aria-hidden /> seuil
@@ -457,7 +742,7 @@ export default function Stock() {
                       {Number(article.quantity)} {article.unit}
                     </span>
 
-                    {peutMouvoir && (
+                    {peutMouvoir && article.is_active && (
                       <div className="flex gap-1">
                         <button
                           type="button"
@@ -484,6 +769,45 @@ export default function Stock() {
                           className="inline-flex size-12 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
                         >
                           <ArrowUpFromLine size={18} aria-hidden />
+                        </button>
+                      </div>
+                    )}
+
+                    {peutGerer && (
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => ouvrirEditionArticle(article)}
+                          aria-label={`Modifier l’article ${article.name}`}
+                          className="inline-flex size-12 items-center justify-center rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50"
+                        >
+                          <Pencil size={17} aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void archiverArticle(article)}
+                          disabled={envoi}
+                          aria-label={
+                            article.is_active
+                              ? `Archiver l’article ${article.name}`
+                              : `Réactiver l’article ${article.name}`
+                          }
+                          className="inline-flex size-12 items-center justify-center rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {article.is_active ? (
+                            <Archive size={17} aria-hidden />
+                          ) : (
+                            <ArchiveRestore size={17} aria-hidden />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void supprimerArticle(article)}
+                          disabled={envoi}
+                          aria-label={`Supprimer l’article ${article.name}`}
+                          className="inline-flex size-12 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600 disabled:opacity-50"
+                        >
+                          <Trash2 size={17} aria-hidden />
                         </button>
                       </div>
                     )}
@@ -676,14 +1000,124 @@ export default function Stock() {
           ) : (
             <ul className="mt-2 divide-y divide-slate-100">
               {fournisseurs.map((fournisseur) => (
-                <li key={fournisseur.id} className="py-2">
-                  <p className="text-sm font-semibold text-slate-800">{fournisseur.name}</p>
-                  {fournisseur.phone && (
-                    <p className="text-xs text-slate-500">{fournisseur.phone}</p>
+                <li key={fournisseur.id} className="flex items-start justify-between gap-2 py-2">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+                      <span className={fournisseur.is_active ? '' : 'text-slate-400 line-through'}>
+                        {fournisseur.name}
+                      </span>
+                      {!fournisseur.is_active && (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-600">
+                          inactif
+                        </span>
+                      )}
+                    </p>
+                    {fournisseur.phone && (
+                      <p className="text-xs text-slate-500">{fournisseur.phone}</p>
+                    )}
+                    {fournisseur.notes && (
+                      <p className="text-xs text-slate-400">{fournisseur.notes}</p>
+                    )}
+                  </div>
+
+                  {peutGerer && (
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => ouvrirEditionFournisseur(fournisseur)}
+                        aria-label={`Modifier le fournisseur ${fournisseur.name}`}
+                        className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50"
+                      >
+                        <Pencil size={15} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void basculerFournisseur(fournisseur)}
+                        disabled={envoi}
+                        aria-label={
+                          fournisseur.is_active
+                            ? `Désactiver le fournisseur ${fournisseur.name}`
+                            : `Réactiver le fournisseur ${fournisseur.name}`
+                        }
+                        className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {fournisseur.is_active ? (
+                          <Archive size={15} aria-hidden />
+                        ) : (
+                          <ArchiveRestore size={15} aria-hidden />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void supprimerFournisseur(fournisseur)}
+                        disabled={envoi}
+                        aria-label={`Supprimer le fournisseur ${fournisseur.name}`}
+                        className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600 disabled:opacity-50"
+                      >
+                        <Trash2 size={15} aria-hidden />
+                      </button>
+                    </div>
                   )}
                 </li>
               ))}
             </ul>
+          )}
+
+          {fournisseurEnEdition && peutGerer && (
+            <div className="mt-3 rounded-xl border border-brand-teal/40 bg-slate-50 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                Modifier « {fournisseurEnEdition.name} »
+              </p>
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">Nom</span>
+                <input
+                  value={editFourNom}
+                  onChange={(event) => setEditFourNom(event.target.value)}
+                  maxLength={120}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Téléphone (facultatif)
+                </span>
+                <input
+                  value={editFourTel}
+                  onChange={(event) => setEditFourTel(event.target.value)}
+                  maxLength={30}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                  Note (facultatif)
+                </span>
+                <input
+                  value={editFourNotes}
+                  onChange={(event) => setEditFourNotes(event.target.value)}
+                  maxLength={500}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-teal"
+                />
+              </label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void enregistrerFournisseur()}
+                  disabled={envoi}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white hover:bg-brand-teal-dark disabled:opacity-60"
+                >
+                  {envoi ? <Loader2 className="animate-spin" size={16} aria-hidden /> : null}
+                  Enregistrer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFournisseurEnEdition(null)}
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
           )}
 
           {fournisseurOuvert && peutGerer && (

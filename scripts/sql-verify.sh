@@ -125,6 +125,8 @@ FICHIERS=(
   "supabase/migrations/024_order_item_service_snapshots.sql"
   "supabase/tests/tenant_onboarding_services.sql"
   "supabase/tests/kilogram_services.sql"
+  "supabase/migrations/025_crud_complet.sql"
+  "supabase/tests/crud_complet.sql"
 )
 
 ECHECS=0

@@ -18,14 +18,63 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 |---|---|
 | `npm run typecheck` | Réussi |
 | `npm run lint` | Réussi |
-| `npm test` | **578 tests réussis / 578**, 55 fichiers |
+| `npm test` | **639 tests réussis / 639**, 60 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
-| CI PostgreSQL 16 | Réussie sur la PR #7 : migrations et suite SQL ordonnée passées |
+| CI PostgreSQL 16 | Réussie sur la PR #8 : migrations 001→025 et 19 contrôles CRUD passés |
 | Suite SQL ordonnée dans PGlite | Tous les scripts listés par `scripts/sql-verify.sh` passent ; extension `pgcrypto` omise car non disponible dans PGlite |
-| Supabase/CinetPay réels | Non vérifiés dans cette session |
+| Supabase réel (`Pressing_Pro`) | Connecté le 26 octobre 2026 : migrations 001→025 appliquées, 10 fonctions et 4 déclencheurs vérifiés, garde-fous testés en transaction annulée |
+| CinetPay réel | Non vérifié (secrets Edge Functions non renseignés) |
 
 Le passage complet dans PGlite valide l’ordre des migrations et des tests jusqu’à 020. La CI de la PR #7 a également exécuté `scripts/sql-verify.sh` sur PostgreSQL 16 réel avec succès ; cela ne remplace pas une recette Supabase déployée. Pendant ces vérifications, le test `catalogue_commercial_models.sql` a été corrigé : il prétendait tester un article hors périmètre, mais réutilisait par erreur l’identifiant d’une chemise déjà incluse dans le forfait.
+
+## Mise à jour du 26 octobre 2026 — CRUD complet (migration 025)
+
+Les écritures manquantes des modules de gestion ont été ajoutées : fiches clients
+(création, modification complète, suppression propriétaire), édition et archivage
+des articles de stock, modification/désactivation des fournisseurs, correction des
+dépenses, clôture/réouverture/suppression des réclamations, clôture et retrait des
+demandes de support, suppression de commande encadrée, et gestion de l'équipe par
+le propriétaire (rattachement par e-mail, rôle, nom, détachement).
+
+La migration `025_crud_complet.sql` est **additive** : aucune table ni donnée
+supprimée. Elle ajoute deux politiques sur `customers`, trois déclencheurs de
+protection (fiches clients, stock et fournisseurs, suppression de commande) et six
+fonctions `security definer` contrôlées par le rôle. Le détail de la matrice et les règles métier sont
+dans [`CRUD-COMPLET.md`](CRUD-COMPLET.md).
+
+Contrôles rejoués : typecheck, lint, build et suite Vitest (639 tests / 60
+fichiers). La chaîne complète des migrations et des tests SQL, y compris
+`supabase/tests/crud_complet.sql` (19 contrôles), a été exécutée avec succès sur
+PostgreSQL via PGlite, puis confirmée par la CI sur PostgreSQL 16 réel
+(`npm run sql:verify`, PR #8) : toutes les migrations 001 à 025 et tous les tests
+SQL passent.
+
+## Configuration Supabase du 26 octobre 2026
+
+Le fichier `.env` local (ignoré par git) contient `VITE_SUPABASE_URL` et la clé
+navigateur **publishable** du projet `Pressing_Pro` (`eu-west-1`). Aucune clé
+`service_role` n'y figure : elle resterait visible dans le bundle.
+
+La base distante était en retard de deux migrations. Elle a été alignée :
+
+| Migration | État |
+|---|---|
+| `024_order_item_service_snapshots.sql` | Appliquée (colonnes `tenant_service_id`, `activity_name_snapshot`, FK composite, index) |
+| `025_crud_complet.sql` | Appliquée (2 politiques, 3 déclencheurs de garde + normalisation clients, 8 fonctions `security definer`) |
+
+Vérifications faites directement sur le projet, dans une transaction annulée :
+`prepare_customer_row` transforme `+225 07 00 00 00 99` en `0700000099` ;
+supprimer une commande portant un encaissement renvoie bien `23503` et
+l'annulation est acceptée. Une seconde transaction a confirmé, **en tant que
+propriétaire authentifié**, que l'attribution, le motif d'annulation et la
+suppression d'une ligne (`order_items`) passent la RLS et les déclencheurs, et
+que `guard_order_item_price` exige bien un motif de prix pour une ligne libre.
+Aucune ligne de test n'a été conservée.
+
+La configuration Auth a été étendue : `site_url` et la liste de redirection
+couvrent l'origine de prévisualisation et `localhost:3000`, en plus de
+`localhost:5173`.
 
 ## Architecture
 

@@ -42,6 +42,7 @@ export type Capability =
   | 'cash.manage'
   | 'catalog.manage'
   | 'customers.manage'
+  | 'customers.delete'
   | 'stock.manage'
   | 'stock.move'
   | 'expenses.manage'
@@ -63,6 +64,7 @@ const MATRIX: Record<TenantRole, readonly Capability[]> = {
     'cash.manage',
     'catalog.manage',
     'customers.manage',
+    'customers.delete',
     'stock.manage',
     'stock.move',
     'expenses.manage',

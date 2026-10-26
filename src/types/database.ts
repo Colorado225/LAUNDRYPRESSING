@@ -1155,6 +1155,45 @@ export interface Database {
         }
         Returns: string
       }
+      /* Migration 025 — CRUD complet des modules de gestion */
+      tenant_team: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: string
+          email: string | null
+          role: TenantRole
+          display_name: string | null
+          created_at: string
+        }[]
+      }
+      tenant_set_member: {
+        Args: {
+          p_user: string
+          p_role: TenantRole | null
+          p_display_name?: string | null
+        }
+        Returns: undefined
+      }
+      tenant_attach_member_by_email: {
+        Args: {
+          p_email: string
+          p_role: TenantRole
+          p_display_name?: string | null
+        }
+        Returns: string
+      }
+      tenant_remove_member: {
+        Args: { p_user: string }
+        Returns: undefined
+      }
+      tenant_close_support_request: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      tenant_delete_support_request: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
     }
     Enums: { [_ in never]: never }
     CompositeTypes: { [_ in never]: never }

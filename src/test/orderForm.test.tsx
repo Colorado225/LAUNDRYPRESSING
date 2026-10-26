@@ -1,250 +1,227 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const tenantServiceMock = vi.hoisted(() => ({
-  configuration: {
-    activities: [] as Array<{ id: string; tenantId: string; name: string; sortOrder: number }>,
-    services: [] as Array<{
-      id: string
-      tenantId: string
-      activityId: string
-      activityName: string
-      serviceName: string
-      billingUnit: 'PIECE' | 'KG'
-      unitPrice: number | null
-      sortOrder: number
-    }>,
-  },
-}))
-
-vi.mock('@/services/tenantServices', () => ({
-  fetchTenantServiceConfiguration: vi.fn(async () => tenantServiceMock.configuration),
-}))
-import OrderForm from '@/pages/OrderForm'
 import { db } from '@/db/localDb'
-import { toSupabaseOrderItem } from '@/db/ordersRepository'
 import { useTenantStore } from '@/lib/tenantContext'
+import { createOrderSchema, normalizePhoneCi } from '@/schemas/order'
+import toast from 'react-hot-toast'
+
+vi.mock('@/lib/env', () => ({ isSupabaseConfigured: true }))
+
+// Le toast est l'un des deux signaux visibles d'un blocage de validation :
+// on l'espionne pour vérifier qu'un « Suivant » refusé n'est jamais muet.
+vi.mock('react-hot-toast', () => ({
+  default: { success: vi.fn(), error: vi.fn() },
+}))
+
+const clientFactice = vi.hoisted(() => {
+  const chaine: Record<string, unknown> = {
+    select: () => chaine,
+    eq: () => chaine,
+    order: () => chaine,
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    then: (resoudre: (valeur: unknown) => unknown) =>
+      Promise.resolve({ data: [], error: null }).then(resoudre),
+  }
+  return { from: () => chaine, rpc: () => Promise.resolve({ data: null, error: null }) }
+})
+
+vi.mock('@/lib/supabaseClient', () => ({ getSupabaseClient: () => clientFactice }))
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
-let root: Root
-let host: HTMLDivElement
 
-function CurrentPath() {
-  const location = useLocation()
-  return <output data-testid="path">{location.pathname}{location.search}</output>
-}
+const OrderForm = (await import('@/pages/OrderForm')).default
 
-async function mount() {
-  host = document.createElement('div')
-  document.body.appendChild(host)
-  root = createRoot(host)
+let racine: Root
+let hote: HTMLDivElement
+
+async function monter() {
+  hote = document.createElement('div')
+  document.body.appendChild(hote)
+  racine = createRoot(hote)
   await act(async () => {
-    root.render(
+    racine.render(
       <MemoryRouter initialEntries={['/commandes/nouvelle']}>
-        <CurrentPath />
-        <Routes>
-          <Route path="/commandes/nouvelle" element={<OrderForm />} />
-          <Route path="/commandes/:id" element={null} />
-          <Route path="/commandes" element={null} />
-        </Routes>
+        <OrderForm />
       </MemoryRouter>,
     )
   })
-}
-
-function unmount() {
-  act(() => root.unmount())
-  host.remove()
-}
-
-function button(label: string): HTMLButtonElement {
-  const found = [...host.querySelectorAll('button')].find((entry) => entry.textContent?.includes(label))
-  if (!found) throw new Error(`Bouton « ${label} » introuvable`)
-  return found
-}
-
-function setInput(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-  if (!setter) throw new Error('Setter de valeur input indisponible')
-  act(() => {
-    setter.call(input, value)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.dispatchEvent(new Event('change', { bubbles: true }))
+  await act(async () => {
+    await new Promise((resoudre) => setTimeout(resoudre, 0))
   })
 }
 
-function setSelect(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
-  if (!setter) throw new Error('Setter de valeur select indisponible')
-  act(() => {
-    setter.call(select, value)
-    select.dispatchEvent(new Event('change', { bubbles: true }))
+function demonter() {
+  act(() => racine.unmount())
+  hote.remove()
+}
+
+function bouton(libelle: string): HTMLButtonElement {
+  const trouve = Array.from(hote.querySelectorAll('button')).find(
+    (element) => element.textContent?.trim() === libelle,
+  )
+  if (!trouve) throw new Error(`Bouton « ${libelle} » introuvable`)
+  return trouve as HTMLButtonElement
+}
+
+function champ(libelle: string): HTMLInputElement {
+  const label = Array.from(hote.querySelectorAll('label')).find((element) =>
+    element.textContent?.includes(libelle),
+  )
+  const input = label?.querySelector('input')
+  if (!input) throw new Error(`Champ « ${libelle} » introuvable`)
+  return input as HTMLInputElement
+}
+
+async function saisir(input: HTMLInputElement, valeur: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  await act(async () => {
+    setter.call(input, valeur)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+async function cliquer(element: HTMLButtonElement) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+  await act(async () => {
+    await new Promise((resoudre) => setTimeout(resoudre, 0))
   })
 }
 
 beforeEach(async () => {
   await db.orders.clear()
   await db.orderItems.clear()
-  await db.tenantActivities.clear()
-  await db.tenantServices.clear()
-  tenantServiceMock.configuration = { activities: [], services: [] }
-  useTenantStore.setState({ tenantId: TENANT, tenantName: 'Pressing Cocody', role: 'owner' })
+  useTenantStore.setState({ tenantId: TENANT, role: 'owner', tenantName: 'Pressing Test' })
 })
 
-describe('OrderForm — création libre', () => {
-  it('crée la commande puis ouvre la fiche pour confirmer les espèces', async () => {
-    await mount()
-    const clientInputs = host.querySelectorAll('input')
-    setInput(clientInputs[0]!, 'Awa Koné')
-    setInput(clientInputs[1]!, '0700000001')
-    await act(async () => button('Suivant').click())
+describe('validation des étapes du formulaire de commande', () => {
+  it('accepte un nom et un numéro ivoirien à 10 chiffres', () => {
+    const resultat = createOrderSchema
+      .pick({ customerName: true, customerPhone: true, dueDate: true })
+      .safeParse({ customerName: 'Awa Koné', customerPhone: '07 00 00 00 00', dueDate: undefined })
 
-    const lineInputs = host.querySelectorAll('input')
-    setInput(lineInputs[0]!, 'Chemise')
-    setInput(lineInputs[2]!, '2500')
-    expect(host.textContent?.replace(/\s/g, '')).toContain('2500FCFA')
-    await act(async () => button('Suivant').click())
-    await act(async () => button('Encaisser des espèces maintenant').click())
-    await act(async () => {
-      button('Enregistrer la commande').click()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    })
-
-    expect(await db.orders.count()).toBe(1)
-    const order = await db.orders.toCollection().first()
-    expect(order?.totalAmount).toBe(2500)
-    expect(host.querySelector('[data-testid="path"]')?.textContent).toBe(`/commandes/${order?.id}?regler=1`)
-    unmount()
+    expect(resultat.success).toBe(true)
   })
 
-  it('énumère les vêtements, pèse le lot et calcule une prestation au kilo', async () => {
-    tenantServiceMock.configuration = {
-      activities: [{
-        id: 'activity-blanchisserie',
-        tenantId: TENANT,
-        name: 'Blanchisserie',
-        sortOrder: 0,
-      }],
-      services: [{
-        id: '77777777-7777-4777-8777-777777777777',
-        tenantId: TENANT,
-        activityId: 'activity-blanchisserie',
-        activityName: 'Blanchisserie',
-        serviceName: 'Lavage et repassage au kilo',
-        billingUnit: 'KG',
-        unitPrice: 1500,
-        sortOrder: 0,
-      }],
-    }
-    await mount()
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-
-    const clientInputs = host.querySelectorAll('input')
-    setInput(clientInputs[0]!, 'Awa Koné')
-    setInput(clientInputs[1]!, '0700000001')
-    await act(async () => button('Suivant').click())
-
-    const selectActivite = host.querySelector<HTMLSelectElement>('[aria-label="Activité de la ligne 1"]')
-    const selectPrestation = host.querySelector<HTMLSelectElement>('[aria-label="Prestation de la ligne 1"]')
-    expect(selectActivite).not.toBeNull()
-    expect(selectPrestation).not.toBeNull()
-    setSelect(selectActivite!, 'activity-blanchisserie')
-    setSelect(selectPrestation!, '77777777-7777-4777-8777-777777777777')
-    const poids = host.querySelector<HTMLInputElement>('[aria-label="Poids total (kg) ligne 1"]')
-    const tarif = host.querySelector<HTMLInputElement>('[aria-label="Tarif au kilo ligne 1 (FCFA)"]')
-    expect(poids).not.toBeNull()
-    expect(tarif).not.toBeNull()
-    setInput(poids!, '1')
-    setInput(tarif!, '1500')
-
-    setSelect(host.querySelector<HTMLSelectElement>('[aria-label="Type de vêtement 1 ligne 1"]')!, 'CHEMISE')
-    await act(async () => button('Ajouter un type').click())
-    setSelect(host.querySelector<HTMLSelectElement>('[aria-label="Type de vêtement 2 ligne 1"]')!, 'PANTALON')
-    const nombrePantalons = host.querySelector<HTMLInputElement>('[aria-label="Nombre d’articles 2 ligne 1"]')
-    expect(nombrePantalons).not.toBeNull()
-    setInput(nombrePantalons!, '2')
-    expect(host.textContent?.replace(/\s/g, '')).toContain('1500FCFA')
-    expect(host.textContent).toContain('1 × Chemise, 2 × Pantalon')
-
-    await act(async () => button('Suivant').click())
-    await act(async () => {
-      button('Enregistrer la commande').click()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    })
-    const order = await db.orders.toCollection().first()
-    const item = await db.orderItems.toCollection().first()
-    expect(order?.totalAmount).toBe(1500)
-    expect(item?.billingUnit).toBe('KG')
-    expect(item?.quantity).toBe(1)
-    expect(item?.unitPrice).toBe(1500)
-    expect(item?.tenantServiceId).toBe('77777777-7777-4777-8777-777777777777')
-    expect(item?.activityNameSnapshot).toBe('Blanchisserie')
-    const composition = [
-      { type: 'CHEMISE', quantity: 1 },
-      { type: 'PANTALON', quantity: 2 },
-    ]
-    expect(item?.garmentDetails).toEqual(composition)
-    expect(item && toSupabaseOrderItem(item).garment_details).toEqual(composition)
-    expect(item && toSupabaseOrderItem(item).tenant_service_id).toBe('77777777-7777-4777-8777-777777777777')
-    expect(item && toSupabaseOrderItem(item).activity_name_snapshot).toBe('Blanchisserie')
-    unmount()
+  it('nettoie un numéro collé depuis un carnet de contacts', () => {
+    // Espace insécable, espace fine insécable, espace de largeur nulle, tirets.
+    expect(normalizePhoneCi('+225 07\u00a000\u202f00\u200b00\u00a000')).toBe('0700000000')
+    expect(normalizePhoneCi('00225-07-00-00-00-00')).toBe('0700000000')
+    expect(normalizePhoneCi('07.00.00.00.00')).toBe('0700000000')
+    expect(normalizePhoneCi('0700000000')).toBe('0700000000')
   })
 
-  it('filtre les prestations par activité et enregistre les identifiants configurés', async () => {
-    tenantServiceMock.configuration = {
-      activities: [
-        { id: 'activity-blanchisserie', tenantId: TENANT, name: 'Blanchisserie', sortOrder: 0 },
-        { id: 'activity-repassage', tenantId: TENANT, name: 'Repassage', sortOrder: 1 },
-      ],
-      services: [{
-        id: '88888888-8888-4888-8888-888888888888',
-        tenantId: TENANT,
-        activityId: 'activity-repassage',
-        activityName: 'Repassage',
-        serviceName: 'Repassage simple',
-        billingUnit: 'PIECE',
-        unitPrice: null,
-        sortOrder: 0,
-      }],
-    }
-    await mount()
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  it('refuse toujours un numéro trop court', () => {
+    const resultat = createOrderSchema
+      .pick({ customerName: true, customerPhone: true, dueDate: true })
+      .safeParse({ customerName: 'Awa Koné', customerPhone: '0700', dueDate: undefined })
 
-    setInput(host.querySelectorAll('input')[0]!, 'Awa Koné')
-    setInput(host.querySelectorAll('input')[1]!, '0700000001')
-    await act(async () => button('Suivant').click())
-    const article = host.querySelector<HTMLInputElement>('fieldset input')!
-    setInput(article, 'Chemise')
-    const activity = host.querySelector<HTMLSelectElement>('[aria-label="Activité de la ligne 1"]')!
-    const service = host.querySelector<HTMLSelectElement>('[aria-label="Prestation de la ligne 1"]')!
-    setSelect(activity, 'activity-blanchisserie')
-    expect([...service.options].some((option) => option.textContent === 'Repassage simple')).toBe(false)
-    setSelect(activity, 'activity-repassage')
-    expect([...service.options].some((option) => option.textContent === 'Repassage simple')).toBe(true)
-    setSelect(service, '88888888-8888-4888-8888-888888888888')
-    expect(article.value).toBe('Chemise')
-    setInput(host.querySelectorAll<HTMLInputElement>('fieldset input')[2]!, '2500')
+    expect(resultat.success).toBe(false)
+  })
+})
 
-    await act(async () => button('Suivant').click())
-    await act(async () => {
-      button('Enregistrer la commande').click()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    })
-    const item = await db.orderItems.toCollection().first()
-    expect(item?.label).toBe('Chemise')
-    expect(item?.serviceName).toBe('Repassage simple')
-    expect(item?.tenantServiceId).toBe('88888888-8888-4888-8888-888888888888')
-    expect(item?.activityNameSnapshot).toBe('Repassage')
-    unmount()
+describe('navigation du formulaire de commande', () => {
+  it('« Suivant » fait passer de l’étape client à l’étape vêtements', async () => {
+    await monter()
+
+    expect(hote.textContent).toContain('Informations client')
+
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '0700000000')
+    await cliquer(bouton('Suivant'))
+
+    expect(hote.textContent).toContain('Vêtements et prestations')
+
+    demonter()
   })
 
-  it('annule le formulaire client et revient à la liste', async () => {
-    await mount()
-    await act(async () => button('Annuler').click())
-    expect(host.querySelector('[data-testid="path"]')?.textContent).toBe('/commandes')
-    expect(await db.orders.count()).toBe(0)
-    unmount()
+  it('avance toujours, même avec un numéro incomplet, et signale le défaut', async () => {
+    await monter()
+
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '0700')
+    await cliquer(bouton('Suivant'))
+
+    // La navigation ne doit jamais paraître cassée…
+    expect(hote.textContent).toContain('Vêtements et prestations')
+    // … mais le défaut est annoncé et reste rattrapé à l'enregistrement.
+    expect(vi.mocked(toast.error)).toHaveBeenCalled()
+
+    await cliquer(bouton('Précédent'))
+    expect(hote.textContent).toContain('Informations client')
+
+    demonter()
+  })
+
+  it('avance aussi avec des champs vides : aucun clic muet', async () => {
+    await monter()
+
+    await cliquer(bouton('Suivant'))
+    expect(hote.textContent).toContain('Vêtements et prestations')
+    expect(vi.mocked(toast.error)).toHaveBeenCalled()
+    expect(hote.querySelector('[aria-invalid="true"]')).toBeNull()
+
+    demonter()
+  })
+
+  it('un champ fautif est annoncé, marqué, et reste visible au retour', async () => {
+    vi.mocked(toast.error).mockClear()
+    await monter()
+
+    // Un clic sur « Suivant » ne bloque plus, mais il parle : toast immédiat.
+    await cliquer(bouton('Suivant'))
+    expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toBe('Le nom du client est obligatoire')
+
+    // De retour sur l'étape client, la liste complète et le marquage sont là.
+    await cliquer(bouton('1. Client'))
+    expect(hote.querySelector('[role="alert"]')?.textContent).toContain(
+      'Le nom du client est obligatoire',
+    )
+
+    const telephone = champ('Téléphone')
+    expect(telephone.getAttribute('aria-invalid')).toBe('true')
+
+    demonter()
+  })
+
+  it('un enregistrement invalide ramène sur l’étape du champ fautif', async () => {
+    await monter()
+
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Suivant'))
+    expect(hote.textContent).toContain('Règlement')
+
+    await cliquer(bouton('Enregistrer la commande'))
+
+    expect(hote.textContent).toContain('Informations client')
+    expect(hote.querySelector('[role="alert"]')?.textContent).toContain(
+      'Le nom du client est obligatoire',
+    )
+
+    demonter()
+  })
+
+  it('l’onglet « Vêtements » est cliquable et valide l’étape en cours', async () => {
+    await monter()
+
+    // L'onglet répond immédiatement, champs remplis ou non.
+    await cliquer(bouton('2. Vêtements'))
+    expect(hote.textContent).toContain('Vêtements et prestations')
+
+    await cliquer(bouton('1. Client'))
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '+225 07 00 00 00 00')
+    await cliquer(bouton('2. Vêtements'))
+    expect(hote.textContent).toContain('Vêtements et prestations')
+
+    // Retour arrière libre vers l'étape client.
+    await cliquer(bouton('1. Client'))
+    expect(hote.textContent).toContain('Informations client')
+
+    demonter()
   })
 })

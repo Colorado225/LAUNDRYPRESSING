@@ -1,19 +1,22 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
+  CalendarClock,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Loader2,
   RefreshCw,
+  Trash2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { formatGarmentComposition } from '@/constants/garmentTypes'
 import PaymentButton from '@/components/PaymentButton'
 import QrCodeDisplay from '@/components/QrCodeDisplay'
 import OrderMeasurementEditor from '@/components/OrderMeasurementEditor'
+import OrderItemsEditor from '@/components/OrderItemsEditor'
 import OrderMeasurementHistory from '@/components/OrderMeasurementHistory'
-import { useLocalOrder, useUpdateOrderStatus } from '@/db/hooks'
+import { useLocalOrder, useUpdateOrderDueDate, useUpdateOrderStatus } from '@/db/hooks'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
   ORDER_FLOW,
@@ -35,12 +38,14 @@ import AssignmentPanel from '@/components/AssignmentPanel'
 import IssuePanel from '@/components/IssuePanel'
 import NotifyPanel from '@/components/NotifyPanel'
 import { useState } from 'react'
+import { checkOrderDeletion, deleteOrderEverywhere } from '@/services/orderAdminService'
 
 /**
  * Fiche commande : détail, avancement du statut et état de synchronisation.
  * Les changements de statut sont appliqués localement (mode avion compris).
  */
 export default function OrderDetail() {
+  const navigate = useNavigate()
   const { orderId } = useParams<{ orderId: string }>()
   const [searchParams] = useSearchParams()
   // Retour de la création de commande avec « encaisser maintenant » : le
@@ -48,6 +53,7 @@ export default function OrderDetail() {
   const reglerMaintenant = searchParams.get('regler') === '1'
   const data = useLocalOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
+  const updateDueDate = useUpdateOrderDueDate()
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const seeAmounts = canSeeAmounts(role)
@@ -56,6 +62,9 @@ export default function OrderDetail() {
   // entre le chargement et l'affichage de la fiche.
   const [annulationOuverte, setAnnulationOuverte] = useState(false)
   const [motifAnnulation, setMotifAnnulation] = useState('')
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false)
+  const [echeanceOuverte, setEcheanceOuverte] = useState(false)
+  const [echeanceSaisie, setEcheanceSaisie] = useState('')
 
   if (data === undefined) {
     return (
@@ -90,6 +99,48 @@ export default function OrderDetail() {
   // afficher le bouton aux autres rôles ne produirait qu'une erreur serveur.
   const peutReculer = can(role, 'orders.editDetails') && role === 'owner'
   const peutAnnuler = can(role, 'orders.updateStatus') && role !== 'artisan'
+  const peutSupprimer = can(role, 'orders.delete')
+  // Corriger les articles ou l'échéance engage le montant de la commande :
+  // même droit que l'éditeur de mesure (`orders.editDetails`), et le serveur
+  // refuse de toute façon ces changements à un artisan (`guard_order_update`).
+  const peutCorriger = can(role, 'orders.editDetails') && !order.syncConflict
+  const correctionBloquee =
+    order.status === 'delivered' || order.status === 'cancelled' || order.paymentStatus === 'paid'
+
+  const enregistrerEcheance = async (valeur: string | null) => {
+    try {
+      await updateDueDate(order.id, valeur)
+      toast.success(valeur ? 'Échéance mise à jour' : 'Échéance retirée', { icon: '📅' })
+      setEcheanceOuverte(false)
+      setEcheanceSaisie('')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Mise à jour impossible')
+    }
+  }
+
+  const supprimerCommande = async () => {
+    const controle = await checkOrderDeletion(order)
+    if (!controle.autorisee) {
+      toast.error(controle.raison ?? 'Suppression impossible.')
+      return
+    }
+
+    const confirme = window.confirm(
+      `Supprimer définitivement la commande de ${order.customerName} ? Les lignes et l’historique local seront effacés. Une commande avec encaissement doit être annulée, pas supprimée.`,
+    )
+    if (!confirme) return
+
+    setSuppressionEnCours(true)
+    try {
+      await deleteOrderEverywhere(order)
+      toast.success('Commande supprimée')
+      navigate('/commandes')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Suppression impossible')
+    } finally {
+      setSuppressionEnCours(false)
+    }
+  }
 
   const changeStatus = async (status: typeof order.status, reason: string | null = null) => {
     try {
@@ -144,6 +195,60 @@ export default function OrderDetail() {
             <dd className={`text-sm font-semibold ${enRetard ? 'text-rose-700' : 'text-slate-800'}`}>
               {order.dueDate ? formatDateFr(order.dueDate) : 'Non précisée'}
             </dd>
+
+            {peutCorriger && !correctionBloquee && (
+              <dd className="mt-2">
+                {echeanceOuverte ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="date"
+                      value={echeanceSaisie || order.dueDate || ''}
+                      onChange={(event) => setEcheanceSaisie(event.target.value)}
+                      aria-label="Nouvelle date de livraison"
+                      className="min-h-10 rounded-xl border border-slate-300 px-2 text-sm outline-none focus:border-brand-teal"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void enregistrerEcheance(echeanceSaisie || null)}
+                      className="inline-flex min-h-10 items-center rounded-xl bg-brand-teal px-3 text-sm font-semibold text-white hover:bg-brand-teal-dark"
+                    >
+                      Enregistrer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEcheanceOuverte(false)
+                        setEcheanceSaisie('')
+                      }}
+                      className="inline-flex min-h-10 items-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700"
+                    >
+                      Annuler
+                    </button>
+                    {order.dueDate && (
+                      <button
+                        type="button"
+                        onClick={() => void enregistrerEcheance(null)}
+                        className="inline-flex min-h-10 items-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Retirer
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEcheanceSaisie(order.dueDate ?? '')
+                      setEcheanceOuverte(true)
+                    }}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    <CalendarClock size={15} aria-hidden />
+                    {order.dueDate ? 'Modifier l’échéance' : 'Programmer une échéance'}
+                  </button>
+                )}
+              </dd>
+            )}
           </div>
 
           <div className="rounded-xl bg-slate-50 p-3">
@@ -251,6 +356,9 @@ export default function OrderDetail() {
           </p>
         )}
       </section>
+
+      {/* Correction des articles (pièce rapportée, ligne erronée) */}
+      {peutCorriger && !correctionBloquee && <OrderItemsEditor order={order} items={items} />}
 
       <OrderMeasurementHistory
         tenantId={order.tenantId}
@@ -379,6 +487,33 @@ export default function OrderDetail() {
           </div>
         )}
       </section>
+
+      {/* Suppression réservée au propriétaire (`orders.delete`). Une commande
+          qui porte de l'argent s'annule, elle ne s'efface pas. */}
+      {peutSupprimer && (
+        <section className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 sm:p-5">
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-rose-800">
+            <Trash2 size={16} aria-hidden /> Supprimer la commande
+          </h2>
+          <p className="mt-1 text-sm text-rose-900">
+            Suppression définitive, réservée au propriétaire. Si la commande a été payée ou
+            remboursée, annulez-la : le journal de caisse doit rester complet.
+          </p>
+          <button
+            type="button"
+            onClick={() => void supprimerCommande()}
+            disabled={suppressionEnCours}
+            className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 text-sm font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+          >
+            {suppressionEnCours ? (
+              <Loader2 className="animate-spin" size={16} aria-hidden />
+            ) : (
+              <Trash2 size={16} aria-hidden />
+            )}
+            Supprimer définitivement
+          </button>
+        </section>
+      )}
     </div>
   )
 }
