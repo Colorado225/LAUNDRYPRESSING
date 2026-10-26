@@ -4,7 +4,9 @@ import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder, useLocalOrders } from '@/db/hooks'
 import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
+import { signalerIncidentCommande, signalerSonde, syncOrderNow } from '@/sync/syncEngine'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
+import { problemeTarifaire } from '@/lib/orderPricing'
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
@@ -60,7 +62,14 @@ export default function OrderForm() {
   const localOrders = useLocalOrders()
   const role = useTenantStore((state) => state.role)
   const tenantId = useTenantStore((state) => state.tenantId)
-  const canCreate = can(role, 'orders.create')
+  // Le rôle peut manquer alors que la boutique est connue (session restaurée
+  // depuis le cache, ancien stockage local). On retombe sur le rôle mémorisé
+  // pour la boutique active : sinon le bouton restait grisé sans explication.
+  const roleBoutique = useTenantStore(
+    (state) => state.shops.find((shop) => shop.tenantId === state.tenantId)?.role ?? null,
+  )
+  const roleEffectif = role ?? roleBoutique
+  const canCreate = can(roleEffectif, 'orders.create')
 
   const [activites, setActivites] = useState<TenantActivity[]>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
@@ -75,6 +84,9 @@ export default function OrderForm() {
   // placer le focus, pour qu'un « Suivant » sans effet ne soit jamais muet.
   const [champsInvalides, setChampsInvalides] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  // Étape d'enregistrement affichée pendant que la commande part au serveur :
+  // le comptoir doit voir que le travail continue après le clic.
+  const [enregistrement, setEnregistrement] = useState<'local' | 'serveur' | null>(null)
 
   useEffect(() => {
     if (!tenantId) return
@@ -90,6 +102,20 @@ export default function OrderForm() {
       active = false
     }
   }, [tenantId])
+
+  // Sonde d'ouverture : si l'enregistrement ne produit AUCUN événement, c'est
+  // que le poste n'exécute pas cette version du formulaire. La sonde, elle,
+  // laisse une trace à chaque ouverture.
+  useEffect(() => {
+    void signalerSonde({
+      role: roleEffectif,
+      role_brut: role,
+      role_boutique: roleBoutique,
+      boutique: tenantId,
+      peut_creer: canCreate,
+      en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+    })
+  }, [role, roleEffectif, roleBoutique, tenantId, canCreate])
 
   const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 
@@ -181,6 +207,23 @@ export default function OrderForm() {
    * (message, toast, champ surligné) et on laisse l'utilisateur circuler ;
    * l'enregistrement, lui, reste strict et ramène sur l'étape fautive.
    */
+  /**
+   * Motifs de refus tarifaires (prix unitaire à zéro, total incohérent).
+   *
+   * PostgreSQL rejette ces lignes avec `guard_order_item_price` : on les arrête
+   * ici pour que le comptoir corrige au lieu de découvrir l'échec à l'envoi.
+   */
+  const problemesTarifaires = (): string[] =>
+    items.flatMap((item) => {
+      const probleme = problemeTarifaire({
+        label: item.label,
+        unitPrice: item.unitPrice,
+        price: item.price,
+        priceStatus: item.priceStatus,
+      })
+      return probleme ? [probleme] : []
+    })
+
   const controlerEtape = (step: number): boolean => {
     const parsed = step === 0
       ? createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
@@ -191,6 +234,14 @@ export default function OrderForm() {
       : createOrderSchema.pick({ items: true }).safeParse({ items })
 
     if (parsed.success) {
+      if (step === 1) {
+        const tarifs = problemesTarifaires()
+        if (tarifs.length > 0) {
+          setErrors(tarifs)
+          toast.error(tarifs[0]!)
+          return false
+        }
+      }
       return true
     }
 
@@ -248,8 +299,24 @@ export default function OrderForm() {
   }
 
   const submit = async () => {
+    // Trace d'entrée : si aucun événement `clic_enregistrer` n'arrive alors que
+    // le comptoir clique, c'est que le clic n'atteint jamais ce gestionnaire
+    // (bouton inerte, élément superposé) — et non que le serveur refuse.
+    void signalerSonde({
+      evenement: 'clic_enregistrer',
+      etape,
+      lignes: items.length,
+      total,
+      peut_creer: canCreate,
+      en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+    })
+
     if (!canCreate) {
-      setErrors(["Vous n'avez pas le droit de créer une commande."])
+      const message = `Création refusée : votre rôle (${roleEffectif ?? 'inconnu'}) n'a pas le droit de créer une commande.`
+      setErrors([message])
+      toast.error(message)
+      void signalerIncidentCommande(message, { etape: 'droit', role: roleEffectif })
+      window.scrollTo?.({ top: 0, behavior: 'smooth' })
       return
     }
 
@@ -273,20 +340,97 @@ export default function OrderForm() {
         const premiere = String(parsed.error.issues[0]?.path[0] ?? '')
         setEtape(premiere === 'items' ? 1 : 0)
         window.setTimeout(signalerBlocage, 0)
+        // Un refus de validation bloque l'enregistrement : il doit laisser une
+        // trace consultable, comme un refus du serveur.
+        void signalerIncidentCommande(messages[0] ?? 'Validation refusée.', {
+          etape: 'validation',
+          erreurs: messages,
+        })
         return
       }
 
-      const { order } = await createOrder(parsed.data)
-      toast.success('Commande enregistrée sur cet appareil.')
+      // 1. Écriture locale immédiate (le comptoir ne dépend pas du réseau).
+      setEnregistrement('local')
+      // Le serveur refuse une ligne à 0 FCFA : autant le dire avant l'envoi.
+      const tarifs = problemesTarifaires()
+      if (tarifs.length > 0) {
+        setErrors(tarifs)
+        setEtape(1)
+        toast.error(tarifs[0]!)
+        window.setTimeout(signalerBlocage, 0)
+        void signalerIncidentCommande(tarifs[0]!, { etape: 'tarif' })
+        return
+      }
+
+      // Garde-fou : une écriture locale bloquée (stockage saturé, transaction
+      // bloquée par un autre onglet) laisserait sinon le bouton tourner
+      // indéfiniment sans jamais rien dire.
+      void signalerSonde({ evenement: 'creation_locale_demarree', etape })
+      const { order } = await Promise.race([
+        createOrder(parsed.data),
+        new Promise<never>((_, rejeter) =>
+          window.setTimeout(
+            () =>
+              rejeter(
+                new Error(
+                  "L'enregistrement local prend trop de temps : rechargez la page, puis réessayez. Aucune commande n'a été perdue.",
+                ),
+              ),
+            25_000,
+          ),
+        ),
+      ])
+
+      // 2. Envoi immédiat vers Supabase, sans attendre la boucle de fond :
+      //    la commande et ses lignes arrivent en base dans la seconde, et un
+      //    échec est signalé tout de suite avec son motif.
+      void signalerSonde({ evenement: 'commande_creee_localement', commande: order.id })
+      setEnregistrement('serveur')
+      // L'envoi ne doit jamais interrompre le parcours : quoi qu'il arrive, la
+      // commande existe sur l'appareil et le comptoir repart avec un message.
+      let envoi: { statut: string; message?: string }
+      try {
+        envoi = await syncOrderNow(order.id)
+      } catch (erreurEnvoi) {
+        envoi = {
+          statut: 'error',
+          message:
+            erreurEnvoi instanceof Error
+              ? erreurEnvoi.message
+              : "L'envoi au serveur a échoué.",
+        }
+        void signalerIncidentCommande(String(envoi.message ?? "L'envoi au serveur a échoué."), {
+          etape: 'envoi_immediat',
+          commande: order.id,
+        })
+      }
+
+      void signalerSonde({ evenement: 'envoi_termine', commande: order.id, statut: envoi.statut })
+      if (envoi.statut === 'synced') {
+        toast.success('Commande enregistrée et synchronisée.', { icon: '✅' })
+      } else {
+        toast(
+          `Commande enregistrée sur cet appareil. ${envoi.message ?? ''}`.trim(),
+          { icon: '📥', duration: 6000 },
+        )
+      }
+
+      // La fiche s'ouvre toujours : elle montre l'état de synchronisation et
+      // permet de relancer l'envoi si besoin.
       navigate(paiement === 'especes'
         ? `/commandes/${order.id}?regler=1`
-        : '/commandes')
+        : `/commandes/${order.id}`)
     } catch (error) {
-      setErrors([
-        error instanceof Error ? error.message : "Impossible d'enregistrer la commande.",
-      ])
+      const message =
+        error instanceof Error ? error.message : "Impossible d'enregistrer la commande."
+      setErrors([message])
+      toast.error(message)
+      // Trace côté serveur : un blocage au clic ne doit pas rester invisible.
+      void signalerIncidentCommande(message, { etape: 'creation_locale' })
+      window.scrollTo?.({ top: 0, behavior: 'smooth' })
     } finally {
       setSubmitting(false)
+      setEnregistrement(null)
     }
   }
 
@@ -325,6 +469,20 @@ export default function OrderForm() {
           )
         })}
       </ol>
+
+      {!canCreate && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <p className="font-semibold">Ce compte ne peut pas créer de commande.</p>
+          <p className="mt-1">
+            Rôle détecté : <strong>{roleEffectif ?? 'aucun'}</strong>. Le propriétaire et le
+            réceptionniste en ont le droit, l’artisan non. Demandez au propriétaire de vérifier
+            votre rôle dans Paramètres → Équipe.
+          </p>
+        </div>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         {etape === 0 && (
@@ -516,7 +674,11 @@ export default function OrderForm() {
             <StepErrors errors={errors} />
             <div className="flex justify-between gap-3 pt-2">
               <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
-              <button type="button" onClick={submit} disabled={submitting || !canCreate} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{submitting ? 'Enregistrement…' : 'Enregistrer la commande'}</button>
+              <button type="button" onClick={submit} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{enregistrement === 'serveur'
+                  ? 'Envoi au serveur…'
+                  : submitting
+                    ? 'Enregistrement…'
+                    : 'Enregistrer la commande'}</button>
             </div>
           </div>
         )}

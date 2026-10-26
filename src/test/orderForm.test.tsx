@@ -12,7 +12,7 @@ vi.mock('@/lib/env', () => ({ isSupabaseConfigured: true }))
 // Le toast est l'un des deux signaux visibles d'un blocage de validation :
 // on l'espionne pour vérifier qu'un « Suivant » refusé n'est jamais muet.
 vi.mock('react-hot-toast', () => ({
-  default: { success: vi.fn(), error: vi.fn() },
+  default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }))
 
 const clientFactice = vi.hoisted(() => {
@@ -28,6 +28,26 @@ const clientFactice = vi.hoisted(() => {
 })
 
 vi.mock('@/lib/supabaseClient', () => ({ getSupabaseClient: () => clientFactice }))
+
+// L'envoi immédiat est piloté : ce qui se vérifie ici, c'est la réaction du
+// formulaire (message, navigation), pas la requête elle-même.
+const envoi = vi.hoisted(() => ({
+  resultat: { statut: 'synced', version: 1 } as Record<string, unknown>,
+  appels: [] as string[],
+  incidents: [] as string[],
+}))
+
+vi.mock('@/sync/syncEngine', () => ({
+  syncOrderNow: (orderId: string) => {
+    envoi.appels.push(orderId)
+    return Promise.resolve(envoi.resultat)
+  },
+  signalerIncidentCommande: (message: string) => {
+    envoi.incidents.push(message)
+    return Promise.resolve()
+  },
+  signalerSonde: () => Promise.resolve(),
+}))
 
 const TENANT = '11111111-1111-4111-8111-111111111111'
 
@@ -94,6 +114,9 @@ async function cliquer(element: HTMLButtonElement) {
 beforeEach(async () => {
   await db.orders.clear()
   await db.orderItems.clear()
+  envoi.appels.length = 0
+  envoi.incidents.length = 0
+  envoi.resultat = { statut: 'synced', version: 1 }
   useTenantStore.setState({ tenantId: TENANT, role: 'owner', tenantName: 'Pressing Test' })
 })
 
@@ -223,5 +246,103 @@ describe('navigation du formulaire de commande', () => {
     expect(hote.textContent).toContain('Informations client')
 
     demonter()
+  })
+})
+
+describe('compte sans droit de création', () => {
+  it('explique le refus au lieu de laisser un bouton inerte', async () => {
+    useTenantStore.setState({ tenantId: TENANT, role: 'artisan', tenantName: 'Pressing Test' })
+
+    await monter()
+
+    // Le motif est affiché dès l'ouverture, sans avoir à cliquer.
+    expect(hote.textContent).toContain('Ce compte ne peut pas créer de commande')
+    expect(hote.textContent).toContain('artisan')
+
+    // Et le clic reste possible : il produit un message, pas un silence.
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '07 00 00 00 42')
+    await cliquer(bouton('Suivant'))
+    await saisir(champ('Article / vêtement'), 'Chemise')
+    await saisir(champ('Prix unitaire (FCFA)'), '2500')
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Enregistrer la commande'))
+
+    expect(await db.orders.count()).toBe(0)
+    expect(hote.textContent).toContain('Création refusée')
+    expect(envoi.incidents.some((message) => message.includes('Création refusée'))).toBe(true)
+
+    demonter()
+  })
+})
+
+describe('enregistrement d’une nouvelle commande', () => {
+  async function remplirEtEnregistrer() {
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '07 00 00 00 42')
+    await cliquer(bouton('Suivant'))
+
+    // Étape vêtements : une ligne libre chiffrée.
+    await saisir(champ('Article / vêtement'), 'Chemise')
+    await saisir(champ('Prix unitaire (FCFA)'), '2500')
+
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Enregistrer la commande'))
+  }
+
+  it('écrit la commande en local, l’envoie aussitôt et ouvre sa fiche', async () => {
+    await monter()
+    await remplirEtEnregistrer()
+
+    const commandes = await db.orders.toArray()
+    expect(commandes).toHaveLength(1)
+
+    const commande = commandes[0]!
+    expect(commande.customerName).toBe('Awa Koné')
+    expect(commande.totalAmount).toBe(2500)
+
+    // L'envoi immédiat a bien été déclenché pour CETTE commande.
+    expect(envoi.appels).toEqual([commande.id])
+
+    // La fiche s'ouvre (l'URL n'est pas rendue ici, mais le formulaire disparaît
+    // de l'écran d'après l'état de navigation).
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      'Commande enregistrée et synchronisée.',
+      expect.anything(),
+    )
+  })
+
+  it('refuse une ligne à 0 FCFA avant tout envoi', async () => {
+    await monter()
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '07 00 00 00 42')
+    await cliquer(bouton('Suivant'))
+    await saisir(champ('Article / vêtement'), 'Chemise')
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Enregistrer la commande'))
+
+    expect(await db.orders.count()).toBe(0)
+    expect(envoi.appels).toEqual([])
+    expect(hote.textContent).toContain('prix unitaire')
+    // On revient sur l'étape où le prix se corrige.
+    expect(hote.textContent).toContain('Vêtements et prestations')
+
+    demonter()
+  })
+
+  it('conserve la commande en local et explique l’échec de synchronisation', async () => {
+    envoi.resultat = {
+      statut: 'error',
+      message: 'Hors ligne : la commande reste sur cet appareil et partira à la reconnexion.',
+    }
+
+    await monter()
+    await remplirEtEnregistrer()
+
+    // La commande reste enregistrée sur l'appareil…
+    expect(await db.orders.count()).toBe(1)
+    // … et le comptoir voit pourquoi elle n'est pas encore en base.
+    const messages = vi.mocked(toast).mock.calls.map((appel) => String(appel[0]))
+    expect(messages.some((message) => message.includes('reste sur cet appareil'))).toBe(true)
   })
 })

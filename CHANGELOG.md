@@ -6,6 +6,53 @@ versionnage selon [SemVer](https://semver.org/lang/fr/).
 
 ---
 
+## [0.16.1] — 2026-10-26
+
+Workflow « nouvelle commande » rendu réellement opérationnel : ce que le
+comptoir saisit arrive en base, et l'échec éventuel est dit au lieu d'être tu.
+
+### Corrigé
+
+- **Cause première du blocage des nouvelles commandes** — `createEmptyItem()`
+  ne renseignait jamais `priceReason`. Une ligne libre arrivait donc jusqu'à
+  `guard_order_item_price` sans motif de prix : PostgreSQL la refusait
+  (`22023`) à l'envoi, alors que la commande paraissait enregistrée sur
+  l'appareil et restait indéfiniment « en attente ». Le formulaire produit
+  désormais systématiquement un motif recevable.
+
+### Ajouté
+
+- **`src/lib/orderPricing.ts`** — contrat de prix unique, aligné sur le
+  déclencheur serveur : `motifPrixServeur()` (conserve un motif réel d'au moins
+  10 caractères, en génère un pour une ligne libre, n'en impose aucun à une
+  ligne de catalogue) et `problemeTarifaire()` (prix unitaire nul ou total
+  incohérent, message en français).
+- **Envoi immédiat après enregistrement** — `syncOrderNow()` pousse la commande
+  dès sa création, sans attendre la boucle de fond. Le comptoir lit « Commande
+  enregistrée et synchronisée. » ou « Commande enregistrée sur cet appareil. »
+  suivi du motif, puis la fiche s'ouvre sur l'état réel de synchronisation.
+- **« Synchroniser maintenant » sur la fiche commande** — relance l'envoi d'une
+  commande encore locale, avec indicateur de chargement.
+- **Verrou d'envoi par commande** — `envoyerCommande()` réutilise l'envoi déjà
+  en cours pour une même commande : la boucle de fond et l'envoi immédiat ne
+  peuvent plus insérer deux fois ni fabriquer un faux conflit.
+- **Contrôle tarifaire dans le formulaire** — une ligne à 0 FCFA est refusée
+  avant tout envoi, sur l'étape « Vêtements », avec le champ à corriger.
+- **Tests** — `orderPricing.test.ts` (7 cas), 4 cas `syncOrderNow` dont la
+  course avec la boucle de fond, 3 cas d'enregistrement du formulaire
+  (succès, échec expliqué, refus d'un prix nul). Suite : **654 tests**, 61
+  fichiers.
+
+### Vérifié sur Supabase réel
+
+Simulation transactionnelle (annulée) d'une commande de réceptionniste avec
+deux lignes libres sur le projet `phjstsydxvggtduohfrl` : les deux lignes sont
+acceptées, la commande est rattachée à la cliente existante
+(`client_rattache = true`, `Awa Koné`, `phone_key = 0700000042`), totaux
+cohérents (`total_amount = 9000`, `total_lignes = 9000`, 2 lignes).
+
+---
+
 ## [0.16.0] — 2026-10-26
 
 CRUD complet des modules de gestion : chaque bouton d'écriture annoncé par un

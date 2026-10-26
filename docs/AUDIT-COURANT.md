@@ -1,7 +1,7 @@
 # Audit courant — Pressing Pro
 
 **Date :** 26 octobre 2026
-**Branche :** `arena/e64723d6-laundrypressing`
+**Branche :** `arena/ae1d1223-laundrypressing`
 **Périmètre :** application, synchronisation, migration 020, tests et documentation du dépôt.
 
 > Cet audit décrit l’état vérifié dans cette révision. Les documents d’audit antérieurs restent dans Git comme historique, mais ne sont pas une description de la version actuelle.
@@ -18,13 +18,35 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 |---|---|
 | `npm run typecheck` | Réussi |
 | `npm run lint` | Réussi |
-| `npm test` | **639 tests réussis / 639**, 60 fichiers |
+| `npm test` | **654 tests réussis / 654**, 61 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
 | CI PostgreSQL 16 | Réussie sur la PR #8 : migrations 001→025 et 19 contrôles CRUD passés |
 | Suite SQL ordonnée dans PGlite | Tous les scripts listés par `scripts/sql-verify.sh` passent ; extension `pgcrypto` omise car non disponible dans PGlite |
 | Supabase réel (`Pressing_Pro`) | Connecté le 26 octobre 2026 : migrations 001→025 appliquées, 10 fonctions et 4 déclencheurs vérifiés, garde-fous testés en transaction annulée |
 | CinetPay réel | Non vérifié (secrets Edge Functions non renseignés) |
+
+### Workflow « nouvelle commande » (vérifié le 26 octobre 2026)
+
+La commande saisie au comptoir est écrite dans IndexedDB puis poussée
+immédiatement vers Supabase (`syncOrderNow`), sans attendre la boucle de fond
+d'une minute. Le contrat frontend ↔ base est explicite :
+
+| Règle serveur (`guard_order_item_price`) | Contrepartie cliente (`src/lib/orderPricing.ts`) |
+|---|---|
+| Ligne libre (`catalog_entry_id is null`) ⇒ `price_reason` ≥ 10 caractères | `motifPrixServeur()` génère « Ligne libre saisie au comptoir — <libellé> » si aucun motif réel n'est saisi |
+| `unit_price > 0` | `problemeTarifaire()` bloque l'enregistrement sur l'étape Vêtements |
+| `price = billed_quantity × unit_price` (ou minimum de facturation) | total recalculé par le formulaire, motif de refus en français |
+
+Le motif d'origine du blocage (lignes sans `price_reason`, refusées à l'envoi
+alors que la commande semblait enregistrée) est corrigé et couvert par des
+tests. Une commande qui ne peut pas partir reste sur l'appareil et le comptoir
+lit pourquoi ; la fiche propose « Synchroniser maintenant ».
+
+Vérification en base : simulation transactionnelle annulée sur
+`phjstsydxvggtduohfrl` (rôle réceptionniste, deux lignes libres) — lignes
+acceptées, cliente rattachée automatiquement, `total_amount` et `total_lignes`
+cohérents.
 
 Le passage complet dans PGlite valide l’ordre des migrations et des tests jusqu’à 020. La CI de la PR #7 a également exécuté `scripts/sql-verify.sh` sur PostgreSQL 16 réel avec succès ; cela ne remplace pas une recette Supabase déployée. Pendant ces vérifications, le test `catalogue_commercial_models.sql` a été corrigé : il prétendait tester un article hors périmètre, mais réutilisait par erreur l’identifiant d’une chemise déjà incluse dans le forfait.
 

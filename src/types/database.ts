@@ -1102,6 +1102,17 @@ export interface Database {
         Args: Record<PropertyKey, never>
         Returns: string | null
       }
+      // Journal de diagnostic (migration 026) : le poste consigne lui-même le
+      // refus d'un envoi, pour qu'une commande bloquée laisse une trace lisible.
+      log_client_sync: {
+        Args: {
+          p_kind: 'push_error' | 'push_ok' | 'push_conflict' | 'probe'
+          p_message?: string | null
+          p_order_id?: string | null
+          p_details?: Json
+        }
+        Returns: undefined
+      }
       record_cash_payment: {
         Args: {
           p_order_id: string

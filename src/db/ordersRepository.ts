@@ -9,6 +9,7 @@ import { ACTIVE_ORDER_STATUSES } from '@/constants/orders'
 import { buildQrString, newId, nowIso } from '@/lib/ids'
 import { calculerTarif } from '@/lib/catalogPricing'
 import { calculateLaundryModelPrice } from '@/lib/laundryModelPricing'
+import { motifPrixServeur, problemeTarifaire } from '@/lib/orderPricing'
 import {
   createOrderSchema,
   orderItemMeasurementSchema,
@@ -57,6 +58,14 @@ export async function createOrderLocal(
       minimumFacturable: item.minimumChargeSnapshot,
     })
 
+    const probleme = problemeTarifaire({
+      label: item.label,
+      unitPrice,
+      price: calculated.total,
+      priceStatus: item.priceStatus,
+    })
+    if (probleme) throw new Error(probleme)
+
     if (item.laundryModelId && item.laundryModelTypeSnapshot && item.laundryWeightKg) {
       const modelPrice = calculateLaundryModelPrice({
         model_type: item.laundryModelTypeSnapshot,
@@ -103,7 +112,13 @@ export async function createOrderLocal(
       billingIncrementSnapshot: item.billingIncrementSnapshot ?? null,
       minimumChargeSnapshot: item.minimumChargeSnapshot ?? null,
       conditionsSnapshot: item.conditionsSnapshot ?? null,
-      priceReason: item.priceReason?.trim() ? item.priceReason.trim() : null,
+      // Le serveur exige un motif de 10 caractères pour toute ligne libre :
+      // on le produit ici plutôt que de laisser la commande échouer à l'envoi.
+      priceReason: motifPrixServeur({
+        label: item.label,
+        catalogEntryId: item.catalogEntryId ?? null,
+        priceReason: item.priceReason,
+      }),
       laundryModelId: item.laundryModelId ?? null,
       laundryModelNameSnapshot: item.laundryModelNameSnapshot ?? null,
       laundryModelTypeSnapshot: item.laundryModelTypeSnapshot ?? null,
@@ -351,7 +366,7 @@ export async function addOrderItemLocal(
       billingIncrementSnapshot: null,
       minimumChargeSnapshot: null,
       conditionsSnapshot: null,
-      priceReason: 'Ligne ajoutée au comptoir',
+      priceReason: motifPrixServeur({ label, catalogEntryId: null, priceReason: null }),
       laundryModelId: null,
       laundryModelNameSnapshot: null,
       laundryModelTypeSnapshot: null,
@@ -728,7 +743,13 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
     billing_increment_snapshot: item.billingIncrementSnapshot,
     minimum_charge_snapshot: item.minimumChargeSnapshot,
     conditions_snapshot: item.conditionsSnapshot,
-    price_reason: item.priceReason,
+    // Filet de sécurité pour les commandes déjà présentes dans IndexedDB avant
+    // l'ajout du motif automatique : sans lui, leur envoi resterait bloqué.
+    price_reason: motifPrixServeur({
+      label: item.label,
+      catalogEntryId: item.catalogEntryId ?? null,
+      priceReason: item.priceReason,
+    }),
     garment_details: item.garmentDetails ?? [],
   }
 }

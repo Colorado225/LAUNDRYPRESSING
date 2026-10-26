@@ -60,6 +60,8 @@ const remote = vi.hoisted(() => ({
   cashError: null as null | { message: string; code: string },
   /** Reste à payer renvoyé par l'encaissement. */
   cashRemaining: 0,
+  /** Latence simulée (ms) sur les écritures, pour tester les courses. */
+  delai: 0,
 }))
 
 vi.mock('@/lib/env', () => ({
@@ -108,7 +110,9 @@ vi.mock('@/lib/supabaseClient', () => {
       // constructeur lui-même : `error` serait `undefined` et le test croirait
       // à un succès. Le vrai client est « thenable ».
       then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
-        Promise.resolve(finish()).then(resolve, reject),
+        (remote.delai > 0 ? new Promise<void>((r) => setTimeout(r, remote.delai)) : Promise.resolve())
+          .then(() => finish())
+          .then(resolve, reject),
     }
     return builder
   }
@@ -174,7 +178,7 @@ vi.mock('@/lib/supabaseClient', () => {
 
 const { queueCashPayment } = await import('@/db/cashRepository')
 const { queueNotification } = await import('@/db/notificationRepository')
-const { syncPendingOrders } = await import('@/sync/syncEngine')
+const { envoyerCommande, syncOrderNow, syncPendingOrders } = await import('@/sync/syncEngine')
 const { keepLocalVersion, takeServerVersion } = await import('@/services/orderConflictService')
 
 async function preparerConflitDeMesure() {
@@ -228,6 +232,7 @@ async function seedOrder(tenantId = TENANT, label = 'Chemise') {
 beforeEach(async () => {
   await db.orders.clear()
   await db.orderItems.clear()
+  remote.delai = 0
   remote.calls.length = 0
   remote.configured = true
   remote.failure = null
@@ -733,6 +738,107 @@ describe('syncPendingOrders — encaissements au comptoir (palier 2)', () => {
     expect(stocke?.lastError).toBe(
       'Réseau indisponible : la synchronisation reprendra automatiquement.',
     )
+  })
+})
+
+describe('syncOrderNow — envoi immédiat après création', () => {
+  it('envoie la commande et ses lignes sans attendre la boucle de fond', async () => {
+    const { order } = await seedOrder()
+    remote.calls.length = 0
+
+    const resultat = await syncOrderNow(order.id)
+
+    expect(resultat).toMatchObject({ statut: 'synced', version: 1 })
+    expect(remote.calls.map((call) => `${call.table}:${call.mode}`)).toEqual([
+      'orders:insert',
+      'order_items:upsert',
+    ])
+
+    const stored = await db.orders.get(order.id)
+    expect(stored?.synced).toBe(1)
+    expect(stored?.syncError).toBeNull()
+  })
+
+  it('laisse la commande en file et explique le motif hors ligne', async () => {
+    const { order } = await seedOrder()
+    setOnline(false)
+    remote.calls.length = 0
+
+    const resultat = await syncOrderNow(order.id)
+
+    setOnline(true)
+    expect(resultat.statut).toBe('error')
+    expect(resultat.statut === 'error' && resultat.message).toContain('Hors ligne')
+    expect(remote.calls).toHaveLength(0)
+    expect((await db.orders.get(order.id))?.synced).toBe(0)
+  })
+
+  it('remonte le refus serveur dans le message rendu au comptoir', async () => {
+    const { order } = await seedOrder()
+    remote.failure = (table) =>
+      table === 'order_items'
+        ? 'Une ligne libre exige un motif de 10 caractères minimum.'
+        : null
+
+    const resultat = await syncOrderNow(order.id)
+    remote.failure = null
+
+    expect(resultat.statut).toBe('error')
+    expect(resultat.statut === 'error' && resultat.message).toContain('motif')
+    const stored = await db.orders.get(order.id)
+    expect(stored?.synced).toBe(0)
+    expect(stored?.syncError).toContain('motif')
+  })
+
+  it('ne double pas l’envoi si la boucle de fond est déjà sur cette commande', async () => {
+    const { order } = await seedOrder()
+    remote.calls.length = 0
+    remote.delai = 20
+
+    const [immediat, fond] = await Promise.all([
+      syncOrderNow(order.id),
+      envoyerCommande(order),
+    ])
+    remote.delai = 0
+
+    expect(immediat.statut).toBe('synced')
+    expect(fond.statut).toBe('synced')
+    // Une seule insertion d'en-tête et un seul envoi de lignes.
+    expect(remote.calls.filter((call) => call.table === 'orders' && call.mode === 'insert')).toHaveLength(1)
+    expect(remote.calls.filter((call) => call.table === 'order_items' && call.mode === 'upsert')).toHaveLength(1)
+  })
+
+  it('consigne le refus serveur dans le journal de diagnostic', async () => {
+    const { order } = await seedOrder()
+    remote.failure = () => 'new row violates row-level security policy for table "orders"'
+    remote.rpcCalls.length = 0
+
+    await syncOrderNow(order.id)
+    // Le journal est écrit sans bloquer l'appelant.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    remote.failure = null
+
+    const incident = remote.rpcCalls.find((call) => call.fn === 'log_client_sync')
+    expect(incident).toBeDefined()
+    expect(incident?.args).toMatchObject({
+      p_kind: 'push_error',
+      p_order_id: order.id,
+    })
+    // Le poste joint l'erreur brute : elle seule permet de trancher entre un
+    // problème de droits et une contrainte métier.
+    const details = incident?.args['p_details'] as Record<string, unknown>
+    expect(String(details['message_serveur'] ?? '')).toContain('row-level security')
+  })
+
+  it('n’envoie pas une commande portant un conflit non arbitré', async () => {
+    const { order } = await seedOrder()
+    await db.orders.update(order.id, { syncConflict: 'modifiée ailleurs' })
+    remote.calls.length = 0
+
+    const resultat = await syncOrderNow(order.id)
+
+    expect(resultat.statut).toBe('conflict')
+    expect(remote.calls).toHaveLength(0)
   })
 })
 

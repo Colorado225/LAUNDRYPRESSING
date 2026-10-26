@@ -1,7 +1,7 @@
 import { isSupabaseConfigured } from '@/lib/env'
 import { getSupabaseClient } from '@/lib/supabaseClient'
 import { getTenantId } from '@/lib/tenantContext'
-import type { LocalOrder } from '@/db/localDb'
+import { db, type LocalOrder } from '@/db/localDb'
 import {
   countPendingOrders,
   getOrderItems,
@@ -413,6 +413,234 @@ export async function syncPendingOrders(): Promise<SyncResult> {
   return syncInFlight
 }
 
+/** Résultat de l'envoi d'une commande précise. */
+export type EnvoiCommande =
+  | { statut: 'synced'; version: number }
+  | { statut: 'conflict'; message: string }
+  | { statut: 'error'; message: string }
+
+const MESSAGE_CONFLIT =
+  'Conflit : cette commande a été modifiée sur un autre appareil.'
+
+/**
+ * Envoie **une** commande et ses lignes, puis marque son état local.
+ *
+ * Fonction unique partagée par la synchronisation périodique et par l'envoi
+ * immédiat qui suit la création (`syncOrderNow`). La factoriser évite que les
+ * deux chemins divergent : une commande créée au comptoir doit suivre
+ * exactement les mêmes règles que celles envoyées par la boucle de fond.
+ *
+ * Ordre volontaire :
+ *   1. la commande (jeton de version) ;
+ *   2. la version serveur enregistrée AVANT les lignes — si l'envoi des lignes
+ *      échoue, la nouvelle tentative repart du bon jeton au lieu de fabriquer
+ *      un faux conflit avec sa propre écriture ;
+ *   3. les lignes (upsert) puis la purge des lignes distantes retirées.
+ */
+// Un seul envoi à la fois par commande. La boucle de fond et l'envoi immédiat
+// peuvent viser la même commande au même instant : sans ce verrou, les deux
+// tenteraient l'insertion et la seconde créerait un faux conflit.
+const envoisEnCours = new Map<string, Promise<EnvoiCommande>>()
+
+/**
+ * Consigne un incident d'envoi dans la base (`log_client_sync`, migration 026).
+ *
+ * Raison d'être : un refus serveur ne laisse aucune trace — la base reste vide
+ * et le poste garde la commande en attente. Le compte connecté peut ainsi
+ * relire, depuis son propre pressing, ce que SON appareil a réellement reçu
+ * comme erreur (RLS, jeton expiré, contrainte). Jamais bloquant : si la
+ * journalisation échoue elle-même, on continue.
+ */
+async function journaliserEnvoi(
+  kind: 'push_error' | 'push_ok' | 'push_conflict',
+  order: LocalOrder | null,
+  message: string | null,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const supabase = getSupabaseClient()
+    await supabase.rpc('log_client_sync', {
+      p_kind: kind,
+      p_message: message,
+      p_order_id: order?.id ?? null,
+      p_details: {
+        poste: MARQUEUR_POSTE,
+        ...details,
+        tenant_local: order?.tenantId ?? getTenantId(),
+        version_locale: order?.serverVersion ?? null,
+        lignes: order ? (await getOrderItems(order.id)).length : null,
+        en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+        agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      },
+    })
+  } catch {
+    // Le diagnostic ne doit jamais casser le comptoir.
+  }
+}
+
+/**
+ * Envoie une commande au serveur, en évitant tout envoi concurrent pour la même
+ * commande (un appel déjà en cours est réutilisé tel quel).
+ */
+export function envoyerCommande(order: LocalOrder): Promise<EnvoiCommande> {
+  const enCours = envoisEnCours.get(order.id)
+  if (enCours) return enCours
+
+  const envoi = pousserCommande(order).finally(() => {
+    envoisEnCours.delete(order.id)
+  })
+  envoisEnCours.set(order.id, envoi)
+  return envoi
+}
+
+async function pousserCommande(order: LocalOrder): Promise<EnvoiCommande> {
+  const supabase = getSupabaseClient()
+
+  try {
+    const pushed = await pushOrder(order)
+
+    if (pushed.status === 'conflict') {
+      await markOrderSyncConflict(order.id, MESSAGE_CONFLIT)
+      void journaliserEnvoi('push_conflict', order, MESSAGE_CONFLIT)
+      return { statut: 'conflict', message: MESSAGE_CONFLIT }
+    }
+
+    if (pushed.status === 'error') {
+      const message = toFrenchSyncError(new Error(pushed.message))
+      await markOrderSyncError(order.id, message)
+      void journaliserEnvoi('push_error', order, message, {
+        etape: 'orders',
+        message_serveur: pushed.message,
+      })
+      return { statut: 'error', message }
+    }
+
+    await updateOrderServerVersion(order.id, pushed.version)
+
+    const items = await getOrderItems(order.id)
+    if (items.length > 0) {
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .upsert(items.map(toSupabaseOrderItem), { onConflict: 'id' })
+      if (itemsError) throw new Error(itemsError.message)
+
+      // Une ligne retirée au comptoir doit aussi disparaître du serveur :
+      // l'upsert ne fait qu'ajouter et mettre à jour. On supprime donc les
+      // lignes distantes absentes de la liste locale (jamais l'inverse : la
+      // liste locale est la référence de cette tablette). Rien à purger lors
+      // du premier envoi : la commande n'existe pas encore côté serveur.
+      if (order.serverVersion > 0) {
+        // UUID : ni guillemets ni virgule possible, la liste reste sûre.
+        const ids = items.map((ligne) => ligne.id).join(',')
+        const { error: purgeError } = await supabase
+          .from('order_items')
+          .delete()
+          .eq('order_id', order.id)
+          .not('id', 'in', `(${ids})`)
+        if (purgeError) throw new Error(purgeError.message)
+      }
+    }
+
+    await markOrderSynced(order.id, pushed.version)
+    return { statut: 'synced', version: pushed.version }
+  } catch (error) {
+    const message = toFrenchSyncError(error)
+    await markOrderSyncError(order.id, message)
+    void journaliserEnvoi('push_error', order, message, {
+      etape: 'items',
+      message_serveur: error instanceof Error ? error.message : String(error),
+    })
+    return { statut: 'error', message }
+  }
+}
+
+/**
+ * Envoie immédiatement une commande, sans attendre la synchronisation de fond.
+ *
+ * Utilisée juste après l'enregistrement d'une nouvelle commande : le comptoir
+ * voit tout de suite si la commande est arrivée en base, au lieu de laisser une
+ * commande « en attente » pendant une minute. Hors ligne ou sans backend, le
+ * travail reste dans IndexedDB et l'appelant reçoit un motif explicite.
+ */
+export async function syncOrderNow(orderId: string): Promise<EnvoiCommande> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return {
+      statut: 'error',
+      message: 'Hors ligne : la commande reste sur cet appareil et partira à la reconnexion.',
+    }
+  }
+
+  if (!isSupabaseConfigured) {
+    return {
+      statut: 'error',
+      message:
+        'Supabase n’est pas configuré : la commande reste sur cet appareil (mode démonstration).',
+    }
+  }
+
+  const order = await db.orders.get(orderId)
+  if (!order) {
+    return { statut: 'error', message: 'Commande introuvable sur cet appareil.' }
+  }
+
+  if (order.syncConflict) {
+    return { statut: 'conflict', message: MESSAGE_CONFLIT }
+  }
+
+  useSyncStore.getState().startSync()
+  const resultat = await envoyerCommande(order)
+  const tenantId = getTenantId()
+
+  if (resultat.statut === 'synced' && tenantId) {
+    useSyncStore.getState().finishSync({ pendingCount: await countPendingOrders(tenantId), lastError: null, tenantId })
+  } else if (resultat.statut !== 'synced') {
+    useSyncStore.setState({ lastError: resultat.message })
+  }
+
+  return resultat
+}
+
+/**
+ * Marqueur de version du poste, joint aux diagnostics.
+ *
+ * Permet de distinguer un vrai refus serveur d'un navigateur qui exécute encore
+ * un ancien paquet (cache du service worker) : sans ce repère, les deux se
+ * ressemblent à s'y méprendre.
+ */
+export const MARQUEUR_POSTE = 'commandes/2026-10-26'
+
+/**
+ * Sonde d'ouverture d'écran : consigne l'état réel du poste (boutique, rôle,
+ * droit de création, réseau) dans le journal de diagnostic.
+ *
+ * Utile quand le blocage est antérieur à toute requête métier — un bouton
+ * désactivé ne produit, lui, aucune erreur à capturer.
+ */
+export async function signalerSonde(details: Record<string, unknown>): Promise<void> {
+  try {
+    const supabase = getSupabaseClient()
+    await supabase.rpc('log_client_sync', {
+      p_kind: 'probe',
+      p_message: 'ouverture du formulaire de commande',
+      p_details: { poste: MARQUEUR_POSTE, ...details },
+    })
+  } catch {
+    // Diagnostic uniquement.
+  }
+}
+
+/**
+ * Signale au serveur un incident survenu AVANT l'envoi (validation, écriture
+ * locale refusée). Sans cela, un blocage au moment du clic ne laisse aucune
+ * trace : ni commande en base, ni erreur consultable.
+ */
+export async function signalerIncidentCommande(
+  message: string,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  await journaliserEnvoi('push_error', null, message, { origine: 'formulaire', ...details })
+}
+
 async function runSync(): Promise<SyncResult> {
   const tenantId = getTenantId()
 
@@ -450,7 +678,6 @@ async function runSync(): Promise<SyncResult> {
 
   useSyncStore.getState().startSync()
 
-  const supabase = getSupabaseClient()
   let succeeded = 0
   let failed = 0
   let conflicts = 0
@@ -464,55 +691,15 @@ async function runSync(): Promise<SyncResult> {
       continue
     }
 
-    try {
-      const pushed = await pushOrder(order)
+    const resultat = await envoyerCommande(order)
 
-      if (pushed.status === 'conflict') {
-        conflicts += 1
-        await markOrderSyncConflict(
-          order.id,
-          'Conflit : cette commande a été modifiée sur un autre appareil.',
-        )
-        continue
-      }
-
-      if (pushed.status === 'error') throw new Error(pushed.message)
-
-      // La version est enregistrée AVANT l'envoi des vêtements : si celui-ci
-      // échoue, la nouvelle tentative repartira du bon jeton au lieu de
-      // fabriquer un faux conflit avec sa propre écriture.
-      await updateOrderServerVersion(order.id, pushed.version)
-
-      const items = await getOrderItems(order.id)
-      if (items.length > 0) {
-        const { error: itemsError } = await supabase
-          .from('order_items')
-          .upsert(items.map(toSupabaseOrderItem), { onConflict: 'id' })
-        if (itemsError) throw new Error(itemsError.message)
-
-        // Une ligne retirée au comptoir doit aussi disparaître du serveur :
-        // l'upsert ne fait qu'ajouter et mettre à jour. On supprime donc les
-        // lignes distantes absentes de la liste locale (jamais l'inverse : la
-        // liste locale est la référence de cette tablette). Rien à purger lors
-        // du premier envoi : la commande n'existe pas encore côté serveur.
-        if (order.serverVersion > 0) {
-          // UUID : ni guillemets ni virgule possible, la liste reste sûre.
-          const ids = items.map((ligne) => ligne.id).join(',')
-          const { error: purgeError } = await supabase
-            .from('order_items')
-            .delete()
-            .eq('order_id', order.id)
-            .not('id', 'in', `(${ids})`)
-          if (purgeError) throw new Error(purgeError.message)
-        }
-      }
-
-      await markOrderSynced(order.id, pushed.version)
+    if (resultat.statut === 'synced') {
       succeeded += 1
-    } catch (error) {
+    } else if (resultat.statut === 'conflict') {
+      conflicts += 1
+    } else {
       failed += 1
-      lastError = toFrenchSyncError(error)
-      await markOrderSyncError(order.id, lastError)
+      lastError = resultat.message
     }
   }
 
