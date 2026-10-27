@@ -5,6 +5,9 @@ node_modules/
 dist/
 dist-ssr/
 dev-dist/
+coverage/
+# Cache de pré-bundling Vite (généré, jamais versionné)
+.vite/
 *.local
 
 # Variables d'environnement (ne jamais commiter de secrets)

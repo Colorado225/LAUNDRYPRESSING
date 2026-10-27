@@ -202,6 +202,158 @@
 }
 
 /* ============================================================
+   Cartes métriques — apparition à l'entrée dans le champ de vision
+   ============================================================
+   Remplace l'animation JavaScript de framer-motion. L'état de repos est
+   l'état final (opacité 1) : si le JavaScript échoue, la carte reste lisible.
+   ============================================================ */
+
+@keyframes carte-apparition {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.carte-animee {
+  opacity: 1;
+  transform: none;
+}
+
+/* Seules les cartes pas encore vues sont masquées, et uniquement si le
+   navigateur sait animer : `animation-fill-mode: backwards` applique l'état
+   initial pendant le délai, sans laisser de « trou » visuel. */
+@media (prefers-reduced-motion: no-preference) {
+  .carte-animee:not(.carte-animee-visible) {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+.carte-animee-visible {
+  animation: carte-apparition 340ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* Survol sobre : un léger soulèvement, jamais de rotation. */
+.metric-card {
+  transition: transform 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.metric-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px -12px rgb(15 23 42 / 0.25);
+}
+
+/* ============================================================
+   Graphiques — barres semaine et série quotidienne
+   ============================================================
+   La largeur (HTML) ou la géométrie (attributs SVG) est déjà la valeur finale :
+   l'animation ne fait qu'un fondu + une montée, sans `width`/`height` animés
+   (ces propriétés déclenchent un recalcul de mise en page à chaque image).
+   ============================================================ */
+
+@keyframes barre-pousse {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .barre-semaine,
+  .barre-graphique {
+    animation: barre-pousse 320ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    transform-origin: bottom center;
+  }
+}
+
+/* Repère au survol : le code de couleur du pressing (ambre) sans déplacement. */
+.barre-graphique {
+  transition: opacity 120ms linear;
+}
+
+.barre-graphique:hover {
+  opacity: 0.82;
+}
+
+.chart-bar {
+  transition: filter 140ms ease-out;
+}
+
+.chart-bar:hover {
+  filter: brightness(1.08);
+}
+
+/* ============================================================
+   Coquille applicative — tiroir mobile et transitions de page
+   ============================================================
+   Remplace `framer-motion`, retiré du projet (librairie interdite par le
+   cahier des charges : trop lourde pour des tablettes Android d'entrée de
+   gamme). Les animations sont ici de simples keyframes CSS, exécutées par le
+   compositeur du navigateur — aucun JavaScript par image.
+
+   Ces classes ne sont appliquées que si l'utilisateur n'a pas demandé la
+   réduction des animations (`usePrefersReducedMotion`) ; le bloc
+   `prefers-reduced-motion` plus bas les neutralise de toute façon, en double
+   sécurité au cas où la préférence changerait pendant l'animation.
+   ============================================================ */
+
+@keyframes tiroir-fond {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tiroir-panneau {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes page-entree {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tiroir-fond-ouverture {
+  animation: tiroir-fond 200ms ease-out both;
+}
+
+.tiroir-panneau-ouverture {
+  animation: tiroir-panneau 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-entree {
+  animation: page-entree 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tiroir-fond-ouverture,
+  .tiroir-panneau-ouverture,
+  .page-entree {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
    Écran d'authentification — apparitions, halos, flottement
    ============================================================
    Trois animations seulement, toutes décoratives :

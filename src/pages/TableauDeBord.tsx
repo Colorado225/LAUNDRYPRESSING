@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -22,6 +21,7 @@ import {
   useLocalOrders,
   useRecentNotifications,
 } from '@/db/hooks'
+import { CarteAnimee } from '@/components/CarteAnimee'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
 import { formatDateFr, formatFcfa } from '@/lib/formatters'
@@ -49,7 +49,6 @@ import type { StockItemRow } from '@/types/database'
  * quand la lecture échoue, plutôt que d'afficher un zéro trompeur.
  */
 export default function TableauDeBord() {
-  const prefersReducedMotion = useReducedMotion()
   const tenantId = useTenantStore((state) => state.tenantId)
   const role = useTenantStore((state) => state.role)
   const autorise = can(role, 'dashboard.view')
@@ -155,6 +154,7 @@ export default function TableauDeBord() {
           valeur={String(snapshot.ordersToday)}
           detail={`${snapshot.activeOrders} en atelier`}
           icone={<ClipboardList size={18} aria-hidden />}
+          delai={0}
         />
         <Carte
           libelle="Prêtes"
@@ -162,6 +162,7 @@ export default function TableauDeBord() {
           detail={`${snapshot.lateOrders} en retard`}
           icone={<PackageSearch size={18} aria-hidden />}
           ton={snapshot.lateOrders > 0 ? 'alerte' : 'neutre'}
+          delai={60}
         />
         <Carte
           libelle="Encaissé aujourd’hui"
@@ -169,12 +170,14 @@ export default function TableauDeBord() {
           detail="Espèces"
           icone={<Banknote size={18} aria-hidden />}
           ton="positif"
+          delai={120}
         />
         <Carte
           libelle="Reste à encaisser"
           valeur={formatFcfa(snapshot.outstanding)}
           detail="Commandes actives"
           icone={<TrendingUp size={18} aria-hidden />}
+          delai={180}
         />
       </section>
 
@@ -343,18 +346,11 @@ export default function TableauDeBord() {
           </dl>
 
           <div className="mt-4 flex h-28 items-end gap-1.5" role="img" aria-label="Espèces encaissées sur sept jours">
-            {snapshot.series.map((point, index) => (
+            {snapshot.series.map((point) => (
               <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <motion.div
-                  initial={prefersReducedMotion ? false : { height: 0, opacity: 0.45 }}
-                  animate={{ height: `${Math.max(4, (point.cash / maximumSerie) * 80)}px`, opacity: 1 }}
-                  transition={{
-                    duration: prefersReducedMotion ? 0 : 0.55,
-                    delay: prefersReducedMotion ? 0 : index * 0.045,
-                    ease: [0.22, 1, 0.36, 1],
-                  }}
-                  whileHover={prefersReducedMotion ? undefined : { scaleX: 1.08, backgroundColor: '#f59e0b' }}
+                <div
                   className="chart-bar w-full rounded-t bg-brand-teal/80"
+                  style={{ height: `${Math.max(4, (point.cash / maximumSerie) * 80)}px` }}
                   title={`${shortDayLabel(point.date)} : ${formatFcfa(point.cash)}`}
                 />
                 <span className="truncate text-[10px] text-slate-500">{point.label}</span>
@@ -462,14 +458,16 @@ function Carte({
   detail,
   icone,
   ton = 'neutre',
+  delai = 0,
 }: {
   libelle: string
   valeur: string
   detail: string
   icone: React.ReactNode
   ton?: 'neutre' | 'positif' | 'alerte'
+  /** Cascade d'apparition, en millisecondes. */
+  delai?: number
 }) {
-  const prefersReducedMotion = useReducedMotion()
   const couleurs =
     ton === 'positif'
       ? 'text-brand-teal'
@@ -478,13 +476,9 @@ function Carte({
         : 'text-brand-navy'
 
   return (
-    <motion.div
+    <CarteAnimee
       className="metric-card rounded-2xl border border-slate-200 bg-white p-4"
-      initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      whileHover={prefersReducedMotion ? undefined : { y: -5, scale: 1.025, rotateX: 1, rotateY: -0.8 }}
-      transition={{ duration: prefersReducedMotion ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }}
-      style={{ transformPerspective: 900 }}
+      delai={delai}
     >
       <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
         {icone}
@@ -492,6 +486,6 @@ function Carte({
       </p>
       <p className={`mt-2 text-xl font-bold ${couleurs}`}>{valeur}</p>
       <p className="text-xs text-slate-500">{detail}</p>
-    </motion.div>
+    </CarteAnimee>
   )
 }

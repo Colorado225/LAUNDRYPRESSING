@@ -66,6 +66,10 @@ export default function OrderDetail() {
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const seeAmounts = canSeeAmounts(role)
+  // Le nom du pressing est `null` dans le store seulement avant la résolution du
+  // rattachement. La fiche n'est affichée qu'après `AuthGate`, mais le type doit
+  // rester honnête : on fournit un libellé de repli plutôt qu'un `!` non sûr.
+  const nomPressing = tenantName ?? 'Pressing'
 
   // Déclarés AVANT tout retour anticipé : l'ordre des hooks doit rester stable
   // entre le chargement et l'affichage de la fiche.
@@ -435,7 +439,7 @@ export default function OrderDetail() {
           <a
             href={generateWhatsAppUrl(
               order.customerPhone,
-              generateReceiptText(order, items, tenantName)
+              generateReceiptText(order, items, nomPressing)
             )}
             target="_blank"
             rel="noopener noreferrer"
@@ -447,7 +451,7 @@ export default function OrderDetail() {
           <button
             onClick={() => {
               try {
-                const receiptHtml = generatePrintableReceipt(order, items, tenantName)
+                const receiptHtml = generatePrintableReceipt(order, items, nomPressing)
                 printReceipt(receiptHtml)
               } catch (error) {
                 toast.error(error instanceof Error ? error.message : "Impression impossible")

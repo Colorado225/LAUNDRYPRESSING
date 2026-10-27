@@ -1,6 +1,5 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import {
   BarChart3,
   Boxes,
@@ -26,6 +25,7 @@ import OfflineBadge from './OfflineBadge'
 import ShopSwitcher from './ShopSwitcher'
 import SubscriptionBanner from './SubscriptionBanner'
 import { TENANT_ROLE_LABELS } from '@/constants/orders'
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { isSupabaseConfigured } from '@/lib/env'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
@@ -185,7 +185,7 @@ function ContenuBarre({
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation()
-  const prefersReducedMotion = useReducedMotion()
+  const prefersReducedMotion = usePrefersReducedMotion()
   const tenantName = useTenantStore((state) => state.tenantName)
   const role = useTenantStore((state) => state.role)
   const isPlatformAdmin = useTenantStore((state) => state.isPlatformAdmin)
@@ -313,61 +313,59 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* ---------------------------- Tiroir mobile -------------------------- */}
-        <AnimatePresence>
-          {menu.ouvert && (
-            <>
-              <motion.div
-                className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}
+        {/*
+          * Montage conditionnel : le tiroir n'existe dans le DOM que lorsqu'il est
+          * ouvert. On a perdu l'animation de sortie de framer-motion (le nœud
+          * disparaît au démontage), mais l'ouverture reste animée par CSS et
+          * `prefers-reduced-motion` la neutralise. Sur une tablette d'atelier,
+          * une fermeture instantanée est de toute façon plus sûre.
+          */}
+        {menu.ouvert && (
+          <>
+            <div
+              className={`fixed inset-0 z-40 bg-slate-900/50 lg:hidden ${
+                prefersReducedMotion ? '' : 'tiroir-fond-ouverture'
+              }`}
+              onClick={fermerMenu}
+              aria-hidden
+            />
+            <aside
+              className={`fixed left-0 top-0 z-50 flex h-screen w-72 max-w-[85vw] flex-col border-r border-slate-200 bg-white shadow-xl lg:hidden ${
+                prefersReducedMotion ? '' : 'tiroir-panneau-ouverture'
+              }`}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Menu de navigation"
+            >
+              <button
+                type="button"
                 onClick={fermerMenu}
-                aria-hidden
-              />
-              <motion.aside
-                className="fixed left-0 top-0 z-50 flex h-screen w-72 max-w-[85vw] flex-col border-r border-slate-200 bg-white shadow-xl lg:hidden"
-                initial={{ x: '-100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '-100%' }}
-                transition={{
-                  duration: prefersReducedMotion ? 0 : 0.22,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                role="dialog"
-                aria-modal="true"
-                aria-label="Menu de navigation"
+                aria-label="Fermer le menu"
+                className="absolute right-2 top-3 z-10 inline-flex size-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
-                <button
-                  type="button"
-                  onClick={fermerMenu}
-                  aria-label="Fermer le menu"
-                  className="absolute right-2 top-3 z-10 inline-flex size-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <X size={18} aria-hidden />
-                </button>
-                <ContenuBarre
-                  navigation={navigation}
-                  libelleRole={libelleRole}
-                  onSignOut={() => void handleSignOut()}
-                />
-              </motion.aside>
-            </>
-          )}
-        </AnimatePresence>
+                <X size={18} aria-hidden />
+              </button>
+              <ContenuBarre
+                navigation={navigation}
+                libelleRole={libelleRole}
+                onSignOut={() => void handleSignOut()}
+              />
+            </aside>
+          </>
+        )}
 
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.main
-            key={location.pathname}
-            className="app-main mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8"
-            initial={prefersReducedMotion ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={prefersReducedMotion ? undefined : { opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
+        {/*
+          * Transition de page : `key` sur l'itinéraire force React à recréer
+          * l'élément, ce qui rejoue l'animation d'entrée CSS à chaque navigation.
+          */}
+        <main
+          key={location.pathname}
+          className={`app-main mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8 ${
+            prefersReducedMotion ? '' : 'page-entree'
+          }`}
+        >
+          {children}
+        </main>
       </div>
     </div>
   )

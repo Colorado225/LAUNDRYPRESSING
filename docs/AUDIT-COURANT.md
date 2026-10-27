@@ -16,9 +16,9 @@ Le catalogue de prestations et les modèles commerciaux ont été retirés. Les 
 
 | Contrôle | Résultat dans cette révision |
 |---|---|
-| `npm run typecheck` | Réussi |
-| `npm run lint` | Réussi |
-| `npm test` | **654 tests réussis / 654**, 61 fichiers |
+| `npm run typecheck` | Réussi (rejoué le 27 octobre 2026 après correctif de typage `tenantName` dans `OrderDetail.tsx`) |
+| `npm run lint` | Réussi (rejoué le 27 octobre 2026 ; `.vite` et `coverage` ajoutés aux ignores ESLint) |
+| `npm test` | **656 tests réussis / 656**, 61 fichiers |
 | `npm run build` | Réussi ; avertissement de chunk principal supérieur à 500 kB |
 | `npm run sql:verify` en local | Non exécuté : `psql` n’est pas installé dans l’environnement |
 | CI PostgreSQL 16 | Réussie sur la PR #8 : migrations 001→025 et 19 contrôles CRUD passés |

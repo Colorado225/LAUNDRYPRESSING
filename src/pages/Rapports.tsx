@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
 import {
   Banknote,
   BarChart3,
@@ -54,7 +53,6 @@ import {
 const EMPTY_TEAM_MEMBERS: TeamMember[] = []
 
 export default function Rapports() {
-  const prefersReducedMotion = useReducedMotion()
   const role = useTenantStore((state) => state.role)
   const tenantId = useTenantStore((state) => state.tenantId)
   const currentUserId = useTenantStore((state) => state.userId)
@@ -437,14 +435,11 @@ export default function Rapports() {
               <li key={jour.label} className="flex items-center gap-2 text-sm">
                 <span className="w-12 shrink-0 text-slate-600">{jour.label}</span>
                 <span className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
-                  <motion.span
-                    className="block h-full rounded-full bg-brand-teal"
-                    initial={prefersReducedMotion ? false : { width: 0 }}
-                    animate={{ width: `${(jour.facture / maximumSemaine) * 100}%` }}
-                    transition={{
-                      duration: prefersReducedMotion ? 0 : 0.52,
-                      delay: prefersReducedMotion ? 0 : index * 0.055,
-                      ease: [0.22, 1, 0.36, 1],
+                  <span
+                    className="barre-semaine block h-full rounded-full bg-brand-teal"
+                    style={{
+                      width: `${(jour.facture / maximumSemaine) * 100}%`,
+                      animationDelay: `${index * 55}ms`,
                     }}
                   />
                 </span>
@@ -511,7 +506,6 @@ export default function Rapports() {
 
 /** Graphique en barres de la série quotidienne. */
 function GraphiqueJours({ rapport, maximum }: { rapport: Rapport; maximum: number }) {
-  const prefersReducedMotion = useReducedMotion()
   const points = rapport.parJour
   const largeur = 720
   const hauteur = 220
@@ -565,20 +559,16 @@ function GraphiqueJours({ rapport, maximum }: { rapport: Rapport; maximum: numbe
           const y = margeHaute + zoneHaute - hauteurBarre
           return (
             <g key={point.date}>
-              <motion.rect
-                initial={prefersReducedMotion ? false : { y: margeHaute + zoneHaute, height: 0, opacity: 0.35 }}
-                animate={{
-                  y,
-                  height: Math.max(hauteurBarre, point.facture > 0 ? 2 : 0),
-                  opacity: 1,
-                }}
-                transition={{
-                  duration: prefersReducedMotion ? 0 : 0.52,
-                  delay: prefersReducedMotion ? 0 : Math.min(index * 0.006, 0.42),
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                whileHover={prefersReducedMotion ? undefined : { scaleX: 1.18, fill: '#f59e0b' }}
-                style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
+              {/*
+                * Barre animée en CSS : la hauteur/le `y` finaux sont déjà posés
+                * en attributs SVG (état de repos), l'animation ne fait que
+                * rejouer l'apparition. `transform-box: fill-box` manque encore
+                * au support SVG ancien : on n'anime donc que l'opacité et une
+                * translation verticale, jamais la géométrie.
+                */}
+              <rect
+                className="barre-graphique"
+                style={{ animationDelay: `${Math.min(index * 6, 420)}ms` }}
                 x={x}
                 y={y}
                 width={largeurBarre}
@@ -587,7 +577,7 @@ function GraphiqueJours({ rapport, maximum }: { rapport: Rapport; maximum: numbe
                 fill="url(#rapport-bar-gradient)"
               >
                 <title>{`${point.label} : ${formatFcfa(point.facture)} (${point.commandes} commande(s))`}</title>
-              </motion.rect>
+              </rect>
               {index % intervalleLabel === 0 && (
                 <text
                   x={index * pas + pas / 2}
@@ -622,17 +612,8 @@ function Carte({
   variation?: number | null
   icone: ReactNode
 }) {
-  const prefersReducedMotion = useReducedMotion()
-
   return (
-    <motion.div
-      className="metric-card rounded-2xl border border-slate-200 bg-white p-4"
-      initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      whileHover={prefersReducedMotion ? undefined : { y: -5, scale: 1.025, rotateX: 1, rotateY: -0.8 }}
-      transition={{ duration: prefersReducedMotion ? 0 : 0.34, ease: [0.22, 1, 0.36, 1] }}
-      style={{ transformPerspective: 900 }}
-    >
+    <div className="metric-card rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between text-slate-400">
         <span className="text-xs font-semibold uppercase tracking-wide">{libelle}</span>
         {icone}
@@ -657,6 +638,6 @@ function Carte({
           </span>
         )}
       </div>
-    </motion.div>
+    </div>
   )
 }

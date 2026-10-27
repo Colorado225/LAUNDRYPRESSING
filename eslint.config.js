@@ -13,7 +13,10 @@ import { defineConfig, globalIgnores } from 'eslint/config'
  * des fichiers .ts/.tsx. Décision documentée dans README.md.
  */
 export default defineConfig([
-  globalIgnores(['dist', 'dev-dist', 'node_modules', 'supabase/functions']),
+  // `.vite` et `coverage` sont des sorties générées (cache de pré-bundling Vite,
+  // rapports de couverture) : les linter produisait des centaines de faux positifs
+  // sur des bundles minifiés, alors que `src` est parfaitement propre.
+  globalIgnores(['dist', 'dev-dist', '.vite', 'coverage', 'node_modules', 'supabase/functions']),
 
   /* Fichiers JavaScript de configuration (Node) */
   {
