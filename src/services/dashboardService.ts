@@ -53,6 +53,8 @@ export interface DashboardSnapshot {
   today: string
   /** Commandes enregistrées aujourd'hui. */
   ordersToday: number
+  /** Commandes enregistrées la veille (base des variations affichées). */
+  ordersYesterday: number
   /** Commandes encore en atelier (hors livrées et annulées). */
   activeOrders: number
   /** Commandes prêtes à retirer. */
@@ -63,6 +65,8 @@ export interface DashboardSnapshot {
   outstanding: number
   /** Espèces encaissées aujourd'hui. */
   cashToday: number
+  /** Espèces encaissées la veille (base des variations affichées). */
+  cashYesterday: number
   /** Espèces encaissées sur les sept derniers jours. */
   cashWeek: number
   /** Panier moyen (commandes non annulées). */
@@ -109,6 +113,15 @@ export function computeDashboard(
   const ordersToday = orders.filter(
     (order) => jourDe(order.createdAt) === today && order.status !== 'cancelled',
   ).length
+
+  const hier = shiftDay(today, -1)
+  const ordersYesterday = orders.filter(
+    (order) => jourDe(order.createdAt) === hier && order.status !== 'cancelled',
+  ).length
+
+  const cashYesterday = cashPayments
+    .filter((paiement) => jourDe(paiement.receivedAt) === hier)
+    .reduce((total, paiement) => total + paiement.amount, 0)
 
   const cashToday = cashPayments
     .filter((paiement) => jourDe(paiement.receivedAt) === today)
@@ -177,17 +190,32 @@ export function computeDashboard(
   return {
     today,
     ordersToday,
+    ordersYesterday,
     activeOrders: actives.length,
     readyOrders: orders.filter((order) => order.status === 'ready').length,
     lateOrders: orders.filter((order) => isOrderLate(order, today)).length,
     outstanding,
     cashToday,
+    cashYesterday,
     cashWeek,
     averageBasket: nonAnnulees.length > 0 ? Math.round(totalFacture / nonAnnulees.length) : 0,
     series,
     byStatus,
     topServices,
   }
+}
+
+/**
+ * Variation en pourcentage entre deux valeurs.
+ *
+ * Renvoie `null` plutôt qu'un chiffre quand la base est nulle ou négative : on
+ * ne peut pas annoncer « +100 % » sur une journée où rien n'a été encaissé, et
+ * une carte qui afficherait « +∞ % » ou « +0 % » mentirait dans les deux cas.
+ * L'appelant masque alors simplement la variation.
+ */
+export function variationPourcent(actuel: number, precedent: number): number | null {
+  if (!Number.isFinite(actuel) || !Number.isFinite(precedent) || precedent <= 0) return null
+  return Math.round(((actuel - precedent) / precedent) * 100)
 }
 
 /** Début du mois courant, au format AAAA-MM-JJ. */

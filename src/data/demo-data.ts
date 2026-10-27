@@ -189,11 +189,15 @@ export function instantanéDémo(): DashboardSnapshot {
   return {
     today: '26 oct. 2026',
     ordersToday: 28,
+    // 26 commandes la veille : +8 %, la variation annoncée par la maquette.
+    ordersYesterday: 26,
     activeOrders: 12,
     readyOrders: 16,
     lateOrders: 3,
     outstanding: 94_000,
     cashToday: 482_500,
+    // 430 804 la veille : +12 %, la variation annoncée par la maquette.
+    cashYesterday: 430_804,
     cashWeek: totalSérieDémo(),
     averageBasket: 17_232,
     series: SÉRIE_DÉMO.map((point) => ({

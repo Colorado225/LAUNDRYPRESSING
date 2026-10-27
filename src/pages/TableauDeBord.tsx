@@ -4,14 +4,15 @@ import {
   AlertTriangle,
   ArrowRight,
   Banknote,
-  Bike,
+  CalendarDays,
   ClipboardList,
   CloudOff,
+  Hourglass,
   Loader2,
   Lock,
-  PackageSearch,
+  PackageCheck,
+  PlusCircle,
   Smartphone,
-  Sparkles,
   TrendingUp,
   Wallet,
 } from 'lucide-react'
@@ -21,7 +22,19 @@ import {
   useLocalOrders,
   useRecentNotifications,
 } from '@/db/hooks'
-import { CarteAnimee } from '@/components/CarteAnimee'
+import MetricCard from '@/components/dashboard/MetricCard'
+import RevenueChart from '@/components/dashboard/RevenueChart'
+import RecentOrdersTable, {
+  type LigneCommandeRecente,
+} from '@/components/dashboard/RecentOrdersTable'
+import DemoSwitch from '@/components/dashboard/DemoSwitch'
+import {
+  COMMANDES_RÉCENTES_DÉMO,
+  INDICATEURS_DÉMO,
+  SÉRIE_DÉMO,
+  instantanéDémo,
+} from '@/data/demo-data'
+import { useDemoStore } from '@/lib/demoMode'
 import { useTenantStore } from '@/lib/tenantContext'
 import { can } from '@/lib/permissions'
 import { formatDateFr, formatFcfa } from '@/lib/formatters'
@@ -29,11 +42,10 @@ import { isSupabaseConfigured } from '@/lib/env'
 import {
   computeDashboard,
   recentOrders,
-  shortDayLabel,
   startOfMonth,
+  variationPourcent,
   type DashboardSnapshot,
 } from '@/services/dashboardService'
-import { ORDER_STATUSES } from '@/constants/orders'
 import { shortOrderReference } from '@/services/qrService'
 import { MOTIFS, clientsAPrevenir } from '@/lib/notifications'
 import { isLowStock, listStockItems, STOCK_UNIT_LABELS } from '@/services/stockService'
@@ -41,38 +53,51 @@ import { sumExpensesSince, sumMobileMoneySince } from '@/services/expenseService
 import type { StockItemRow } from '@/types/database'
 
 /**
- * Tableau de bord du propriétaire (palier 3).
+ * Tableau de bord (palier 3, remis en page par la refonte).
  *
- * Les indicateurs d'activité sont calculés localement (IndexedDB) : l'écran
- * s'ouvre donc même sans réseau. Deux compléments viennent du serveur — les
- * dépenses et les encaissements Mobile Money — et sont marqués « hors ligne »
- * quand la lecture échoue, plutôt que d'afficher un zéro trompeur.
+ * Les indicateurs d'activité sont calculés **localement** (IndexedDB) :
+ * l'écran s'ouvre donc même sans réseau. Deux compléments viennent du
+ * serveur — les dépenses et les encaissements Mobile Money — et sont marqués
+ * « hors ligne » quand la lecture échoue, plutôt que d'afficher un zéro
+ * trompeur.
+ *
+ * Le mode démonstration affiche les chiffres de la maquette (bandeau rappelé
+ * en haut de l'application). Dans ce mode, les sections calculées sur
+ * l'activité réelle sont **masquées** : on ne mélange jamais, dans un même
+ * écran, un montant fictif et un montant réel.
  */
 export default function TableauDeBord() {
   const tenantId = useTenantStore((state) => state.tenantId)
   const role = useTenantStore((state) => state.role)
+  const pressing = useTenantStore((state) => state.tenantName)
   const autorise = can(role, 'dashboard.view')
+  const peutCreer = can(role, 'orders.create')
+  const demo = useDemoStore((state) => state.actif)
 
   const orders = useLocalOrders()
   const items = useAllLocalItems()
   const cashPayments = useAllCashPayments()
   const notifications = useRecentNotifications()
-  const pressing = useTenantStore((state) => state.tenantName)
 
   const [stock, setStock] = useState<StockItemRow[]>([])
   const [depensesMois, setDepensesMois] = useState<number | null>(null)
   const [mobileMoneyJour, setMobileMoneyJour] = useState<number | null>(null)
 
-  const chargement = orders === undefined
+  const chargement = !demo && orders === undefined
 
   const snapshot: DashboardSnapshot | null = useMemo(() => {
+    if (demo) return instantanéDémo()
     if (orders === undefined) return null
     return computeDashboard(orders, items, cashPayments)
-  }, [orders, items, cashPayments])
+  }, [demo, orders, items, cashPayments])
+
+  const aujourdHui = demo ? '26 oct. 2026' : formatDateFr(new Date())
 
   useEffect(() => {
     let vivant = true
-    if (!tenantId || !autorise || !isSupabaseConfigured) return
+    // En démonstration, aucune lecture serveur : l'écran ne doit rien mélanger
+    // et ne pas laisser croire que les chiffres de la maquette sont les nôtres.
+    if (!tenantId || !autorise || !isSupabaseConfigured || demo) return
 
     const debutMois = startOfMonth()
     void (async () => {
@@ -92,11 +117,20 @@ export default function TableauDeBord() {
     return () => {
       vivant = false
     }
-  }, [tenantId, autorise, snapshot?.today])
+  }, [tenantId, autorise, snapshot?.today, demo])
+
+  /** Nombre de pièces par commande, pour la colonne « Articles ». */
+  const piecesParCommande = useMemo(() => {
+    const compte = new Map<string, number>()
+    for (const item of items ?? []) {
+      compte.set(item.orderId, (compte.get(item.orderId) ?? 0) + (item.quantity ?? 1))
+    }
+    return compte
+  }, [items])
 
   if (!autorise) {
     return (
-      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-8 text-center">
+      <div className="mx-auto max-w-lg rounded-2xl border border-border bg-card p-8 text-center">
         <Lock className="mx-auto text-slate-400" size={28} aria-hidden />
         <p className="mt-2 font-semibold text-slate-800">Accès réservé</p>
         <p className="mt-1 text-sm text-slate-500">
@@ -116,376 +150,354 @@ export default function TableauDeBord() {
   }
 
   const alertes = stock.filter(isLowStock)
-  const aPrevenir = clientsAPrevenir(orders ?? [], notifications, {
-    today: snapshot.today,
-    pressing: pressing ?? '',
-  }).slice(0, 5)
-  const dernieres = recentOrders(orders ?? [], 5)
-  const maximumSerie = Math.max(1, ...snapshot.series.map((point) => point.cash))
+  const aPrevenir = demo
+    ? []
+    : clientsAPrevenir(orders ?? [], notifications, {
+        today: snapshot.today,
+        pressing: pressing ?? '',
+      }).slice(0, 5)
+
+  const dernieres: LigneCommandeRecente[] = demo
+    ? COMMANDES_RÉCENTES_DÉMO.map((commande) => ({
+        id: commande.reference,
+        reference: commande.reference,
+        client: commande.client,
+        articles: commande.articles,
+        montant: commande.montant,
+        statut: commande.statut,
+        date: commande.date,
+      }))
+    : recentOrders(orders ?? [], 5).map((commande) => {
+        const pieces = piecesParCommande.get(commande.id) ?? 0
+        return {
+          id: commande.id,
+          reference: shortOrderReference(commande.id),
+          client: commande.customerName,
+          articles: `${pieces} pièce${pieces > 1 ? 's' : ''}`,
+          montant: commande.totalAmount,
+          statut: commande.status,
+          date: commande.createdAt.slice(0, 10),
+          to: `/commandes/${commande.id}`,
+        }
+      })
+
+  const pointsCourbe = demo
+    ? SÉRIE_DÉMO.map((point) => ({ label: point.label, montant: point.montant }))
+    : snapshot.series.map((point) => ({ label: point.label, montant: point.cash }))
+
+  const variationCa = demo
+    ? INDICATEURS_DÉMO[0]?.variation ?? null
+    : variationPourcent(snapshot.cashToday, snapshot.cashYesterday)
+
+  // « En cours » exclut les commandes déjà prêtes : additionner les deux
+  // donnerait un total supérieur au nombre de commandes actives.
+  const enCours = Math.max(0, snapshot.activeOrders - snapshot.readyOrders)
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold text-brand-navy sm:text-2xl">
-            <Sparkles size={22} aria-hidden /> Tableau de bord
-          </h1>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-brand-navy sm:text-2xl">Tableau de bord</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Aujourd’hui, {snapshot.today}
-            {snapshot.lateOrders > 0 && (
-              <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                {snapshot.lateOrders} en retard
-              </span>
-            )}
+            Bonjour, voici l’activité de {pressing ?? 'votre pressing'} aujourd’hui.
           </p>
         </div>
 
-        <Link
-          to="/depenses"
-          className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-slate"
-        >
-          <Wallet size={18} aria-hidden /> Dépenses
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-input bg-card px-3 text-sm font-medium text-slate-700">
+            <CalendarDays size={16} aria-hidden className="text-slate-400" />
+            Aujourd’hui, {aujourdHui}
+          </span>
+          <DemoSwitch />
+          {peutCreer && (
+            <Link
+              to="/commandes/nouvelle"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white hover:bg-brand-teal-dark"
+            >
+              <PlusCircle size={17} aria-hidden />
+              Nouvelle commande
+            </Link>
+          )}
+        </div>
       </header>
 
-      <section aria-label="Activité du jour" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Carte
-          libelle="Commandes du jour"
-          valeur={String(snapshot.ordersToday)}
-          detail={`${snapshot.activeOrders} en atelier`}
-          icone={<ClipboardList size={18} aria-hidden />}
-          delai={0}
-        />
-        <Carte
-          libelle="Prêtes"
-          valeur={String(snapshot.readyOrders)}
-          detail={`${snapshot.lateOrders} en retard`}
-          icone={<PackageSearch size={18} aria-hidden />}
-          ton={snapshot.lateOrders > 0 ? 'alerte' : 'neutre'}
-          delai={60}
-        />
-        <Carte
-          libelle="Encaissé aujourd’hui"
-          valeur={formatFcfa(snapshot.cashToday)}
-          detail="Espèces"
-          icone={<Banknote size={18} aria-hidden />}
-          ton="positif"
-          delai={120}
-        />
-        <Carte
-          libelle="Reste à encaisser"
-          valeur={formatFcfa(snapshot.outstanding)}
-          detail="Commandes actives"
-          icone={<TrendingUp size={18} aria-hidden />}
-          delai={180}
-        />
-      </section>
-
-      {/* Cinq dernières commandes : l'accueil du propriétaire doit permettre
-          de reprendre la main sur la dernière prise de commande sans passer
-          par la liste complète. */}
-      <section className="rounded-2xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            Dernières commandes
-          </h2>
-          <Link
-            to="/commandes"
-            className="inline-flex min-h-12 items-center gap-1.5 text-sm font-semibold text-brand-teal hover:underline"
-          >
-            Toutes les commandes
-            <ArrowRight size={15} aria-hidden />
-          </Link>
-        </div>
-
-        {dernieres.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-slate-500 sm:px-5">
-            Aucune commande enregistrée sur cet appareil.
-          </p>
+      <section aria-label="Indicateurs du jour" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {demo ? (
+          INDICATEURS_DÉMO.map((indicateur, index) => (
+            <MetricCard
+              key={indicateur.libelle}
+              libelle={indicateur.libelle}
+              valeur={indicateur.valeur}
+              detail={indicateur.detail}
+              variation={indicateur.variation}
+              ton={indicateur.ton}
+              icone={
+                index === 0 ? (
+                  <Wallet size={16} />
+                ) : index === 1 ? (
+                  <ClipboardList size={16} />
+                ) : index === 2 ? (
+                  <Hourglass size={16} />
+                ) : (
+                  <PackageCheck size={16} />
+                )
+              }
+              serie={index === 0 ? SÉRIE_DÉMO.map((point) => point.montant) : undefined}
+              delai={index * 60}
+              demo
+            />
+          ))
         ) : (
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[34rem] text-left text-sm">
-              <thead className="border-y border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th scope="col" className="px-4 py-2 font-semibold sm:px-5">N°</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">Client</th>
-                  <th scope="col" className="px-3 py-2 font-semibold">Statut</th>
-                  <th scope="col" className="px-3 py-2 text-right font-semibold">Montant</th>
-                  <th scope="col" className="px-4 py-2 font-semibold sm:px-5">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {dernieres.map((commande) => {
-                  const meta = ORDER_STATUSES[commande.status]
-                  return (
-                    <tr key={commande.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 sm:px-5">
-                        <Link
-                          to={`/commandes/${commande.id}`}
-                          className="font-mono text-xs font-semibold text-brand-teal hover:underline"
-                        >
-                          {shortOrderReference(commande.id)}
-                        </Link>
-                      </td>
-                      <td className="max-w-[12rem] truncate px-3 py-2.5 font-medium text-slate-800">
-                        {commande.customerName}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${meta.badgeClass}`}
-                        >
-                          {meta.label}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-semibold text-brand-navy">
-                        {formatFcfa(commande.totalAmount)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-slate-500 sm:px-5">
-                        {formatDateFr(commande.createdAt.slice(0, 10))}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <MetricCard
+              libelle="Chiffre d’affaires"
+              valeur={formatFcfa(snapshot.cashToday)}
+              detail="Espèces encaissées aujourd’hui"
+              variation={variationCa}
+              icone={<Wallet size={16} />}
+              ton="positif"
+              serie={snapshot.series.map((point) => point.cash)}
+              delai={0}
+            />
+            <MetricCard
+              libelle="Commandes"
+              valeur={String(snapshot.ordersToday)}
+              detail={`${snapshot.activeOrders} en atelier`}
+              variation={variationPourcent(snapshot.ordersToday, snapshot.ordersYesterday)}
+              icone={<ClipboardList size={16} />}
+              delai={60}
+            />
+            <MetricCard
+              libelle="En cours de traitement"
+              valeur={String(enCours)}
+              detail="Hors commandes prêtes"
+              icone={<Hourglass size={16} />}
+              delai={120}
+            />
+            <MetricCard
+              libelle="Prêtes à être livrées"
+              valeur={String(snapshot.readyOrders)}
+              detail={`${snapshot.lateOrders} en retard`}
+              icone={<PackageCheck size={16} />}
+              ton={snapshot.lateOrders > 0 ? 'alerte' : 'positif'}
+              delai={180}
+            />
+          </>
         )}
       </section>
 
-      {/* À prévenir : le geste le plus rentable de la journée. Une commande
-          prête que le client ignore immobilise le rayon et l'argent. */}
-      <section className="rounded-2xl border border-slate-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            À prévenir
-            {aPrevenir.length > 0 && (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                {aPrevenir.length}
-              </span>
-            )}
-          </h2>
-        </div>
+      <RevenueChart points={pointsCourbe} variation={variationCa} demo={demo} />
 
-        {aPrevenir.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-slate-500 sm:px-5">
-            Personne à prévenir : tous les clients concernés ont été joints depuis le dernier
-            changement.
-          </p>
-        ) : (
-          <ul className="mt-2 divide-y divide-slate-100">
-            {aPrevenir.map((proposition) => (
-              <li
-                key={proposition.order.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">
-                    {proposition.order.customerName}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {shortOrderReference(proposition.order.id)} · {MOTIFS[proposition.motif].label}
-                    {proposition.order.dueDate
-                      ? ` · prévue le ${formatDateFr(proposition.order.dueDate)}`
-                      : ''}
-                  </p>
+      <RecentOrdersTable lignes={dernieres} demo={demo} />
+
+      {demo ? (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Aperçu de la maquette : les sections calculées sur votre activité réelle (clients à
+          prévenir, alertes de stock, dépenses, répartition) sont masquées pendant la démonstration.
+          Désactivez le mode démo pour les retrouver.
+        </p>
+      ) : (
+        <>
+          <section className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5 lg:col-span-2">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Trésorerie et dépenses
+              </h2>
+              <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs text-slate-500">Espèces, 7 derniers jours</dt>
+                  <dd className="text-lg font-bold text-brand-navy">{formatFcfa(snapshot.cashWeek)}</dd>
                 </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Panier moyen</dt>
+                  <dd className="text-lg font-bold text-brand-navy">
+                    {formatFcfa(snapshot.averageBasket)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Reste à encaisser</dt>
+                  <dd className="text-lg font-bold text-brand-navy">
+                    {formatFcfa(snapshot.outstanding)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-slate-500">Mobile Money aujourd’hui</dt>
+                  <dd className="text-lg font-bold text-brand-navy">
+                    {mobileMoneyJour === null ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-700">
+                        <CloudOff size={14} aria-hidden /> Hors ligne
+                      </span>
+                    ) : (
+                      formatFcfa(mobileMoneyJour)
+                    )}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-3 text-sm">
+                <span className="inline-flex items-center gap-1.5 text-slate-600">
+                  <Banknote size={15} aria-hidden className="text-brand-teal" />
+                  Dépenses du mois :{' '}
+                  <strong className="font-bold text-rose-700">
+                    {depensesMois === null ? 'hors ligne' : formatFcfa(depensesMois)}
+                  </strong>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-slate-600">
+                  <TrendingUp size={15} aria-hidden className="text-brand-teal" />
+                  {snapshot.lateOrders} commande{snapshot.lateOrders > 1 ? 's' : ''} en retard
+                </span>
                 <Link
-                  to={`/commandes/${proposition.order.id}`}
-                  className="inline-flex min-h-12 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  to="/depenses"
+                  className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-primary hover:underline"
                 >
-                  Prévenir
-                  <ArrowRight size={15} aria-hidden />
+                  Gérer les dépenses <ArrowRight size={14} aria-hidden />
                 </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="chart-surface rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            Chiffre d’affaires
-          </h2>
-
-          <dl className="mt-3 grid grid-cols-2 gap-3">
-            <div>
-              <dt className="text-xs text-slate-500">Espèces, 7 derniers jours</dt>
-              <dd className="text-lg font-bold text-brand-navy">{formatFcfa(snapshot.cashWeek)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500">Panier moyen</dt>
-              <dd className="text-lg font-bold text-brand-navy">
-                {formatFcfa(snapshot.averageBasket)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500">Mobile Money aujourd’hui</dt>
-              <dd className="text-lg font-bold text-brand-navy">
-                {mobileMoneyJour === null ? (
-                  <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-700">
-                    <CloudOff size={14} aria-hidden /> Hors ligne
-                  </span>
-                ) : (
-                  formatFcfa(mobileMoneyJour)
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500">Dépenses du mois</dt>
-              <dd className="text-lg font-bold text-rose-700">
-                {depensesMois === null ? (
-                  <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-700">
-                    <CloudOff size={14} aria-hidden /> Hors ligne
-                  </span>
-                ) : (
-                  formatFcfa(depensesMois)
-                )}
-              </dd>
-            </div>
-          </dl>
-
-          <div className="mt-4 flex h-28 items-end gap-1.5" role="img" aria-label="Espèces encaissées sur sept jours">
-            {snapshot.series.map((point) => (
-              <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div
-                  className="chart-bar w-full rounded-t bg-brand-teal/80"
-                  style={{ height: `${Math.max(4, (point.cash / maximumSerie) * 80)}px` }}
-                  title={`${shortDayLabel(point.date)} : ${formatFcfa(point.cash)}`}
-                />
-                <span className="truncate text-[10px] text-slate-500">{point.label}</span>
               </div>
-            ))}
-          </div>
-          <p className="mt-1 text-xs text-slate-500">Espèces par jour, du plus ancien au plus récent.</p>
-        </div>
+            </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Alertes de stock</h2>
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Alertes de stock
+              </h2>
 
-          {!isSupabaseConfigured ? (
-            <p className="mt-3 flex items-center gap-2 text-sm text-amber-800">
-              <CloudOff size={16} aria-hidden /> Module indisponible sans Supabase.
-            </p>
-          ) : alertes.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Aucun article sous le seuil d’alerte.</p>
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {alertes.slice(0, 6).map((article) => (
-                <li
-                  key={article.id}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2"
-                >
-                  <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-amber-900">
-                    <AlertTriangle size={15} className="shrink-0" aria-hidden />
-                    <span className="truncate">{article.name}</span>
+              {!isSupabaseConfigured ? (
+                <p className="mt-3 flex items-center gap-2 text-sm text-amber-800">
+                  <CloudOff size={16} aria-hidden /> Module indisponible sans Supabase.
+                </p>
+              ) : alertes.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">Aucun article sous le seuil d’alerte.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {alertes.slice(0, 5).map((article) => (
+                    <li
+                      key={article.id}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2"
+                    >
+                      <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-amber-900">
+                        <AlertTriangle size={15} className="shrink-0" aria-hidden />
+                        <span className="truncate">{article.name}</span>
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-amber-900">
+                        {Number(article.quantity)} / {Number(article.min_quantity)}{' '}
+                        {STOCK_UNIT_LABELS[article.unit]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <Link
+                to="/stock"
+                className="mt-3 inline-flex min-h-10 items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+              >
+                Ouvrir le stock <ArrowRight size={14} aria-hidden />
+              </Link>
+            </div>
+          </section>
+
+          {/* À prévenir : le geste le plus rentable de la journée. Une commande
+              prête que le client ignore immobilise le rayon et l'argent. */}
+          <section className="rounded-2xl border border-border bg-card shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                À prévenir
+                {aPrevenir.length > 0 && (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    {aPrevenir.length}
                   </span>
-                  <span className="shrink-0 text-xs font-medium text-amber-900">
-                    {Number(article.quantity)} / {Number(article.min_quantity)}{' '}
-                    {STOCK_UNIT_LABELS[article.unit]}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+                )}
+              </h2>
+            </div>
 
-          <Link
-            to="/stock"
-            className="mt-3 inline-flex min-h-12 items-center gap-1.5 text-sm font-semibold text-brand-teal hover:underline"
-          >
-            <Bike size={16} aria-hidden /> Ouvrir le stock
-          </Link>
-        </div>
-      </section>
+            {aPrevenir.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-slate-500 sm:px-5">
+                Personne à prévenir : tous les clients concernés ont été joints depuis le dernier
+                changement.
+              </p>
+            ) : (
+              <ul className="mt-2 divide-y divide-border">
+                {aPrevenir.map((proposition) => (
+                  <li
+                    key={proposition.order.id}
+                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 sm:px-5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">
+                        {proposition.order.customerName}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {shortOrderReference(proposition.order.id)} ·{' '}
+                        {MOTIFS[proposition.motif].label}
+                        {proposition.order.dueDate
+                          ? ` · prévue le ${formatDateFr(proposition.order.dueDate)}`
+                          : ''}
+                      </p>
+                    </div>
+                    <Link
+                      to={`/commandes/${proposition.order.id}`}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-input px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Prévenir
+                      <ArrowRight size={15} aria-hidden />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            Répartition des commandes
-          </h2>
-          <ul className="mt-3 space-y-1.5">
-            {snapshot.byStatus.map((ligne) => (
-              <li key={ligne.status} className="flex items-center justify-between gap-2 text-sm">
-                <span className="truncate text-slate-600">{ligne.label}</span>
-                <span className="font-semibold text-brand-navy">{ligne.count}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Répartition des commandes
+              </h2>
+              <ul className="mt-3 space-y-1.5">
+                {snapshot.byStatus.map((ligne) => (
+                  <li key={ligne.status} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate text-slate-600">{ligne.label}</span>
+                    <span className="font-semibold text-brand-navy">{ligne.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
-            Prestations les plus demandées
-          </h2>
-          {snapshot.topServices.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Aucune prestation enregistrée.</p>
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {snapshot.topServices.map((ligne) => (
-                <li
-                  key={ligne.label}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-slate-800">
-                      {ligne.label}
-                    </span>
-                    <span className="text-xs text-slate-500">{ligne.count} pièce(s)</span>
-                  </span>
-                  <span className="shrink-0 text-sm font-bold text-brand-navy">
-                    {formatFcfa(ligne.amount)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+                Prestations les plus demandées
+              </h2>
+              {snapshot.topServices.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">Aucune prestation enregistrée.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {snapshot.topServices.map((ligne) => (
+                    <li
+                      key={ligne.label}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-800">
+                          {ligne.label}
+                        </span>
+                        <span className="text-xs text-slate-500">{ligne.count} pièce(s)</span>
+                      </span>
+                      <span className="shrink-0 text-sm font-bold text-brand-navy">
+                        {formatFcfa(ligne.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
 
-      <p className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-500">
-        <Smartphone size={16} className="mt-0.5 shrink-0" aria-hidden />
-        Les encaissements Mobile Money et les dépenses sont lus au serveur : hors connexion,
-        ils apparaissent « hors ligne » au lieu d’être estimés. Le reste des indicateurs est
-        calculé sur la tablette.
-      </p>
+          <p className="flex items-start gap-2 rounded-2xl border border-border bg-card p-4 text-xs text-slate-500">
+            <Smartphone size={16} className="mt-0.5 shrink-0" aria-hidden />
+            Les encaissements Mobile Money et les dépenses sont lus au serveur : hors connexion, ils
+            apparaissent « hors ligne » au lieu d’être estimés. Le reste des indicateurs est calculé
+            sur la tablette.
+          </p>
+        </>
+      )}
     </div>
-  )
-}
-
-function Carte({
-  libelle,
-  valeur,
-  detail,
-  icone,
-  ton = 'neutre',
-  delai = 0,
-}: {
-  libelle: string
-  valeur: string
-  detail: string
-  icone: React.ReactNode
-  ton?: 'neutre' | 'positif' | 'alerte'
-  /** Cascade d'apparition, en millisecondes. */
-  delai?: number
-}) {
-  const couleurs =
-    ton === 'positif'
-      ? 'text-brand-teal'
-      : ton === 'alerte'
-        ? 'text-rose-700'
-        : 'text-brand-navy'
-
-  return (
-    <CarteAnimee
-      className="metric-card rounded-2xl border border-slate-200 bg-white p-4"
-      delai={delai}
-    >
-      <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-        {icone}
-        {libelle}
-      </p>
-      <p className={`mt-2 text-xl font-bold ${couleurs}`}>{valeur}</p>
-      <p className="text-xs text-slate-500">{detail}</p>
-    </CarteAnimee>
   )
 }
