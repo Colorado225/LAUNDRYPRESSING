@@ -1,299 +1,315 @@
-Voici un **prompt master** conçu pour être copié-collé directement dans votre agent de codage (Cursor, Claude Code, Windsurf, Cline, etc.). Il est structuré en **phases séquentielles** avec des critères de validation clairs pour éviter que l'agent ne "s'emballe" et produise du code incohérent.
+# 🎯 CAHIER DES CHARGES — Pressing Pro (SaaS de gestion de pressing)
+
+> **Version 2.0 — 27 octobre 2026.** Ce document **remplace** le « prompt master » de la
+> version 1.0, qui décrivait un MVP de 4 modules. Le produit livré est un **ERP de
+> gestion de pressing** : ce cahier des charges décrit désormais **ce qui existe**,
+> **ce qui reste à faire** et **ce qui est refusé**, avec les mêmes règles de travail.
+>
+> Historique de la version 1.0 : conservée dans Git (`9a2f5d3`), résumée au § 11.
+
+# NB : Application strictement en français
 
 ---
-
-# 🎯 PROMPT MASTER — Refonte du template LAUNDRYPRESSING en SaaS MVP
-
-# NB: Applictaion stricement en frnacais
 
 ## 🧭 RÔLE ET CONTEXTE
 
-Tu es un **ingénieur logiciel senior full-stack** spécialisé dans les applications SaaS multi-tenant et les architectures **offline-first**. Ta mission est de transformer le template existant `LAUNDRYPRESSING` (dépôt : `https://github.com/Colorado225/LAUNDRYPRESSING.git`) en un **MVP de SaaS de gestion de pressing professionnel pour la Côte d'Ivoire**.
+Tu es un **ingénieur logiciel senior full-stack** spécialisé dans les applications SaaS
+multi-tenant et les architectures **offline-first**. Ton terrain de travail est le dépôt
+`LAUNDRYPRESSING` (`https://github.com/Colorado225/LAUNDRYPRESSING.git`), qui exploite
+**Pressing Pro**, un logiciel de gestion de pressing destiné à être revendu en abonnement
+à des pressings d'Abidjan.
 
-Le produit final est destiné à être revendu en abonnement à des pressings d'Abidjan. Il doit donc être **multi-tenant**, **résilient aux coupures internet**, **compatible Mobile Money (Wave / Orange Money / MTN MoMo)** et **opérationnel sur tablettes Android d'entrée de gamme**.
+Le produit doit rester :
 
----
-
-## 📦 PÉRIMÈTRE FONCTIONNEL DU MVP (à ne PAS dépasser)
-
-Le MVP doit couvrir **uniquement** les 4 modules suivants. Toute fonctionnalité hors périmètre (livraison, fidélité, notifications WhatsApp, statistiques avancées, gestion des stocks) doit être **explicitement ignorée** et laissée pour V2 :
-
-1. **Gestion des commandes** (création, listing, changement de statut, spécificités locales : empesage, broderie fragile).
-2. **QR Code** (génération par commande + scan pour changer le statut en atelier).
-3. **Mode offline-first** (création de commande sans internet, synchronisation automatique au retour de la connexion).
-4. **Paiement Mobile Money basique** (intégration CinetPay pour Wave / Orange Money / MTN MoMo / Moov).
+- **multi-tenant** (un pressing = un `tenant`, isolation par RLS PostgreSQL) ;
+- **résilient aux coupures internet** (écriture locale d'abord, synchronisation différée) ;
+- **compatible Mobile Money** (Wave / Orange Money / MTN MoMo / Moov via CinetPay) ;
+- **opérationnel sur tablettes Android d'entrée de gamme**.
 
 ---
 
-## 🛠️ STACK TECHNIQUE IMPOSÉE
+## 📦 PÉRIMÈTRE FONCTIONNEL LIVRÉ
 
-| Couche               | Technologie                                  | Justification                                |
-| -------------------- | -------------------------------------------- | -------------------------------------------- |
-| Frontend             | **React + Vite + TypeScript + Tailwind CSS** | Déjà en place dans le template               |
-| Base locale          | **Dexie.js** (IndexedDB)                     | Offline-first, léger, éprouvé                |
-| Backend / DB cloud   | **Supabase** (PostgreSQL + Auth + RLS)       | Multi-tenant natif via Row-Level Security    |
-| Paiement             | **CinetPay API v2**                          | Couvre tous les wallets ivoiriens en une API |
-| QR Code (génération) | **`qrcode`** (npm)                           | Léger, rendu canvas/DataURL                  |
-| QR Code (scan)       | **`html5-qrcode`**                           | Fonctionne sur caméra de tablette Android    |
-| PWA                  | **`vite-plugin-pwa`**                        | Installation et cache de l'UI                |
-| État global          | **Zustand**                                  | Remplace les Contextes React trop verbeux    |
-| Validation schémas   | **Zod**                                      | Sécurisation des formulaires et des payloads |
+Le périmètre n'est plus « 4 modules » : le produit couvre le **parcours complet d'un
+pressing**. Chaque module ci-dessous est **livré, testé et présent dans `src/`**.
 
-⚠️ **Interdictions absolues** : ne pas utiliser Firebase, ne pas utiliser Redux Toolkit, ne pas installer de librairie UI lourde (MUI, AntD). Conserver Tailwind + composants maison.
+### 1. Commandes (cœur du produit)
+
+| Fonction                                                   | État | Fichiers                                                                                                                 |
+| ---------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------ |
+| Création en 3 étapes (client → vêtements → paiement)       | ✅   | `pages/OrderForm.tsx`, `schemas/order.ts`                                                                                |
+| Listing, recherche, filtres, pagination                    | ✅   | `pages/Orders.tsx`, `lib/pagination.ts`                                                                                  |
+| Fiche détaillée (timeline, statut, reçu)                   | ✅   | `pages/OrderDetail.tsx`                                                                                                  |
+| Cycle de statut complet (9 états)                          | ✅   | `received → sorting → washing → drying → ironing → quality_check → ready → delivered` + `cancelled`                      |
+| Échéance promise, alertes de retard                        | ✅   | `orders.dueDate`                                                                                                         |
+| Attribution à un employé                                   | ✅   | `components/AssignmentPanel.tsx`                                                                                         |
+| Lignes de vêtement libres (libellé, tissu, prix, quantité) | ✅   | `components/OrderItemsEditor.tsx`                                                                                        |
+| Spécificités locales : **empesage**, **broderie fragile**  | ✅   | `order_items.special_instructions`, `constants/garmentTypes.ts`                                                          |
+| Prestations au kilo et lots pesés                          | ✅   | `laundry_weight_kg`, `garment_details`                                                                                   |
+| Réclamations et vêtements abîmés                           | ✅   | `components/IssuePanel.tsx`, `services/issueService.ts`                                                                  |
+| Mesures client historisées                                 | ✅   | `components/OrderMeasurementEditor.tsx`, `components/OrderMeasurementHistory.tsx`, `services/orderMeasurementHistory.ts` |
+| Prévenir le client (WhatsApp / appel, journalisé)          | ✅   | `components/NotifyPanel.tsx`, `lib/notifications.ts`                                                                     |
+
+### 2. QR Code
+
+| Fonction                                            | État | Fichiers                       |
+| --------------------------------------------------- | ---- | ------------------------------ |
+| Génération d'un QR unique par commande              | ✅   | `services/qrService.ts`        |
+| Affichage + impression d'étiquette 80 mm            | ✅   | `components/QrCodeDisplay.tsx` |
+| Scan caméra à l'atelier (tablette Android)          | ✅   | `components/QrScanner.tsx`     |
+| Changement de statut par scan, y compris hors ligne | ✅   | `pages/Atelier.tsx`            |
+
+### 3. Offline-first
+
+| Fonction                                                        | État | Fichiers                                                |
+| --------------------------------------------------------------- | ---- | ------------------------------------------------------- |
+| Écriture locale d'abord (IndexedDB)                             | ✅   | `db/localDb.ts` (15 versions), `db/ordersRepository.ts` |
+| Synchronisation automatique (retour réseau + boucle)            | ✅   | `sync/syncEngine.ts`                                    |
+| Synchronisation immédiate à l'enregistrement                    | ✅   | `syncOrderNow`                                          |
+| **Verrou optimiste** (`serverVersion`) et résolution de conflit | ✅   | `db/localDb.ts` v3, `components/ConflictBanner.tsx`     |
+| Indicateur d'état de synchronisation                            | ✅   | `components/OfflineBadge.tsx`, `stores/syncStore.ts`    |
+| Écran de repli hors ligne                                       | ✅   | `pages/Offline.tsx`                                     |
+
+### 4. Paiements
+
+| Fonction                                          | État                             | Fichiers                                                                             |
+| ------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
+| Mobile Money CinetPay (Wave, Orange, MTN, Moov)   | 🟡 codé, **non recetté en réel** | `supabase/functions/cinetpay-init`, `cinetpay-webhook`, `services/paymentService.ts` |
+| Encaissements espèces, acomptes, solde            | ✅                               | `components/CashPanel.tsx`, `services/cashService.ts`                                |
+| Clôture de caisse                                 | ✅                               | `pages/Caisse.tsx`                                                                   |
+| Remboursements (espèces, propriétaire uniquement) | ✅                               | `services/refundService.ts`                                                          |
+| Reçu 80 mm et facture A4                          | ✅                               | `pages/Receipt.tsx`, `pages/Facture.tsx`, `services/receiptService.ts`               |
+
+### 5. Gestion et administration
+
+| Module                                                   | État | Fichiers                                                   |
+| -------------------------------------------------------- | ---- | ---------------------------------------------------------- |
+| Clients (fiches, historique, CRUD)                       | ✅   | `pages/Clients.tsx`, `services/customerService.ts`         |
+| Stock et fournisseurs                                    | ✅   | `pages/Stock.tsx`, `services/stockService.ts`              |
+| Dépenses                                                 | ✅   | `pages/Depenses.tsx`, `services/expenseService.ts`         |
+| Tableau de bord                                          | ✅   | `pages/TableauDeBord.tsx`, `services/dashboardService.ts`  |
+| Rapports (périodes, comparaison, export CSV)             | ✅   | `pages/Rapports.tsx`, `lib/reporting.ts`                   |
+| Paramètres (pressing, équipe, sécurité, données locales) | ✅   | `pages/Parametres.tsx`, `services/tenantMembers.ts`        |
+| Prestations activées par le pressing                     | ✅   | `pages/ServicesPressing.tsx`, `services/tenantServices.ts` |
+| Journal d'audit                                          | ✅   | `pages/Audit.tsx`, `services/auditService.ts`              |
+| Abonnement (période réglée par l'éditeur)                | ✅   | `pages/Abonnement.tsx`, `services/subscriptionService.ts`  |
+| Support                                                  | ✅   | `pages/Support.tsx`                                        |
+| Supervision plateforme (administrateur éditeur)          | ✅   | `pages/Supervision.tsx`, `services/platformService.ts`     |
+
+### Hors périmètre — refusé et consigné
+
+Toute demande n'apparaissant pas ci-dessus est **refusée** et consignée dans
+[`docs/BACKLOG.md`](docs/BACKLOG.md) : livraison et tournées, fidélité, notifications SMS,
+prélèvement automatique, remboursement CinetPay, codes-barres 1D, temps réel multi-appareils.
 
 ---
 
-## 🧱 ARCHITECTURE CIBLE MULTI-TENANT
+## 🛠️ STACK TECHNIQUE
 
-Chaque pressing = un `tenant`. **Toutes** les tables métier (orders, order_items, order_status_history) doivent contenir une colonne `tenant_id UUID NOT NULL` référençant `tenants.id`.
+| Couche          | Technologie                                             | Version                                    |
+| --------------- | ------------------------------------------------------- | ------------------------------------------ |
+| Frontend        | **React + Vite + TypeScript strict + Tailwind CSS 4**   | React 19.2, Vite 8, TS 6.0.3, Tailwind 4.2 |
+| Routage         | **React Router 7** (routes en `lazy`)                   | 7.14                                       |
+| Base locale     | **Dexie / IndexedDB**                                   | 4.4.6                                      |
+| Backend / DB    | **Supabase** (PostgreSQL + Auth + RLS + Edge Functions) | supabase-js 2.118                          |
+| Paiement        | **CinetPay API v2**                                     | —                                          |
+| QR (génération) | **`qrcode`**                                            | 1.5.4                                      |
+| QR (scan)       | **`html5-qrcode`**                                      | 2.3.8                                      |
+| PWA             | **`vite-plugin-pwa`**                                   | 2.0.0                                      |
+| État global     | **Zustand**                                             | 5.0.16                                     |
+| Validation      | **Zod**                                                 | 4.6.7                                      |
+| Icônes / toasts | lucide-react, react-hot-toast                           | 1.11 / 2.6                                 |
+| Tests           | Vitest, jsdom, fake-indexeddb, PostgreSQL               | 5.0.5                                      |
 
-La sécurité est assurée **côté PostgreSQL** via des politiques RLS. Aucune logique de filtrage ne doit reposer uniquement sur le frontend.
+### ⚠️ Interdictions absolues
 
-**Schéma SQL minimal à créer dans Supabase :**
+- **Aucun Firebase**, **aucun Redux Toolkit**, **aucune librairie UI lourde** (MUI, AntD).
+- **Aucune librairie d'animation JavaScript** (`framer-motion` a été retiré le 27 octobre
+  2026 : 1,67 Mo de paquet pour des tablettes bas de gamme). Les animations sont en
+  **CSS uniquement**, et respectent `prefers-reduced-motion`.
+
+> TypeScript est épinglé en **6.0.3** car `typescript-eslint` ne supporte pas encore TS 7.
+
+---
+
+## 🧱 ARCHITECTURE MULTI-TENANT
+
+Chaque pressing = un `tenant`. **Toutes** les tables métier portent `tenant_id UUID NOT NULL`.
+La sécurité est assurée **côté PostgreSQL** via RLS ; aucun filtrage ne repose sur le frontend seul.
+
+### Modèle d'isolation en place
 
 ```sql
--- Tenants (pressings)
-create table tenants (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  phone text,
-  created_at timestamptz default now()
-);
+-- Tenant courant : JWT en priorité, sinon rattachement dans tenant_users.
+create or replace function public.current_tenant_id() returns uuid ...
+create or replace function public.current_tenant_role() returns text ...
 
--- Utilisateurs liés à un tenant
-create table tenant_users (
-  user_id uuid references auth.users(id) on delete cascade,
-  tenant_id uuid references tenants(id) on delete cascade,
-  role text check (role in ('owner','receptionist','artisan')) not null,
-  primary key (user_id, tenant_id)
-);
-
--- Commandes
-create table orders (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid references tenants(id) not null,
-  customer_name text not null,
-  customer_phone text not null,
-  status text check (status in ('received','washing','ironing','ready','delivered','cancelled')) default 'received',
-  qr_code text unique not null,
-  photo_url text,
-  total_amount integer not null, -- en FCFA
-  payment_status text check (payment_status in ('pending','paid','partial')) default 'pending',
-  payment_method text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  synced_from_local boolean default false
-);
-
--- Lignes de commande (un vêtement)
-create table order_items (
-  id uuid primary key default gen_random_uuid(),
-  order_id uuid references orders(id) on delete cascade,
-  tenant_id uuid references tenants(id) not null,
-  label text not null,             -- ex: "Costume 3 pièces"
-  fabric_type text,                -- ex: "Basin", "Wax"
-  special_instructions text,       -- ex: "Empesage fort", "Broderie fragile"
-  price integer not null
-);
-
--- Historique statuts
-create table order_status_history (
-  id uuid primary key default gen_random_uuid(),
-  order_id uuid references orders(id) on delete cascade,
-  tenant_id uuid references tenants(id) not null,
-  status text not null,
-  changed_by uuid references auth.users(id),
-  changed_at timestamptz default now()
-);
-
--- RLS
-alter table orders enable row level security;
-create policy "tenant_isolation_orders" on orders
-  for all using (tenant_id = (select tenant_id from tenant_users where user_id = auth.uid()));
--- Répéter la même politique pour order_items et order_status_history
+-- Chaque politique est séparée par opération, avec WITH CHECK explicite.
+create policy "..." on public.orders
+  for insert to authenticated
+  with check (
+    tenant_id = public.current_tenant_id()
+    and public.current_tenant_role() in ('owner', 'receptionist')
+  );
 ```
 
----
+**Règles non négociables :**
 
-## 🚦 PLAN D'EXÉCUTION EN 6 PHASES
+1. **Toujours `WITH CHECK`** sur `insert`/`update` — jamais `FOR ALL`.
+2. **Cohérence de tenant entre une commande et ses lignes** : FK composites
+   `(order_id, tenant_id) references orders(id, tenant_id)`. Jamais seulement `order_id`.
+3. **`tenants`** : `update` réservé au rôle `owner`. Aucune écriture client sur `tenant_users`.
+4. **Rôles** : `owner`, `receptionist`, `artisan` — contrôlés par `lib/permissions.ts` côté UI
+   **et** par les politiques côté serveur.
+5. Toute opération sensible (suppression de commande, remboursement, clôture de caisse)
+   passe par une fonction `security definer` contrôlant le rôle.
 
-L'agent doit **exécuter les phases dans l'ordre**, s'arrêter à la fin de chaque phase et **attendre ma validation** avant de passer à la suivante.
+### Migrations
 
----
-
-### ✅ PHASE 0 — Audit du template existant
-
-**Objectif** : produire un rapport d'audit AVANT toute modification.
-
-**Tâches :**
-
-1. Cloner le dépôt dans un répertoire de travail.
-2. Lister l'arborescence complète (`tree -L 3 -I node_modules`).
-3. Identifier et documenter :
-   - La version de React, Vite, TypeScript, Tailwind.
-   - Les composants existants réutilisables (formulaires, tableaux, cartes).
-   - La ou les solutions de state management actuelles.
-   - La structure de routage (React Router ? TanStack Router ?).
-   - Les éventuelles dépendances obsolètes ou redondantes.
-4. Produire un fichier `AUDIT.md` à la racine avec :
-   - Ce qui est **conservé tel quel**.
-   - Ce qui est **refactoré**.
-   - Ce qui est **supprimé** (avec justification).
-5. Proposer un plan de migration des composants existants vers la nouvelle architecture.
-
-**Livrable** : `AUDIT.md` + commit `chore: audit initial`.
-**⛔ STOP — attends ma validation.**
+`supabase/migrations/001_init.sql` → `026_client_sync_events.sql`, **additives** dès que
+possible. Une migration destructive (ex. `020_suppression_tarification…`) doit être
+**précédée d'une sauvegarde** et **annoncée dans le README**.
 
 ---
 
-### ✅ PHASE 1 — Setup socle technique
+## 🗂️ ARBORESCENCE CIBLE
 
-**Objectif** : poser les fondations sans toucher au métier.
+```text
+src/
+├── App.tsx                    # Router + AuthGate, routes en lazy()
+├── components/                # dont ui/ (button, field, input, label, select)
+├── constants/                 # orders, garmentTypes
+├── db/                        # localDb (Dexie), *Repository, hooks
+├── hooks/                     # useAndroidBackButton, usePrefersReducedMotion
+├── lib/                       # supabaseClient, tenantContext, permissions, formatters,
+│                              # orderPricing, reporting, facturation, impression
+├── pages/                     # 1 page = 1 route
+├── schemas/                   # validation Zod
+├── services/                  # accès serveur / métier
+├── stores/                    # Zustand (syncStore)
+├── sync/                      # syncEngine
+├── test/                      # Vitest (jsdom, fake-indexeddb)
+└── types/                     # database.ts
+supabase/
+├── migrations/                # 001 → 026, versionnées
+├── functions/                 # cinetpay-init, cinetpay-webhook, _shared/
+└── tests/                     # contrôles SQL
+docs/                          # AUDIT-COURANT, BACKLOG, CRUD-COMPLET, USER_GUIDE…
+```
 
-**Tâches :**
+### Routes livrées
 
-1. Installer les dépendances : `dexie`, `dexie-react-hooks`, `qrcode`, `html5-qrcode`, `@supabase/supabase-js`, `zustand`, `zod`, `vite-plugin-pwa`.
-2. Configurer `vite.config.ts` avec `vite-plugin-pwa` (mode `injectManifest` ou `generateSW`, cache des assets, `registerType: 'autoUpdate'`).
-3. Créer `src/lib/supabaseClient.ts` (variables d'env `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
-4. Créer `src/lib/tenantContext.ts` : utilitaire pour récupérer et stocker `tenant_id` de l'utilisateur connecté (à relier plus tard au flux Supabase Auth).
-5. Créer le fichier SQL `supabase/migrations/001_init.sql` avec le schéma complet + les politiques RLS.
-6. Ajouter les variables dans `.env.example`.
-7. Mettre à jour le `README.md` avec la procédure de démarrage (Supabase local via `supabase start` ou projet cloud + migration).
-
-**Critère de validation** : `npm run dev` fonctionne, l'app PWA s'installe, le schéma s'applique sans erreur.
-**⛔ STOP — attends ma validation.**
-
----
-
-### ✅ PHASE 2 — Couche offline-first
-
-**Objectif** : permettre la création et la lecture de commandes **sans internet**.
-
-**Tâches :**
-
-1. Créer `src/db/localDb.ts` (Dexie) avec les stores : `orders` (indexé sur `tenantId`, `status`, `synced`), `orderItems`, `pendingPayments`.
-2. Créer `src/db/hooks.ts` exposant :
-   - `useLocalOrders()` : retourne les commandes du tenant courant triées par date.
-   - `useCreateOrder()` : crée une commande locale + ses items + un `qr_code` unique (format `TENANTID-ORDERID-TIMESTAMP`).
-   - `useUpdateOrderStatus()` : change le statut localement.
-3. Créer `src/sync/syncEngine.ts` :
-   - Fonction `syncPendingOrders()` : récupère toutes les lignes `synced: 0` et les upsert dans Supabase. En cas de succès, marque `synced: 1`. En cas d'échec, laisse en file.
-   - Écouteur `window.addEventListener('online', syncPendingOrders)`.
-   - Sync périodique toutes les 60 s quand `navigator.onLine === true`.
-4. Créer `src/components/OfflineBadge.tsx` : indicateur visuel (vert = sync OK, orange = hors ligne, rouge = erreurs de sync).
-5. Tester le flux : couper le réseau (DevTools → Network → Offline), créer une commande, la voir apparaître dans la liste, réactiver le réseau, vérifier la sync dans Supabase.
-
-**Critère de validation** : une commande créée hors ligne apparaît en base Supabase dans les 60 s suivant le retour de la connexion.
-**⛔ STOP — attends ma validation.**
+`/` (connexion) · `/bienvenue` · `/commandes` · `/commandes/nouvelle` · `/commandes/:orderId`
+· `/commandes/:orderId/recu` · `/commandes/:orderId/facture` · `/atelier` · `/caisse`
+· `/tableau-de-bord` · `/rapports` · `/clients` · `/stock` · `/depenses` · `/abonnement`
+· `/support` · `/supervision` · `/parametres` · `/audit` · `/offline` · `/paiement/retour`
 
 ---
 
-### ✅ PHASE 3 — Module QR Code
+## 🚦 RÈGLES DE TRAVAIL POUR L'AGENT
 
-**Objectif** : chaque commande génère un QR unique, scannable en atelier.
-
-**Tâches :**
-
-1. Créer `src/services/qrService.ts` :
-   - `generateQrString(orderId, tenantId): string` → format `TENANTID-ORDERID-TIMESTAMP`.
-   - `generateQrImage(text): Promise<string>` → retourne une DataURL via `qrcode`.
-2. Créer `src/components/QrCodeDisplay.tsx` : affiche le QR en `<img>` avec bouton "Imprimer l'étiquette" (utilise `window.print()` avec CSS `@media print`).
-3. Créer `src/components/QrScanner.tsx` : utilise `html5-qrcode`. Prend une prop `onScanSuccess(decodedText)`. Nettoie le scanner au démontage.
-4. Créer la page `src/pages/Atelier.tsx` :
-   - Bouton "Scanner un vêtement" qui ouvre le scanner en modal.
-   - À la lecture : recherche la commande par `qr_code` dans Dexie, affiche les détails et un sélecteur de statut (`received → washing → ironing → ready → delivered`).
-   - La mise à jour du statut passe par `useUpdateOrderStatus()` (fonctionne offline).
-5. Ajouter un test manuel dans le README : « imprimer une étiquette, la scanner depuis une tablette, changer le statut ».
-
-**Critère de validation** : je peux imprimer un QR, le scanner avec la caméra de mon laptop/tablette, et changer le statut de la commande associée.
-**⛔ STOP — attends ma validation.**
-
----
-
-### ✅ PHASE 4 — Intégration paiement Mobile Money (CinetPay)
-
-**Objectif** : permettre le règlement d'une commande par Wave / Orange Money / MTN MoMo.
-
-**Tâches :**
-
-1. Créer la fonction serverless **Supabase Edge Function** `supabase/functions/cinetpay-init/index.ts` :
-   - Reçoit `{ orderId, amount, customerName, customerPhone }` en body.
-   - Valide l'utilisateur via le JWT Supabase et vérifie qu'il appartient au bon tenant.
-   - Appelle `POST https://api-checkout.cinetpay.com/v2/payment` avec les clés en variables d'env (`CINETPAY_API_KEY`, `CINETPAY_SITE_ID`).
-   - Retourne `{ payment_url, transaction_id }`.
-2. Créer une Edge Function `cinetpay-webhook` :
-   - Reçoit la notification de CinetPay.
-   - Vérifie la signature (HMAC).
-   - Met à jour `orders.payment_status = 'paid'` et `payment_method`.
-3. Côté frontend, créer `src/services/paymentService.ts` :
-   - `initiatePayment(orderId, amount, customer)` → appelle l'Edge Function, redirige vers `payment_url`.
-4. Créer `src/pages/PaymentReturn.tsx` :
-   - Route `/payment/return` où CinetPay redirige l'utilisateur.
-   - Affiche un message de succès/échec en interrogeant le statut de la commande.
-5. Ajouter un bouton "Payer par Mobile Money" sur la fiche commande.
-6. Documenter dans `README.md` : comment créer un compte marchand CinetPay, récupérer les clés, configurer les URLs de retour/webhook.
-
-**Critère de validation** : je peux régler une commande en sandbox CinetPay et le statut `payment_status` passe à `paid` dans Supabase.
-**⛔ STOP — attends ma validation.**
+1. **Ne jamais dépasser le périmètre du § « Périmètre fonctionnel livré ».** Toute
+   fonctionnalité nouvelle doit d'abord être refusée et consignée dans `BACKLOG.md`, ou
+   faire l'objet d'une décision explicite de l'éditeur.
+2. **La chaîne de vérification doit rester verte** avant tout commit :
+   `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Un build rouge est un
+   bug bloquant, jamais un détail.
+3. **Un commit par tâche logique**, en **Conventional Commits** (`feat:`, `fix:`, `chore:`,
+   `refactor:`, `docs:`, `test:`).
+4. **Commenter en français**, sur les décisions non évidentes uniquement (RLS, offline,
+   synchronisation, calculs de prix). Pas de commentaire qui paraphrase le code.
+5. **Ne jamais coder en dur** : clés API, `tenant_id`, numéros de téléphone, montants
+   d'abonnement. Tout passe par `.env` ou par la base.
+6. **Aucun secret dans une variable `VITE_*`** : ces variables finissent dans le bundle.
+   Les secrets CinetPay et `service_role` vivent dans les secrets des Edge Functions.
+7. **Robustesse offline d'abord** : toute fonctionnalité qui touche une commande doit être
+   éprouvée en mode avion avant d'être considérée comme livrée.
+8. **Ne jamais modifier la configuration globale** (`tsconfig.json`, `vite.config.ts`,
+   `eslint.config.js`) sans justification écrite dans le message de commit.
+9. **Les documents de référence ne mentent pas.** `docs/AUDIT-COURANT.md` doit refléter les
+   contrôles réellement exécutés, datés. Un document d'audit faux est une anomalie P1.
+10. **Un seul document de référence par sujet** : pas de troisième audit contradictoire.
 
 ---
 
-### ✅ PHASE 5 — Finalisation PWA & UX
+## ✅ DÉFINITION DE « LIVRÉ »
 
-**Objectif** : rendre l'app installable et utilisable sur tablette Android en atelier.
+Une fonctionnalité est livrée lorsque **les cinq conditions** sont réunies :
 
-**Tâches :**
-
-1. Configurer `manifest.webmanifest` (nom, icônes 192/512, `display: standalone`, thème couleur).
-2. Ajouter un écran de fallback offline (`offline.html` ou route `/offline`).
-3. Ajouter la gestion du bouton "Retour" Android (via `useNavigate` + `window.history`).
-4. Appliquer un design **mobile-first** avec Tailwind : gros boutons tactiles (`min-h-12`), contrastes élevés, pas de hover-only interactions.
-5. Ajouter un fichier `src/pages/Login.tsx` avec Supabase Auth (email/password) et liaison au `tenant_id` via `tenant_users`.
-6. Rédiger un `docs/USER_GUIDE.md` : parcours réceptionniste, parcours artisan, parcours propriétaire.
-
-**Critère de validation** : l'app s'installe sur mon téléphone Android depuis Chrome, fonctionne en mode avion pour créer une commande, et se resynchronise au retour du réseau.
-**⛔ STOP — attends ma validation.**
+| #   | Condition                                                                    |
+| --- | ---------------------------------------------------------------------------- |
+| 1   | Le parcours fonctionne **à l'écran**, pas seulement dans les tests           |
+| 2   | `typecheck`, `lint`, `test` et `build` passent                               |
+| 3   | Le comportement **hors ligne** est vérifié s'il touche une commande          |
+| 4   | L'isolation par tenant est assurée côté serveur (RLS), pas seulement côté UI |
+| 5   | Les messages utilisateur sont en **français**                                |
 
 ---
 
-### ✅ PHASE 6 — QA et livraison MVP
+## 📏 ÉTAT DE VÉRIFICATION (27 octobre 2026)
 
-**Tâches :**
-
-1. Écrire des tests Vitest sur les modules critiques : `qrService`, `syncEngine`, `useCreateOrder`.
-2. Passer un audit Lighthouse sur la PWA (viser > 90 sur Performance, PWA, Accessibility).
-3. Vérifier que **toutes** les requêtes Supabase retournent uniquement les données du tenant courant (test manuel : créer 2 tenants, se connecter à chacun, vérifier l'isolation).
-4. Préparer un `CHANGELOG.md` du MVP.
-5. Créer un tag git `v0.1.0-mvp`.
-
-**Critère de validation** : tests verts, isolation multi-tenant confirmée, tag posé.
-
----
-
-## 📏 RÈGLES DE TRAVAIL POUR L'AGENT
-
-1. **Ne jamais dépasser le périmètre du MVP.** Toute fonctionnalité non listée doit être refusée et documentée dans `BACKLOG.md`.
-2. **Ne jamais modifier les fichiers de config globaux sans justification écrite** (ex : `tsconfig.json`).
-3. **Un commit par tâche logique**, avec un message au format Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
-4. **Commenter le code** en français, avec un focus sur les décisions techniques non évidentes (RLS, sync, offline).
-5. **Ne jamais coder en dur** : clés API, `tenant_id`, numéros de téléphone → tout en `.env` ou paramétrage.
-6. **Priorité absolue à la robustesse** : toute fonctionnalité offline doit être testée en mode avion avant d'être validée.
-7. **Demander confirmation** si une décision technique majeure sort du cadre imposé.
-8. **À la fin de chaque phase**, rédiger un récapitulatif de 10 lignes : ce qui a été fait, ce qui a été testé, ce qui bloque, ce qui vient ensuite.
+| Contrôle                             | Résultat                                                             |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `npm run typecheck`                  | ✅                                                                   |
+| `npm run lint`                       | ✅                                                                   |
+| `npm test`                           | ✅ **661 tests / 62 fichiers**                                       |
+| `npm run build`                      | ✅ bundle principal 477,7 kB (143,6 kB gzip), sous le seuil d'alerte |
+| Migrations SQL 001 → 026             | ✅ appliquées sur Supabase réel (projet `Pressing_Pro`)              |
+| Isolation multi-tenant (2 pressings) | ✅ vérifiée (`supabase/tests/isolation.sql`, `recette_reelle.sql`)   |
+| **Paiement CinetPay en réel**        | ❌ **non recetté** — secrets Edge Functions non renseignés           |
+| Lighthouse PWA                       | ❌ non rejoué sur déploiement HTTPS                                  |
 
 ---
 
-## 🎁 LIVRABLES FINAUX ATTENDUS
+## 🎁 RESTE À FAIRE AVANT MISE EN VENTE
 
-- Un dépôt `LAUNDRYPRESSING` restructuré, avec :
-  - Un `README.md` clair (installation, variables d'env, migrations Supabase, lancement).
-  - Un dossier `supabase/migrations/` versionné.
-  - Un dossier `supabase/functions/` avec les 2 Edge Functions.
-  - Un dossier `docs/` (AUDIT, USER_GUIDE, BACKLOG).
-  - Un tag `v0.1.0-mvp`.
-- Un MVP déployé (Vercel pour le front, Supabase Cloud pour le back) accessible via une URL de staging.
-- Un compte-rendu final de 1 page : ce qui fonctionne, ce qui reste à faire en V2, coût réel consommé (CinetPay commissions, Supabase).
+Par ordre de priorité. Ces points sont **bloquants pour la commercialisation**, pas pour le développement.
+
+| #   | Point                                                         | Pourquoi c'est bloquant                                                                    |
+| --- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1   | **Recette CinetPay en sandbox**                               | Un encaissement non vérifié de bout en bout expose à un défaut de règlement en production  |
+| 2   | **Recette de la webhook** (signature, rejeu, idempotence)     | Une webhook non signée est un vecteur de fraude                                            |
+| 3   | **Sauvegarde / export des données d'un tenant**               | Un pressing qui part doit pouvoir récupérer ses données ; c'est une obligation commerciale |
+| 4   | **Audit Lighthouse sur HTTPS**                                | Objectif > 90 Performance / PWA / Accessibilité                                            |
+| 5   | **Politique de rétention et de suppression** (RGPD-like)      | Données clients (nom, téléphone) conservées sans durée définie                             |
+| 6   | **Chiffrage réel** (commissions CinetPay, Supabase, Vercel)   | Condition du prix d'abonnement                                                             |
+| 7   | **Tests de charge** au-delà de quelques milliers de commandes | Les rapports lisent IndexedDB : à réévaluer (voir `BACKLOG.md`)                            |
 
 ---
 
-**Commence par exécuter la PHASE 0 uniquement, puis présente-moi le rapport `AUDIT.md` et attends ma validation explicite avant de continuer.**
+## 📚 DOCUMENTS DE RÉFÉRENCE
+
+| Document                        | Objet                                                  | Statut                                |
+| ------------------------------- | ------------------------------------------------------ | ------------------------------------- |
+| `docs/AUDIT-COURANT.md`         | **État vérifié du dépôt** — contrôles, limites connues | ✅ référence                          |
+| `docs/PHASE-0-AUDIT-CONSTAT.md` | Audit de reprise du 27/10/2026 (périmètre, anomalies)  | ✅ référence                          |
+| `docs/CONFORMITE-MVP.md`        | Correspondance écran par écran maquette ↔ code         | ✅ référence                          |
+| `docs/CRUD-COMPLET.md`          | Matrice des opérations d'écriture par rôle             | ✅ référence                          |
+| `docs/RECETTE-SUPABASE.md`      | Procédure de recette sur un projet réel                | ✅ référence                          |
+| `docs/BACKLOG.md`               | Hors périmètre et dette identifiée                     | ⚠️ à recadrer (marqué « historique ») |
+| `docs/AUDIT.md`                 | Audit du point de départ (`ae2903f`)                   | 🗄️ archive                            |
+
+---
+
+## 11. Historique — ce que disait la version 1.0
+
+La version 1.0 (23 octobre 2026) imposait un **MVP de 4 modules** : commandes, QR code,
+offline-first et paiement Mobile Money. Ce périmètre a été **largement dépassé** par le
+développement (paliers 1 à 5, migrations 003 → 026).
+
+Les écarts entre la version 1.0 et le produit livré ont été constatés le 27 octobre 2026
+dans `docs/PHASE-0-AUDIT-CONSTAT.md`. La présente version 2.0 aligne le contrat sur la
+réalité : **le produit est un ERP de pressing**, et c'est ce périmètre qui fait foi.
+
+Points de la version 1.0 **définitivement abandonnés** :
+
+- le découpage en 6 phases séquentielles (le produit est livré et en maintenance) ;
+- l'interdiction de `framer-motion` **est conservée** et a été appliquée ;
+- le schéma SQL minimal du § Architecture v1.0 est **remplacé** par les 26 migrations réelles ;
+- la politique RLS de démonstration v1.0 (`for all using (select tenant_id from tenant_users …)`)
+  **ne doit jamais être réintroduite** : elle échoue dès qu'un utilisateur a deux pressings.
+
+---
+
+**Prochaine action attendue :** traiter les points 1 et 2 du § « Reste à faire avant mise
+en vente » (recette CinetPay), ou documenter la sauvegarde/export d'un tenant (point 3).
