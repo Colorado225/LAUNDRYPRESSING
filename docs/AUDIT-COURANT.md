@@ -153,3 +153,48 @@ Fichier : `supabase/migrations/020_suppression_tarification_et_laundry_models.sq
 - Vérifier RLS sur plusieurs pressings et rôles, puis les scénarios de synchronisation après coupure réseau.
 - Tester les Edge Functions, notifications et paiement/remboursement avec les comptes et identifiants CinetPay appropriés.
 - Valider l’installation PWA, le scanner caméra, l’impression et l’usage hors ligne sur la tablette Android cible.
+
+## Dérive de schéma du 26 octobre 2026 (projet Supabase `Pressing_Pro`)
+
+Quatre migrations ont été appliquées sur le projet Supabase de production
+(`phjstsydxvggtduohfrl`) **sans jamais être committées** : elles ne figurent ni
+dans `supabase/migrations/`, ni dans l’historique Git. Elles proviennent d’une
+branche de travail sur le catalogue tarifaire, périmètre retiré du produit par
+la migration `020`.
+
+| Version appliquée | Nom | Taille du SQL | SHA-256 |
+|---|---|---|---|
+| `20261026193632` | `catalogue_lot1` | 17 324 car. | `55b01904f6397865b5de8e98871c93c9c5b5a1db92b822f83fecdb441f58737b` |
+| `20261026200208` | `tarification_kilo_tranches` | 11 268 car. | `9220208f0c1184cf45051f8c79c3fb3ed1cb2cd1ee2f99678003b222fdc71d62` |
+| `20261026200518` | `modeles_forfaits` | 13 682 car. | `eb3cc6894417b4f4c978004a54f533962d8e466f6ab62dea772101ceb93fbc94` |
+| `20261026221737` | `forfaits_quantite_modele_exploitation` | 18 628 car. | `c0a017e7ef859ba18de58f0657c75fc55c51481616c1d7da3f00dd802fe6efab` |
+
+Objets créés en base par ces migrations, tous **non référencés** par le code
+(`src/` et `src/types/database.ts` n’en contiennent aucune occurrence) :
+
+- `garment_categories`, `garment_types`, `service_garment_prices`
+- `pricing_rules`, `pricing_rule_tiers`
+- `laundry_profiles`, `laundry_profile_items`
+- `commercial_packages`, `commercial_package_items`
+
+Conséquences :
+
+1. Une installation neuve depuis le dépôt **ne reproduit pas** la base actuelle.
+2. `supabase db push` ne peut pas réconcilier cet écart : les versions distantes
+   sont horodatées et n’ont pas de fichier correspondant.
+
+### Récupération
+
+```bash
+# DATABASE_URL = chaîne « Connection string » du projet (Project Settings → Database)
+npm run migrations:recuperer -- --check   # liste ce qui manque, n’écrit rien
+npm run migrations:recuperer              # écrit supabase/migrations/<version>_<nom>.sql
+```
+
+Le script lit `supabase_migrations.schema_migrations`, écrit le texte exact de
+`statements` et **vérifie le SHA-256 de chaque fichier** contre l’empreinte
+calculée par la base : une divergence est signalée, jamais ignorée. Un
+`--force` réécrit un fichier déjà présent.
+
+Tant que cet écart n’est pas résorbé, ne pas supposer que le dépôt suffit à
+recréer le schéma : comparer avec `supabase migration list` avant tout `db push`.
