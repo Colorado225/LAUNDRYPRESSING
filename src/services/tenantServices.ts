@@ -277,9 +277,15 @@ function normalizeTenantServicePricing(
   if (billingUnit !== 'PIECE' && billingUnit !== 'KG') {
     throw new Error('Unité de facturation invalide.')
   }
-  if (billingUnit === 'PIECE') return { billingUnit, unitPrice: null }
+  // Le tarif est facultatif dans les deux unités : une prestation à la pièce
+  // peut porter un prix par article (drap 500 FCFA), et une prestation au kilo
+  // un prix par kilo. `null` signifie « prix saisi au comptoir ».
   if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1 || unitPrice > 10_000_000)) {
-    throw new Error('Le tarif au kilo doit être un montant entier entre 1 et 10 000 000 FCFA.')
+    throw new Error(
+      billingUnit === 'KG'
+        ? 'Le tarif au kilo doit être un montant entier entre 1 et 10 000 000 FCFA.'
+        : 'Le prix par pièce doit être un montant entier entre 1 et 10 000 000 FCFA.',
+    )
   }
   return { billingUnit, unitPrice }
 }

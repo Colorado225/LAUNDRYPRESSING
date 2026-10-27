@@ -29,7 +29,9 @@ import { GARMENT_GRID } from '@/constants/garmentImages'
 import type { OrderGarmentType } from '@/types/database'
 import {
   articlesDuParcours,
+  modeFacturationParDefaut,
   PRESENTATION_PARCOURS,
+  prestationPourArticle,
   servicesALaPiece,
   servicesAuKilo,
   servicesDuParcours,
@@ -44,7 +46,7 @@ import OrderSummary from '@/components/order/OrderSummary'
 /**
  * Création d'une commande au comptoir — trois écrans.
  *
- *   1. **Service**    : Pressing (à la pièce) ou Blanchisserie (au kilo) ;
+ *   1. **Service**    : Pressing ou Blanchisserie (linge compté au vêtement) ;
  *   2. **Articles**   : client, dates, grille d'articles à icônes et panier ;
  *   3. **Récapitulatif** : relecture, mode de règlement, enregistrement.
  *
@@ -74,7 +76,9 @@ type Paiement = 'plus-tard' | 'especes'
  *
  * - `piece` : un vêtement identifié, facturé à la pièce (`billingUnit: PIECE`) ;
  * - `lot`   : un lot pesé facturé au kilo (`billingUnit: KG`), dont la
- *   composition (`garmentDetails`) décrit le linge réellement déposé.
+ *   composition (`garmentDetails`) décrit le linge réellement déposé. C'est
+ *   l'option retenue quand la blanchisserie est facturée au poids ; par
+ *   défaut, le linge est compté vêtement par vêtement (voir `modeBlanchisserie`).
  */
 interface LigneDraft {
   id: string
@@ -152,6 +156,14 @@ export default function OrderForm() {
   const [articleLibre, setArticleLibre] = useState('')
   const [prestationPiece, setPrestationPiece] = useState('')
   const [prestationKilo, setPrestationKilo] = useState('')
+  // Blanchisserie : au vêtement (défaut, prix par article) ou au kilo (option).
+  // `null` = choix par défaut, déduit du catalogue ; une valeur = choix explicite
+  // du comptoir, que l'arrivée du catalogue ne doit plus écraser.
+  const [modeManuel, setModeManuel] = useState<'piece' | 'kilo' | null>(null)
+  // Le catalogue est chargé (ou a échoué) : tant qu'on ne sait pas ce qui est
+  // configuré, on n'ouvre aucun panier — sinon un lot au kilo apparaîtrait
+  // puis resterait là alors que la blanchisserie se compte au vêtement.
+  const [cataloguePret, setCataloguePret] = useState(false)
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
 
   const [errors, setErrors] = useState<string[]>([])
@@ -170,8 +182,9 @@ export default function OrderForm() {
         if (!active) return
         setActivites(configuration.activities)
         setPrestations(configuration.services)
+        setCataloguePret(true)
       })
-      .catch(() => undefined)
+      .catch(() => setCataloguePret(true))
     return () => {
       active = false
     }
@@ -212,6 +225,14 @@ export default function OrderForm() {
     () => (parcours ? servicesDuParcours(prestations, parcours) : []),
     [prestations, parcours],
   )
+  /**
+   * Mode de facturation de la blanchisserie, **déduit** du catalogue : dès
+   * qu'un prix par article existe, on compte les vêtements ; sinon on pèse.
+   * Aucun état intermédiaire, donc aucun lot créé puis abandonné quand le
+   * catalogue arrive après l'écran.
+   */
+  const modeBlanchisserie: 'piece' | 'kilo' =
+    modeManuel ?? modeFacturationParDefaut(prestationsParcours)
   const prestationsKilo = useMemo(() => servicesAuKilo(prestationsParcours), [prestationsParcours])
   const prestationsPiece = useMemo(
     () => servicesALaPiece(prestationsParcours),
@@ -324,17 +345,18 @@ export default function OrderForm() {
   // En blanchisserie, le lot au kilo existe dès l'arrivée sur l'écran des
   // articles : le comptoir voit tout de suite où saisir le poids et le tarif.
   useEffect(() => {
-    if (etape !== 1 || parcours !== 'blanchisserie' || lotInitialise.current) return
+    if (etape !== 1 || parcours !== 'blanchisserie' || modeBlanchisserie !== 'kilo') return
+    if (!cataloguePret || lotInitialise.current) return
     lotInitialise.current = true
     assurerLot()
     // `assurerLot` ne dépend que de l'état courant ; l'effet ne doit se
     // déclencher qu'une fois par entrée dans l'écran.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etape, parcours])
+  }, [etape, parcours, modeBlanchisserie, cataloguePret])
 
   // Prix par défaut du lot quand le catalogue arrive après l'écran.
   useEffect(() => {
-    if (parcours !== 'blanchisserie' || prestationKilo !== '') return
+    if (parcours !== 'blanchisserie' || modeBlanchisserie !== 'kilo' || prestationKilo !== '') return
     const premier = prestationsKilo[0]
     if (!premier) return
     setPrestationKilo(premier.id)
@@ -345,10 +367,10 @@ export default function OrderForm() {
           : ligne,
       ),
     )
-  }, [parcours, prestationKilo, prestationsKilo])
+  }, [parcours, modeBlanchisserie, prestationKilo, prestationsKilo])
 
   const ajouterArticle = (type: OrderGarmentType) => {
-    if (parcours === 'blanchisserie') {
+    if (parcours === 'blanchisserie' && modeBlanchisserie === 'kilo') {
       assurerLot()
       setLignes((current) =>
         current.map((ligne) => {
@@ -371,6 +393,10 @@ export default function OrderForm() {
         )
       }
       const prestation = prestationsPiece.find((service) => service.id === prestationPiece)
+      // Blanchisserie au vêtement : le prix de l'article vient de la prestation
+      // du même nom (« Drap » = 500 FCFA). À défaut, le prix reste à saisir.
+      const tarif = parcours === 'blanchisserie' ? prestationPourArticle(prestationsPiece, type) : null
+      const source = tarif ?? prestation
       return [
         ...current,
         {
@@ -379,10 +405,10 @@ export default function OrderForm() {
           type,
           label: LIBELLES_ARTICLES.get(type) ?? type,
           quantity: 1,
-          unitPrice: 0,
-          serviceName: prestation?.serviceName ?? null,
-          tenantServiceId: referenceServeur(prestation?.id),
-          activityNameSnapshot: prestation?.activityName ?? null,
+          unitPrice: tarif?.unitPrice ?? 0,
+          serviceName: source?.serviceName ?? null,
+          tenantServiceId: referenceServeur(source?.id),
+          activityNameSnapshot: source?.activityName ?? null,
           garmentDetails: [],
         },
       ]
@@ -396,6 +422,8 @@ export default function OrderForm() {
       return
     }
     const prestation = prestationsPiece.find((service) => service.id === prestationPiece)
+    // Un libellé libre n'a pas d'article au catalogue : on ne propose donc que
+    // le prix de la prestation sélectionnée, sinon la saisie au comptoir.
     setLignes((current) => [
       ...current,
       {
@@ -404,7 +432,7 @@ export default function OrderForm() {
         type: null,
         label: libelle,
         quantity: 1,
-        unitPrice: 0,
+        unitPrice: prestation?.unitPrice ?? 0,
         serviceName: prestation?.serviceName ?? null,
         tenantServiceId: referenceServeur(prestation?.id),
         activityNameSnapshot: prestation?.activityName ?? null,
@@ -544,6 +572,31 @@ export default function OrderForm() {
     if (cible === 2) controlerArticles()
     setEtape(cible)
     window.scrollTo?.({ top: 0, behavior: 'smooth' })
+  }
+
+  /**
+   * Blanchisserie : passer du comptage des vêtements au pesage (ou l'inverse).
+   *
+   * Les deux modes ne partagent pas les mêmes lignes (un lot pesé n'est pas un
+   * vêtement compté) : changer de mode vide donc le panier. On demande
+   * confirmation dès qu'il y a quelque chose à perdre, jamais en silence.
+   */
+  const changerModeBlanchisserie = (mode: 'piece' | 'kilo') => {
+    if (submitting || mode === modeBlanchisserie) return
+    if (
+      lignes.length > 0 &&
+      !window.confirm(
+        mode === 'piece'
+          ? 'Passer à la facturation au vêtement vide le panier (le lot pesé est retiré). Continuer ?'
+          : 'Passer à la facturation au kilo vide le panier (les vêtements comptés sont retirés). Continuer ?',
+      )
+    ) {
+      return
+    }
+    setModeManuel(mode)
+    setLignes((current) => (mode === 'piece' ? current.filter((ligne) => ligne.genre === 'piece') : []))
+    lotInitialise.current = false
+    setErrors([])
   }
 
   const choisirParcours = (choisi: ParcoursService) => {
@@ -942,7 +995,46 @@ export default function OrderForm() {
           {/* Prestation appliquée */}
           <div className="grid gap-3 sm:grid-cols-2">
             {parcours === 'blanchisserie' ? (
-              <label className="block space-y-1.5">
+              <div className="space-y-3">
+                {prestationsPiece.length > 0 && (
+                  <div>
+                    <span className="text-xs font-semibold text-slate-600">Facturation</span>
+                    <div
+                      role="group"
+                      aria-label="Mode de facturation de la blanchisserie"
+                      className="mt-1.5 grid gap-2 sm:grid-cols-2"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={modeBlanchisserie === 'piece'}
+                        aria-label="Facturer au vêtement"
+                        onClick={() => changerModeBlanchisserie('piece')}
+                        className={`min-h-12 rounded-xl border px-3 text-sm font-semibold ${
+                          modeBlanchisserie === 'piece'
+                            ? 'border-brand-teal bg-brand-teal/5 text-brand-teal'
+                            : 'border-slate-300 text-slate-700 hover:border-brand-teal'
+                        }`}
+                      >
+                        Au vêtement (nombre de pièces)
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={modeBlanchisserie === 'kilo'}
+                        aria-label="Facturer au kilo"
+                        onClick={() => changerModeBlanchisserie('kilo')}
+                        className={`min-h-12 rounded-xl border px-3 text-sm font-semibold ${
+                          modeBlanchisserie === 'kilo'
+                            ? 'border-brand-teal bg-brand-teal/5 text-brand-teal'
+                            : 'border-slate-300 text-slate-700 hover:border-brand-teal'
+                        }`}
+                      >
+                        Au kilo (linge pesé)
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {modeBlanchisserie === 'kilo' ? (
+                <label className="block space-y-1.5">
                 <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
                 <select
                   value={prestationKilo}
@@ -961,7 +1053,30 @@ export default function OrderForm() {
                 <span className="block text-xs text-slate-500">
                   Le tarif configuré est proposé ; celui saisi dans le panier fait foi.
                 </span>
-              </label>
+                </label>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <span className="text-xs font-semibold text-slate-600">Prix par article</span>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Chaque vêtement touché est compté et facturé à ce prix. Un article sans prix
+                      configuré se saisit au comptoir, dans le panier.
+                    </p>
+                    <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                      {articles.map((article) => {
+                        const tarif = prestationPourArticle(prestationsPiece, article.type, article.libelle)
+                        return (
+                          <li key={article.type} className="flex justify-between gap-3">
+                            <span>{article.libelle}</span>
+                            <span className={tarif?.unitPrice ? 'font-semibold text-brand-navy' : 'text-slate-500'}>
+                              {tarif?.unitPrice ? `${formatFcfa(tarif.unitPrice)}/pièce` : 'prix au comptoir'}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
             ) : (
               <label className="block space-y-1.5">
                 <span className="text-xs font-semibold text-slate-600">
@@ -996,15 +1111,18 @@ export default function OrderForm() {
                 onAjouter={ajouterArticle}
                 prix={demo && parcours === 'pressing' ? PRIX_ARTICLES_DÉMO : undefined}
                 legende={
-                  parcours === 'blanchisserie'
-                    ? 'Touchez le linge déposé : il s’ajoute à la composition du lot pesé.'
-                    : 'Touchez un article pour l’ajouter. Les quantités se corrigent dans le panier.'
+                  parcours !== 'blanchisserie'
+                    ? 'Touchez un article pour l’ajouter. Les quantités se corrigent dans le panier.'
+                    : modeBlanchisserie === 'piece'
+                      ? 'Touchez le linge déposé : chaque pièce est comptée et facturée.'
+                      : 'Touchez le linge déposé : il s’ajoute à la composition du lot pesé.'
                 }
               />
 
               {parcours === 'pressing' && <PromoBanner />}
 
-              {parcours === 'pressing' && (
+              {(parcours === 'pressing' ||
+                (parcours === 'blanchisserie' && modeBlanchisserie === 'piece')) && (
                 <div className="rounded-xl border border-slate-200 p-3">
                   <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
                     Article libre

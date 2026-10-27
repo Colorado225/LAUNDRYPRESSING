@@ -35,7 +35,9 @@ l'heure, le compte utilisé et le message affiché).
 ### Parcours de création en trois écrans
 
 - [ ] **Écran 1** : les deux cartes (Pressing, Blanchisserie) sont cliquables à la souris **et** activables au clavier (Tab puis Entrée)
-- [ ] Pressing → grille des vêtements à la pièce ; Blanchisserie → grille du linge et lot au kilo déjà présent (poids + tarif/kg saisissables)
+- [ ] Pressing → grille des vêtements à la pièce ; Blanchisserie → grille du linge, facturation **au vêtement** par défaut (prix par article affichés), bascule « Au kilo (linge pesé) » → lot déjà présent (poids + tarif/kg saisissables)
+- [ ] Blanchisserie au vêtement : 2 × Drap + 1 × Serviette → 2 lignes, quantités 2 et 1, total = 2 × prix du drap + prix de la serviette ; l'enregistrement produit des lignes `PIECE`
+- [ ] Blanchisserie au vêtement : un article sans forfait configuré (ex. Chemise) → prix 0, « Suivant » puis « Enregistrer » refusés avec le message nommant l'article
 - [ ] Ajouter un article, puis une seconde fois → une seule ligne, quantité 2 ; corriger la quantité au panier → total recalculé
 - [ ] Supprimer une ligne, puis **Vider** → panier vide, total à 0 FCFA
 - [ ] **Article libre** (libellé hors grille) → ligne ajoutée, prix saisissable

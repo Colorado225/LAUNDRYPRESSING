@@ -204,3 +204,64 @@ describe('CRUD des activités et prestations du pressing', () => {
     unmount()
   })
 })
+
+describe('prix par pièce des prestations', () => {
+  /**
+   * La blanchisserie se compte au nombre de vêtements, chaque article portant
+   * un prix défini une fois pour toutes (migration 027). Le test vérifie que
+   * la configuration transmet bien ce prix — et pas `null` comme avant.
+   */
+  it('enregistre un prix par pièce sur une prestation à la pièce', async () => {
+    configuration.activities = [
+      { id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0, legacyCode: 'blanchisserie' },
+    ]
+    await mount()
+    await act(async () => button('Prestations').click())
+
+    await saisir(input('Nom de la nouvelle prestation'), 'Drap housse')
+    // Unité par défaut : à la pièce.
+    await saisir(input('Prix par pièce de la nouvelle prestation'), '500')
+    await act(async () => button('Ajouter la prestation').click())
+
+    expect(serviceMocks.createTenantService).toHaveBeenCalledWith(
+      'tenant-new', 'activity-1', 'Drap housse', 'PIECE', 500,
+    )
+    unmount()
+  })
+
+  it('refuse un prix par pièce hors des bornes admises', async () => {
+    configuration.activities = [
+      { id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0, legacyCode: 'blanchisserie' },
+    ]
+    await mount()
+    await act(async () => button('Prestations').click())
+
+    await saisir(input('Nom de la nouvelle prestation'), 'Serviette')
+    // 99 999 999 passe la validation native du navigateur (`min="1"`) mais
+    // dépasse la borne métier : c'est la règle applicative qui doit refuser.
+    await saisir(input('Prix par pièce de la nouvelle prestation'), '99999999')
+    await act(async () => button('Ajouter la prestation').click())
+
+    expect(serviceMocks.createTenantService).not.toHaveBeenCalled()
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      'entre 1 et 10 000 000 FCFA',
+    )
+    unmount()
+  })
+
+  it('affiche le prix configuré et signale un prix saisi au comptoir', async () => {
+    configuration.activities = [
+      { id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0, legacyCode: 'blanchisserie' },
+    ]
+    configuration.services = [
+      { id: 'service-1', tenantId: 'tenant-new', activityId: 'activity-1', activityName: 'Blanchisserie', activityCode: 'blanchisserie', serviceName: 'Drap', billingUnit: 'PIECE', unitPrice: 500, sortOrder: 0 },
+      { id: 'service-2', tenantId: 'tenant-new', activityId: 'activity-1', activityName: 'Blanchisserie', activityCode: 'blanchisserie', serviceName: 'Serviette', billingUnit: 'PIECE', unitPrice: null, sortOrder: 1 },
+    ]
+    await mount()
+    await act(async () => button('Prestations').click())
+
+    expect(host.textContent).toContain('500 FCFA/pièce')
+    expect(host.textContent).toContain('prix saisi au comptoir')
+    unmount()
+  })
+})

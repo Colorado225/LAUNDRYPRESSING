@@ -53,7 +53,9 @@ export default function ServicesPressing() {
   const [activiteActive, setActiviteActive] = useState('')
   const [nouvellePrestation, setNouvellePrestation] = useState('')
   const [nouvelleUnite, setNouvelleUnite] = useState<TenantServiceBillingUnit>('PIECE')
-  const [nouveauTarifKg, setNouveauTarifKg] = useState('')
+  // Tarif unitaire de la nouvelle prestation : par pièce ou par kilo selon le
+  // mode choisi. Vide = prix saisi au comptoir, ce qui reste permis.
+  const [nouveauTarif, setNouveauTarif] = useState('')
   const [editionPrestation, setEditionPrestation] = useState<{
     id: string
     name: string
@@ -147,29 +149,35 @@ export default function ServicesPressing() {
     if (!tenantId || !activiteActive) return
     const name = nouvellePrestation.trim()
     if (!name) return
-    const unitPrice = nouvelleUnite === 'KG' && nouveauTarifKg.trim()
-      ? Number(nouveauTarifKg)
-      : null
-    if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1)) {
-      setErreur('Le tarif au kilo doit être un nombre entier de FCFA supérieur à zéro.')
+    const unitPrice = nouveauTarif.trim() ? Number(nouveauTarif) : null
+    if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1 || unitPrice > 10_000_000)) {
+      setErreur(
+        nouvelleUnite === 'KG'
+          ? 'Le tarif au kilo doit être un montant entier entre 1 et 10 000 000 FCFA.'
+          : 'Le prix par pièce doit être un montant entier entre 1 et 10 000 000 FCFA.',
+      )
       return
     }
     await runAction(async () => {
       await createTenantService(tenantId, activiteActive, name, nouvelleUnite, unitPrice)
       setNouvellePrestation('')
       setNouvelleUnite('PIECE')
-      setNouveauTarifKg('')
+      setNouveauTarif('')
     }, 'Prestation ajoutée à l’activité.')
   }
 
   const enregistrerPrestation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!tenantId || !editionPrestation) return
-    const unitPrice = editionPrestation.billingUnit === 'KG' && editionPrestation.unitPrice.trim()
+    const unitPrice = editionPrestation.unitPrice.trim()
       ? Number(editionPrestation.unitPrice)
       : null
-    if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1)) {
-      setErreur('Le tarif au kilo doit être un nombre entier de FCFA supérieur à zéro.')
+    if (unitPrice !== null && (!Number.isSafeInteger(unitPrice) || unitPrice < 1 || unitPrice > 10_000_000)) {
+      setErreur(
+        editionPrestation.billingUnit === 'KG'
+          ? 'Le tarif au kilo doit être un montant entier entre 1 et 10 000 000 FCFA.'
+          : 'Le prix par pièce doit être un montant entier entre 1 et 10 000 000 FCFA.',
+      )
       return
     }
     await runAction(async () => {
@@ -332,12 +340,30 @@ export default function ServicesPressing() {
                         <option value="KG">Au kilo (poids total)</option>
                       </select>
                     </label>
-                    {nouvelleUnite === 'KG' && (
-                      <label className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Tarif personnalisé par kilo (FCFA, facultatif)</span>
-                        <input type="number" min="1" step="1" value={nouveauTarifKg} onChange={(event) => setNouveauTarifKg(event.target.value)} placeholder="Ex. 1 500" aria-label="Tarif au kilo de la nouvelle prestation" className="min-h-12 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
-                      </label>
-                    )}
+                    <label className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-600">
+                        {nouvelleUnite === 'KG'
+                          ? 'Tarif par kilo (FCFA, facultatif)'
+                          : 'Prix par pièce (FCFA, facultatif)'}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={nouveauTarif}
+                        onChange={(event) => setNouveauTarif(event.target.value)}
+                        placeholder={nouvelleUnite === 'KG' ? 'Ex. 1 500' : 'Ex. 500'}
+                        aria-label={
+                          nouvelleUnite === 'KG'
+                            ? 'Tarif au kilo de la nouvelle prestation'
+                            : 'Prix par pièce de la nouvelle prestation'
+                        }
+                        className="min-h-12 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal"
+                      />
+                      <span className="block text-[11px] text-slate-500">
+                        Laisser vide : le prix sera saisi au comptoir, commande par commande.
+                      </span>
+                    </label>
                     <div className="flex items-end sm:justify-end">
                       <button type="submit" disabled={enregistrement || !activiteActive || nouvellePrestation.trim().length < 2} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-teal px-5 font-bold text-white hover:bg-brand-teal/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
                         <Plus size={17} aria-hidden /> Ajouter la prestation
@@ -366,12 +392,27 @@ export default function ServicesPressing() {
                                     <option value="KG">Au kilo (poids total)</option>
                                   </select>
                                 </label>
-                                {editionPrestation.billingUnit === 'KG' && (
-                                  <label className="space-y-1">
-                                    <span className="text-xs font-semibold text-slate-600">Tarif personnalisé par kilo (FCFA, facultatif)</span>
-                                    <input type="number" min="1" step="1" value={editionPrestation.unitPrice} onChange={(event) => setEditionPrestation({ ...editionPrestation, unitPrice: event.target.value })} aria-label={`Tarif au kilo de ${service.serviceName}`} placeholder="Ex. 1 500" className="min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal" />
-                                  </label>
-                                )}
+                                <label className="space-y-1">
+                                  <span className="text-xs font-semibold text-slate-600">
+                                    {editionPrestation.billingUnit === 'KG'
+                                      ? 'Tarif par kilo (FCFA, facultatif)'
+                                      : 'Prix par pièce (FCFA, facultatif)'}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={editionPrestation.unitPrice}
+                                    onChange={(event) => setEditionPrestation({ ...editionPrestation, unitPrice: event.target.value })}
+                                    aria-label={
+                                      editionPrestation.billingUnit === 'KG'
+                                        ? `Tarif au kilo de ${service.serviceName}`
+                                        : `Prix par pièce de ${service.serviceName}`
+                                    }
+                                    placeholder={editionPrestation.billingUnit === 'KG' ? 'Ex. 1 500' : 'Ex. 500'}
+                                    className="min-h-11 w-full rounded-xl border border-slate-300 px-3 outline-none focus:border-brand-teal"
+                                  />
+                                </label>
                                 <div className="flex flex-wrap gap-2 sm:col-span-2">
                                   <button type="submit" disabled={enregistrement || editionPrestation.name.trim().length < 2} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-teal px-4 text-sm font-bold text-white disabled:opacity-50"><Check size={16} aria-hidden /> Enregistrer</button>
                                   <button type="button" onClick={() => setEditionPrestation(null)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-600"><X size={16} aria-hidden /> Annuler</button>
@@ -383,7 +424,9 @@ export default function ServicesPressing() {
                                   <h3 className="font-bold text-slate-800">{service.serviceName}</h3>
                                   <p className="mt-1 text-xs text-slate-500">
                                     Activité : {service.activityName} · {service.billingUnit === 'KG' ? 'Au kilo' : 'À la pièce'}
-                                    {service.billingUnit === 'KG' && service.unitPrice !== null ? ` · ${service.unitPrice.toLocaleString('fr-FR')} FCFA/kg` : ''}
+                                    {service.unitPrice !== null
+                                      ? ` · ${service.unitPrice.toLocaleString('fr-FR')} FCFA/${service.billingUnit === 'KG' ? 'kg' : 'pièce'}`
+                                      : ' · prix saisi au comptoir'}
                                   </p>
                                 </div>
                                 <div className="flex gap-2">

@@ -4,8 +4,10 @@ import {
   CATEGORIES_BLANCHISSERIE,
   CATEGORIES_PRESSING,
   filtrerArticles,
+  modeFacturationParDefaut,
   parcoursDepuisActivite,
   parcoursDepuisPrestation,
+  prestationPourArticle,
   servicesALaPiece,
   servicesAuKilo,
   servicesDuParcours,
@@ -155,5 +157,58 @@ describe('prestations proposées au comptoir', () => {
   it('tolère un catalogue vide', () => {
     expect(servicesDuParcours([], 'pressing')).toEqual([])
     expect(servicesAuKilo([])).toEqual([])
+  })
+})
+
+describe('blanchisserie facturée au vêtement', () => {
+  const drap = prestation({
+    id: 'svc-drap',
+    activityName: 'Blanchisserie',
+    activityCode: 'blanchisserie',
+    serviceName: 'Drap',
+    billingUnit: 'PIECE',
+    unitPrice: 500,
+  })
+  const serviette = prestation({
+    id: 'svc-serviette',
+    activityName: 'Blanchisserie',
+    activityCode: 'blanchisserie',
+    serviceName: 'serviettes',
+    billingUnit: 'PIECE',
+    unitPrice: 300,
+    sortOrder: 1,
+  })
+  const kilo = prestation({
+    id: 'svc-kilo',
+    activityName: 'Blanchisserie',
+    activityCode: 'blanchisserie',
+    serviceName: 'Lavage au kilo',
+    billingUnit: 'KG',
+    unitPrice: 1500,
+    sortOrder: 2,
+  })
+
+  it('rapproche un article de la prestation du même nom, sans casse ni accent', () => {
+    // « Serviette » (grille) et « serviettes » (saisie du propriétaire).
+    expect(prestationPourArticle([drap, serviette], 'SERVIETTE')?.unitPrice).toBe(300)
+    expect(prestationPourArticle([drap, serviette], 'DRAP')?.id).toBe('svc-drap')
+  })
+
+  it('ne rapproche jamais une prestation au kilo d’un article compté', () => {
+    const resultat = prestationPourArticle([kilo], 'DRAP')
+
+    expect(resultat).toBeNull()
+  })
+
+  it('renvoie null quand aucun forfait n’est configuré pour l’article', () => {
+    expect(prestationPourArticle([drap], 'CHEMISE')).toBeNull()
+    expect(prestationPourArticle([], 'DRAP')).toBeNull()
+  })
+
+  it('choisit le comptage au vêtement dès qu’un prix par article existe', () => {
+    expect(modeFacturationParDefaut([drap, kilo])).toBe('piece')
+    expect(modeFacturationParDefaut([kilo])).toBe('kilo')
+    // Aucun catalogue : on garde le comportement historique, le lot pesé.
+    expect(modeFacturationParDefaut([])).toBe('kilo')
   })
 })

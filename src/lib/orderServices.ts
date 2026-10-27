@@ -6,8 +6,10 @@ import type { TenantServiceOffering } from '@/services/tenantServices'
  * Parcours de commande : deux gestes différents au comptoir.
  *
  *  - **pressing** : des vêtements identifiés un par un, facturés à la pièce ;
- *  - **blanchisserie** : du linge pesé (drap, serviette, uniforme…), facturé au
- *    kilo, avec la composition du lot conservée pour le suivi du linge.
+ *  - **blanchisserie** : du linge de maison ou professionnel (drap, serviette,
+ *    uniforme…), facturé **au nombre de vêtements** d'après le prix par article
+ *    configuré dans « Services & activités » ; le kilo reste disponible en
+ *    option quand la prestation est configurée au kilo.
  *
  * Ce module ne contient **que des règles pures** : quelles catégories afficher,
  * quel parcours correspond à une activité du pressing, quels articles sont
@@ -15,9 +17,10 @@ import type { TenantServiceOffering } from '@/services/tenantServices'
  * et réutilisable par les écrans comme par les tests.
  *
  * ⚠️ Aucun tarif n'est inventé ici. Les prix viennent de la saisie au comptoir
- *    ou du tarif au kilo configuré dans « Services & activités » ; les forfaits
+ *    ou du tarif configuré dans « Services & activités » — par pièce pour un
+ *    article, au kilo pour une prestation pesée. Les anciens forfaits
  *    commerciaux (paquets de 2 kg…) ont été retirés du schéma par la migration
- *    020 et ne sont donc pas proposés.
+ *    020 : le « forfait » d'aujourd'hui, c'est le prix par article.
  */
 
 export type ParcoursService = 'pressing' | 'blanchisserie'
@@ -188,6 +191,45 @@ export function servicesALaPiece(services: readonly TenantServiceOffering[]): Te
   return services.filter((service) => service.billingUnit === 'PIECE')
 }
 
+/**
+ * Prestation à la pièce qui porte le tarif d'un article donné.
+ *
+ * Le lien entre un article de la grille (« Drap ») et une prestation
+ * configurée (« Drap », 500 FCFA) est le **nom** : c'est ainsi que le
+ * propriétaire saisit son forfait par article. On compare sans casse ni
+ * accents, puis on tolère un libellé plus précis (« Lavage drap »). Aucun
+ * rapprochement approximatif au-delà : `null` signifie « pas de tarif
+ * configuré pour cet article », et le prix se saisit alors au comptoir.
+ */
+export function prestationPourArticle(
+  services: readonly TenantServiceOffering[],
+  type: OrderGarmentType,
+  libelle?: string,
+): TenantServiceOffering | null {
+  const cible = normaliser(libelle ?? LIBELLES.get(type) ?? type)
+  if (!cible) return null
+  const pieces = servicesALaPiece(services)
+  return (
+    pieces.find((service) => normaliser(service.serviceName) === cible) ??
+    pieces.find((service) => {
+      const nom = normaliser(service.serviceName)
+      return nom.length > 0 && (nom.includes(cible) || cible.includes(nom))
+    }) ??
+    null
+  )
+}
+
+/**
+ * Mode de facturation proposé d'emblée en blanchisserie : **à la pièce** dès
+ * qu'un prix par article existe, au kilo sinon. Le comptoir peut toujours
+ * basculer vers l'autre mode ; ce choix ne fait que décider de l'écran affiché.
+ */
+export function modeFacturationParDefaut(
+  services: readonly TenantServiceOffering[],
+): 'piece' | 'kilo' {
+  return servicesALaPiece(services).length > 0 ? 'piece' : 'kilo'
+}
+
 /** Présentation des deux cartes de l'écran 1. */
 export interface PresentationParcours {
   titre: string
@@ -203,7 +245,7 @@ export const PRESENTATION_PARCOURS: Record<ParcoursService, PresentationParcours
   },
   blanchisserie: {
     titre: 'Blanchisserie',
-    resume: 'Linge de maison et professionnel, facturé au kilo.',
+    resume: 'Linge de maison et professionnel, facturé au nombre de vêtements.',
     exemples: ['Draps et serviettes', 'Uniformes du personnel', 'Linge en volume'],
   },
 }

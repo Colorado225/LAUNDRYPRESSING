@@ -27,7 +27,7 @@ Dans **Commandes**, choisir **Nouvelle commande**. Le parcours se déroule en tr
 Deux cartes, deux gestes différents :
 
 - **Pressing** : les vêtements sont identifiés un par un et facturés à la pièce (chemise, pantalon, robe, costume…).
-- **Blanchisserie** : le linge est pesé et facturé au kilo. Un **lot** est préparé automatiquement ; les tuiles de la grille décrivent ce que contient ce lot (2 draps, 1 serviette…).
+- **Blanchisserie** : le linge est **compté au vêtement** et facturé au prix de l'article, défini une fois pour toutes dans « Services & activités » (drap 500 FCFA, serviette 300 FCFA…). Chaque appui sur une tuile ajoute une pièce au panier. Le **kilo** reste disponible en option : le bouton « Au kilo (linge pesé) » prépare alors un lot dont les tuiles décrivent la composition (2 draps, 1 serviette…).
 
 Le choix fixe la grille d'articles. **Changer de service** depuis l'écran 2 ramène ici.
 
@@ -42,7 +42,9 @@ Le choix fixe la grille d'articles. **Changer de service** depuis l'écran 2 ram
 **Prestation**
 
 - Au pressing, la prestation choisie s'applique aux articles ajoutés ensuite. Si la boutique n'en a configuré aucune, le prix se saisit ligne par ligne — l'écran reste utilisable.
-- En blanchisserie, la prestation au kilo pré-remplit le tarif du lot quand un tarif est configuré ; il reste modifiable.
+- En blanchisserie au vêtement, le prix de chaque article vient de la prestation du **même nom** (article « Drap » → prestation « Drap »). Un article sans forfait configuré affiche « prix au comptoir » et son prix se saisit au panier.
+- En blanchisserie au kilo, la prestation sélectionnée pré-remplit le tarif du lot quand un tarif est configuré ; il reste modifiable.
+- Changer de mode de facturation vide le panier (un lot pesé n'est pas un vêtement compté) : une confirmation est demandée si des lignes existent.
 
 **Articles**
 
