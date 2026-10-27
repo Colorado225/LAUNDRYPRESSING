@@ -43,6 +43,9 @@ const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** Fonctions à déployer, avec leur exigence de JWT. */
 const FONCTIONS = [
   { slug: 'cinetpay-init', verifyJwt: true },
+  // Dit au navigateur si les clés marchandes existent (booléens seulement) :
+  // sans elle, l'application ne peut pas masquer un bouton de paiement inopérant.
+  { slug: 'cinetpay-status', verifyJwt: true },
   // Pas de JWT : l'appelant est CinetPay. La sécurité repose sur le HMAC.
   { slug: 'cinetpay-webhook', verifyJwt: false },
 ]
@@ -355,18 +358,19 @@ async function principal() {
   }
 
   console.log(
-    `\nAdresses :\n  ${config.supabaseUrl}/functions/v1/cinetpay-init\n  ${config.supabaseUrl}/functions/v1/cinetpay-webhook`,
+    `\nAdresses :\n  ${config.supabaseUrl}/functions/v1/cinetpay-init\n  ${config.supabaseUrl}/functions/v1/cinetpay-status\n  ${config.supabaseUrl}/functions/v1/cinetpay-webhook`,
   )
   console.log('\nRappel : le webhook doit être joignable publiquement pour CinetPay.')
 
-  // Sans clés, les fonctions existent mais répondent 503 : l'application
-  // bascule alors sur un paiement simulé. Autant le dire ici plutôt que de
-  // laisser le comptoir le découvrir devant un client.
+  // Sans clés, `cinetpay-init` répond 503 et `cinetpay-status` annonce
+  // `configured: false` : l'application masque alors le bouton Mobile Money.
+  // Aucun paiement n'est simulé, il faut donc le dire à l'installateur.
   if (!process.env.CINETPAY_API_KEY && !lireSecrets().some((s) => s.name === 'CINETPAY_API_KEY')) {
     console.log(
-      '\n• Aucune clé CinetPay installée : le bouton « Payer » simulera le paiement.\n' +
-        '  Collez CINETPAY_API_KEY, CINETPAY_SITE_ID et CINETPAY_SECRET_KEY dans .env,\n' +
-        '  puis relancez cette commande : rien d’autre à modifier.',
+      '\n• Aucune clé CinetPay installée : le bouton « Payer par Mobile Money » sera MASQUÉ.\n' +
+        '  Les encaissements en espèces restent disponibles. Collez CINETPAY_API_KEY,\n' +
+        '  CINETPAY_SITE_ID et CINETPAY_SECRET_KEY dans .env, puis relancez cette commande :\n' +
+        '  le bouton réapparaît au rechargement suivant, rien d’autre à modifier.',
     )
   }
 }

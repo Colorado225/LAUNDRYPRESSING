@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Banknote, FlaskConical, Loader2, Smartphone, WifiOff } from 'lucide-react'
+import { Banknote, Loader2, Smartphone, WifiOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { LocalOrder } from '@/db/localDb'
 import {
+  MESSAGE_CINETPAY_ABSENT,
   PaymentError,
   canInitiatePayment,
   chargeableAmount,
+  cinetpayIndisponible,
   initiatePayment,
   redirectToPayment,
 } from '@/services/paymentService'
 import { formatFcfa } from '@/lib/formatters'
 import { isSupabaseConfigured } from '@/lib/env'
 import {
-  cinetpayIndisponible,
-  simulationExistante,
-  simulerPaiement,
-} from '@/services/paymentSimulation'
+  chargerDisponibilitePaiement,
+  lireDisponibiliteMemoisee,
+  memoriserDisponibilite,
+  paiementIndisponible,
+  type DisponibilitePaiement,
+} from '@/services/paymentAvailability'
 import { useCashPayments } from '@/db/hooks'
 import { computeBalance } from '@/services/cashService'
 import { can } from '@/lib/permissions'
@@ -26,6 +30,21 @@ import { useTenantStore } from '@/lib/tenantContext'
  *
  * Le guichet CinetPay hébergé affiche ensuite Wave, Orange Money, MTN MoMo et
  * Moov Money : l'application n'a pas à gérer chaque opérateur séparément.
+ *
+ * Règle produit — aucun paiement fictif
+ * -----------------------------------------------------------------------------
+ * Le bouton n'existe que si le guichet est **réellement** installé. La
+ * disponibilité est demandée à l'Edge Function `cinetpay-status` (qui ne renvoie
+ * que des booléens, jamais un secret) :
+ *
+ *   • clés absentes  → le composant ne rend rien : on ne propose pas une action
+ *                      qui ne peut pas aboutir ;
+ *   • disponibilité inconnue (hors ligne, sonde muette, fonction pas encore
+ *     déployée) → le bouton reste visible, car masquer un paiement qui
+ *     fonctionne serait une régression ; un clic affiche alors une erreur
+ *     explicite disant que rien n'a été encaissé ;
+ *   • clic en échec pour absence de clés → la réponse est mémorisée et le bouton
+ *     disparaît aussitôt, sans jamais simuler un paiement.
  */
 
 const OPERATORS = [
@@ -38,8 +57,13 @@ const OPERATORS = [
 export default function PaymentButton({ order }: { order: LocalOrder }) {
   const role = useTenantStore((state) => state.role)
   const [submitting, setSubmitting] = useState(false)
-  /** Renseignée quand un paiement a été simulé (CinetPay pas encore installé). */
-  const [simulation, setSimulation] = useState<string | null>(null)
+  /**
+   * É tat de disponibilité du guichet. `null` = pas encore su : on n'affiche pas un
+   * bouton « désactivé » ambigu, on laisse la sonde répondre.
+   */
+  const [disponibilite, setDisponibilite] = useState<DisponibilitePaiement | null>(() =>
+    lireDisponibiliteMemoisee(),
+  )
   // Défense en profondeur : l'écran parent masque déjà le bouton, mais un
   // composant monté directement ne doit pas contourner la matrice.
   const allowed = can(role, 'payments.initiate')
@@ -51,28 +75,26 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
   const charged = chargeableAmount(solde.remaining)
   const isRounded = charged !== solde.remaining
   const alreadyPaid = order.paymentStatus === 'paid' || solde.remaining <= 0
-  // Sans configuration Supabase, le bouton reste utilisable en ligne pour
-  // valider l'écran par un toast de simulation, jamais pour encaisser.
-  const simulationDisponible =
-    !isSupabaseConfigured && typeof navigator !== 'undefined' && navigator.onLine
-  const blocked =
-    alreadyPaid || order.status === 'cancelled' || (!guard.ok && !simulationDisponible)
+  const blocked = alreadyPaid || order.status === 'cancelled' || !guard.ok
 
-  // Une simulation précédente reste visible après rechargement : le comptoir
-  // doit pouvoir expliquer pourquoi la commande n'est pas réglée.
-  // (Ce hook précède le retour anticipé : l'ordre des hooks ne doit pas
-  // dépendre du rôle de l'utilisateur.)
+  // Interrogation du serveur (une fois par session grâce au cache).
+  // Ce hook précède les retours anticipés : l'ordre des hooks ne doit pas
+  // dépendre du rôle ni de la disponibilité.
   useEffect(() => {
+    if (!isSupabaseConfigured) return
     let actif = true
-    void simulationExistante(order.id).then((resultat) => {
-      if (actif && resultat) setSimulation(resultat.reference)
+    void chargerDisponibilitePaiement().then((reponse) => {
+      if (actif && reponse) setDisponibilite(reponse)
     })
     return () => {
       actif = false
     }
-  }, [order.id])
+  }, [])
 
-  if (!allowed) return null
+  // Sans Supabase, un paiement Mobile Money est impossible : on n'affiche rien.
+  // Clés absentes côté serveur : idem, on retire l'action plutôt que de la
+  // laisser échouer.
+  if (!allowed || !isSupabaseConfigured || paiementIndisponible(disponibilite)) return null
 
   const handlePay = async () => {
     setSubmitting(true)
@@ -92,19 +114,17 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
       // Redirection vers le guichet hébergé : le paiement se poursuit chez CinetPay.
       redirectToPayment(result.paymentUrl)
     } catch (error) {
-      // Avant l'installation de la clé marchande, l'échec est attendu : plutôt
-      // qu'une erreur technique au comptoir, on simule le paiement et on le dit.
+      // Le guichet n'est pas installé : on le dit clairement, on mémorise la
+      // réponse pour faire disparaître le bouton, et surtout on ne simule rien.
       if (cinetpayIndisponible(error)) {
-        try {
-          const resultat = await simulerPaiement(order)
-          setSimulation(resultat.reference)
-          toast.success(
-            'Paiement simulé — parcours validé. Aucune clé CinetPay installée : rien n’a été encaissé, la commande reste à régler.',
-            { icon: '🧪', duration: 8000 },
-          )
-        } catch {
-          toast.error('Simulation impossible sur cet appareil.', { duration: 6000 })
+        const absente: DisponibilitePaiement = {
+          configured: false,
+          mode: 'production',
+          missing: ['CINETPAY_API_KEY', 'CINETPAY_SITE_ID', 'CINETPAY_SECRET_KEY'],
         }
+        memoriserDisponibilite(absente)
+        setDisponibilite(absente)
+        toast.error(MESSAGE_CINETPAY_ABSENT, { duration: 9000 })
         setSubmitting(false)
         return
       }
@@ -182,23 +202,10 @@ export default function PaymentButton({ order }: { order: LocalOrder }) {
         </p>
       )}
 
-      {simulation && !alreadyPaid && (
-        <p className="mt-3 flex items-start gap-2 rounded-xl bg-violet-50 p-3 text-sm text-violet-900">
-          <FlaskConical size={16} className="mt-0.5 shrink-0" aria-hidden />
-          <span>
-            Paiement <strong>simulé</strong> ({simulation}). Aucun argent n’a été encaissé : la
-            commande reste à régler. Renseignez <code>CINETPAY_API_KEY</code> dans <code>.env</code>,
-            puis <code>npm run deploy:fonctions</code> pour encaisser réellement.
-          </span>
-        </p>
-      )}
-
       {!guard.ok && !alreadyPaid && order.status !== 'cancelled' && (
         <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
           <WifiOff size={16} className="mt-0.5 shrink-0" aria-hidden />
-          {simulationDisponible
-            ? 'Mode de démonstration : le toast valide uniquement le parcours. Aucun paiement réel ne sera encaissé.'
-            : guard.reason}
+          {guard.reason}
         </p>
       )}
     </section>

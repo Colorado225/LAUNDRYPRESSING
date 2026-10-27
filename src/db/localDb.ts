@@ -333,10 +333,12 @@ export interface LocalPendingPayment {
   /**
    * `pending` = guichet ouvert, en attente de la confirmation serveur.
    *
-   * `simulated` = aucun guichet : CinetPay n'est pas encore installé, et le
-   * paiement a été **simulé** pour éprouver le parcours. Cette ligne ne change
-   * jamais le statut de la commande : rien n'a été encaissé, et le serveur
-   * interdit de toute façon au client de modifier `payment_status`.
+   * `simulated` est **hérité** : plus aucun code n'écrit cette valeur depuis le
+   * 27 octobre 2026 (le paiement simulé a été retiré du produit, le bouton est
+   * masqué quand les clés marchandes manquent). La valeur reste déclarée pour
+   * que les tablettes qui portent encore de telles lignes puissent les relire
+   * sans erreur de typage ; ces lignes ne changent jamais le statut de la
+   * commande et ne partent jamais vers Supabase.
    */
   status: 'pending' | 'sending' | 'error' | 'simulated'
   /** Identifiant de transaction CinetPay (`transaction_id`). */

@@ -44,7 +44,7 @@ export function canInitiatePayment(): { ok: boolean; reason: string | null } {
     return {
       ok: false,
       reason:
-        'Supabase n’est pas configuré : le bouton permet seulement une simulation locale, sans encaissement réel.',
+        'Supabase n’est pas configuré sur cet appareil : le paiement Mobile Money est indisponible.',
     }
   }
   if (!navigator.onLine) {
@@ -173,6 +173,36 @@ export function redirectToPayment(paymentUrl: string): void {
   window.location.assign(paymentUrl)
 }
 
+/**
+ * Message affiché quand le guichet n'est pas installé sur le projet.
+ *
+ * Formulé pour ne laisser aucun doute : rien n'a été encaissé. Avant, ce cas
+ * déclenchait un « paiement simulé » ; c'est précisément ce que le produit ne
+ * doit plus jamais faire.
+ */
+export const MESSAGE_CINETPAY_ABSENT =
+  'Le paiement Mobile Money n’est pas encore activé sur ce projet : les clés marchandes CinetPay sont absentes. Aucun montant n’a été encaissé — encaissez en espèces.'
+
+/**
+ * Reconnaît un échec qui signifie « le guichet n'est pas installé ».
+ *
+ * Trois causes, toutes normales avant la mise en service :
+ *  - la fonction répond 503 `provider_not_configured` (secrets absents) ;
+ *  - la fonction n'est pas déployée : la passerelle répond 404 ;
+ *  - Supabase n'est pas configuré sur l'appareil.
+ *
+ * Ce classificateur ne sert qu'à **expliquer** l'échec à l'utilisateur. Il ne
+ * déclenche plus aucun paiement : la simulation a été retirée du produit.
+ */
+export function cinetpayIndisponible(error: unknown): boolean {
+  return (
+    error instanceof PaymentError &&
+    ['provider_not_configured', 'function_not_deployed', 'supabase_unconfigured'].includes(
+      error.code,
+    )
+  )
+}
+
 export interface PaymentState {
   paymentStatus: PaymentStatus
   paymentMethod: PaymentMethod | null
@@ -259,10 +289,11 @@ export async function extractEdgeFunctionError(
       }
       if (body.error?.message) {
         return {
-          // Seuls ces deux états autorisent le parcours simulé : la fonction
-          // n'est pas déployée, ou CinetPay n'a pas encore ses clés. Un 401,
-          // 403, 422 ou 500 conserve son erreur réelle et ne devient jamais
-          // silencieusement une « simulation réussie ».
+          // Seuls ces deux états décrivent un guichet non installé : la fonction
+          // n'est pas déployée, ou CinetPay n'a pas encore ses clés. Le message
+          // affiché est alors explicite (« rien n'a été encaissé »). Un 401,
+          // 403, 422 ou 500 conserve son erreur réelle et n'est jamais présenté
+          // comme un incident de configuration.
           code:
             candidate.context.status === 404
               ? 'function_not_deployed'

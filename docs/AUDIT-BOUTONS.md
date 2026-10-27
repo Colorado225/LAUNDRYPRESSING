@@ -81,8 +81,8 @@ navigateur requis) · `BLOQUÉ` = dépendance externe manquante.
 | Caisse | Encaissement espèces | `CashPanel` → `record_cash_payment` (RPC) → `payment_transactions` + `cash_sessions` | `OK` (RPC + tests) | Montant plafonné au solde, minimum contrôlé, reçu après succès seulement |
 | Caisse | Remboursement | `CashPanel` → `recordRefund` → RPC `record_refund` | `OK` | Réservé au propriétaire, plafonné au remboursable |
 | Caisse | Clôture de caisse | `Caisse` → RPC `close_cash_session` | `OK` | RPC présente, écart calculé côté serveur |
-| Paiement Mobile Money | Bouton CinetPay | `PaymentButton` → `cinetpay-init` → guichet hébergé | `BLOQUÉ` | **Clés marchandes absentes des secrets du projet** : le bouton bascule sur un paiement *simulé* explicite (aucun encaissement). Voir §5 |
-| Paiement | Retour de paiement | `PaymentReturn` → `cinetpay-webhook` → `finalize_cinetpay_payment` | `BLOQUÉ` | Même cause ; la fonction vérifie la signature côté serveur |
+| Paiement Mobile Money | Bouton CinetPay | `PaymentButton` → `cinetpay-status` (masquage) → `cinetpay-init` → guichet hébergé | **CORRIGÉ** | Le bouton n'est plus rendu quand les clés sont absentes ; plus aucun paiement simulé. Voir §4 bis |
+| Paiement | Retour de paiement | `PaymentReturn` → `cinetpay-webhook` → `finalize_cinetpay_payment` | `BLOQUÉ` | Sans clés marchandes le flux réel ne peut pas être exercé ; la fonction vérifie la signature côté serveur |
 | Stock | Article, mouvement, seuil | `Stock` → `stockService` → `stock_items` / `stock_movements` + triggers | `OK` | Archivage au lieu de suppression si historique |
 | Stock | Suppression article | `guard_stock_item_delete()` | `OK` | Refus serveur si mouvement existant |
 | Fournisseurs | Création / désactivation | `Stock` → `stockService` → `suppliers` | `OK` | `guard_supplier_delete()` protège l'historique |
@@ -115,18 +115,51 @@ navigateur requis) · `BLOQUÉ` = dépendance externe manquante.
 - Effet : les nouveaux comptes ne restent plus coincés ; le pressing existant est
   débloqué sans perte de données.
 
+## 4 bis. Défaut confirmé et corrigé : paiement Mobile Money simulé
+
+**Symptôme.** Avant l'installation des clés marchandes, le bouton restait
+affiché ; l'appel à `cinetpay-init` renvoyait 503 et l'interface enchaînait sur
+un « paiement simulé ». Le message précisait bien qu'aucun argent n'avait été
+encaissé, mais un comptoir pressé pouvait lire le toast de succès et croire le
+client réglé. Un faux paiement n'a pas sa place dans une caisse, même annoncé.
+
+**Correction (27 octobre 2026).**
+
+1. **Nouvelle Edge Function `cinetpay-status`** (déployée, `verify_jwt = true`) :
+   elle répond `{ configured, mode, missing[] }` à partir des secrets du projet.
+   Aucune valeur de secret ne sort, uniquement des booléens et des noms de
+   variables.
+2. **`src/services/paymentAvailability.ts`** : sonde + cache de session
+   (10 minutes), avec trois états — configuré, non configuré, inconnu.
+3. **`PaymentButton`** : ne rend plus rien si `configured === false` ; le repli
+   `simulerPaiement` a été supprimé. Un échec pour clés absentes affiche
+   désormais un message explicite (« Aucun montant n'a été encaissé —
+   encaissez en espèces ») et **mémorise** la réponse pour faire disparaître le
+   bouton séance tenante.
+4. **`src/services/paymentSimulation.ts`** supprimé (le classificateur
+   `cinetpayIndisponible` a rejoint `paymentService.ts`, où il ne sert plus qu'à
+   choisir le message).
+5. **`scripts/deploy-fonctions.mjs`** déploie la nouvelle fonction et avertit
+   clairement, en l'absence de clés, que le bouton sera **masqué** (et non
+   simulé).
+
+**Choix assumé :** un état « inconnu » (hors ligne, sonde muette) laisse le
+bouton visible. Masquer une action qui pourrait fonctionner serait une
+régression ; dans ce cas, un clic échoue avec un message explicite, sans jamais
+rien simuler.
+
+**Tests ajoutés** : `src/test/paymentButton.test.tsx` (5 cas : clés absentes →
+rien ; sonde muette + clic → erreur, aucune ligne locale, bouton retiré ;
+guichet installé → redirection réelle ; rôle sans droit ; commande réglée) et
+`src/test/paymentAvailability.test.ts` (10 cas : lecture de la réponse, cache,
+péremption, règle de masquage).
+
 ## 5. Risques identifiés, non corrigés (décision produit requise)
 
-1. **Paiement simulé quand CinetPay n'est pas configuré** (`PaymentButton`).
-   Le code est honnête — le message précise « rien n'a été encaissé » et la
-   commande reste à régler — mais un utilisateur pressé peut croire à un
-   paiement. Deux réglages possibles : masquer le bouton quand les clés
-   marchandes sont absentes, ou exiger une confirmation supplémentaire. À
-   trancher avant la mise en service.
-2. **`platform_admins`** : RLS active, aucune politique. Accès impossible via
+1. **`platform_admins`** : RLS active, aucune politique. Accès impossible via
    l'API REST ; la console de supervision passe exclusivement par les RPC
    `platform_*`. Comportement sûr, à confirmer comme intentionnel.
-3. **Dérive de schéma 027→030** : quatre migrations existent en base mais pas
+2. **Dérive de schéma 027→030** : quatre migrations existent en base mais pas
    dans le dépôt (voir `docs/AUDIT-COURANT.md`). Une installation neuve ne
    reproduit donc pas exactement la base actuelle.
 

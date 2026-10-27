@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { extractEdgeFunctionError, PaymentError } from '@/services/paymentService'
-import { cinetpayIndisponible } from '@/services/paymentSimulation'
+import {
+  MESSAGE_CINETPAY_ABSENT,
+  PaymentError,
+  cinetpayIndisponible,
+  extractEdgeFunctionError,
+} from '@/services/paymentService'
 
 /**
  * En paiement, un incident réseau ne doit jamais se transformer en succès
- * fictif : seul le serveur qui dit explicitement « CinetPay non configuré »
- * ou « fonction absente » autorise le toast de simulation.
+ * fictif. Ce classificateur ne sert plus qu'à **expliquer** l'échec : la
+ * simulation de paiement a été retirée du produit (le bouton disparaît quand
+ * les clés marchandes sont absentes).
  */
 
 describe('erreurs du guichet Mobile Money', () => {
@@ -23,7 +28,7 @@ describe('erreurs du guichet Mobile Money', () => {
     })
 
     expect(erreur.code).toBe('provider_not_configured')
-    // Le code d'erreur, et non son texte, pilote la simulation.
+    // Le code d'erreur, et non son texte, pilote le message affiché.
     expect(cinetpayIndisponible(new PaymentError(erreur.code, erreur.message))).toBe(true)
   })
 
@@ -36,7 +41,7 @@ describe('erreurs du guichet Mobile Money', () => {
     expect(cinetpayIndisponible(new PaymentError(erreur.code, erreur.message))).toBe(true)
   })
 
-  it('ne transforme pas un refus du serveur en simulation', async () => {
+  it('ne classe pas un refus du serveur comme une absence de guichet', async () => {
     const erreur = await extractEdgeFunctionError({
       context: new Response(
         JSON.stringify({ error: { code: 'forbidden', message: 'Action non autorisée.' } }),
@@ -45,14 +50,21 @@ describe('erreurs du guichet Mobile Money', () => {
     })
 
     expect(erreur.code).toBe('forbidden')
-    const { PaymentError } = await import('@/services/paymentService')
     expect(cinetpayIndisponible(new PaymentError(erreur.code, erreur.message))).toBe(false)
   })
 
-  it('ne transforme pas une panne réseau en simulation', async () => {
+  it('ne classe pas une panne réseau comme une absence de guichet', async () => {
     const erreur = await extractEdgeFunctionError(new Error('Connexion interrompue'))
 
     expect(erreur.code).toBe('edge_error')
     expect(cinetpayIndisponible(new Error(erreur.message))).toBe(false)
+    expect(cinetpayIndisponible(new PaymentError('provider_unreachable', erreur.message))).toBe(
+      false,
+    )
+  })
+
+  it('annonce explicitement qu’aucun montant n’a été encaissé', () => {
+    expect(MESSAGE_CINETPAY_ABSENT).toContain('Aucun montant n’a été encaissé')
+    expect(MESSAGE_CINETPAY_ABSENT).not.toMatch(/simul/i)
   })
 })

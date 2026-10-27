@@ -49,7 +49,9 @@ l'heure, le compte utilisé et le message affiché).
 - [ ] Rembourser (propriétaire) → `payment_refunds` créé, plafond respecté
 - [ ] Clôturer la caisse → écart calculé, session verrouillée
 - [ ] Double clic sur « Encaisser » → un seul enregistrement (bouton désactivé pendant l'envoi)
-- [ ] Bouton « Payer par Mobile Money » : noter le comportement obtenu (réel ou simulé) et vérifier qu'aucun encaissement n'est enregistré en mode simulé
+- [ ] Bouton « Payer par Mobile Money » **absent** de la fiche quand les clés CinetPay ne sont pas installées (aucun message de paiement simulé ne doit apparaître)
+- [ ] Après installation des clés + `npm run deploy:fonctions` : le bouton réapparaît (recharger la page ou attendre l'expiration du cache de 10 min)
+- [ ] Avec les clés installées : un clic ouvre bien le guichet CinetPay réel
 
 ## 5. Clients, stock, fournisseurs
 

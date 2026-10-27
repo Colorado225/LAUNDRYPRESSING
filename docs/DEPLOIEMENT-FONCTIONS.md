@@ -1,7 +1,8 @@
 # Déployer les Edge Functions et tester le paiement sans compte marchand
 
-**Objet :** comment envoyer `cinetpay-init` et `cinetpay-webhook` sur le projet
-Supabase, et comment exercer le parcours de paiement complet **en mode essai**,
+**Objet :** comment envoyer `cinetpay-init`, `cinetpay-status` et
+`cinetpay-webhook` sur le projet Supabase, et comment exercer le parcours de
+paiement complet **en mode essai**,
 sans identifiants CinetPay réels. À lire avant toute mise en production : le
 mode essai encaisse de l'argent fictif, il ne doit jamais rester actif chez un
 client.
@@ -104,6 +105,7 @@ Git : c'est un artefact d'inspection, pas la source.
 ```
 Fonctions assemblées :
   • cinetpay-init — 25.1 Ko, 4 module(s)
+  • cinetpay-status — autonomie complète, aucun import
   • cinetpay-webhook — 23.9 Ko, 4 module(s)
 
 • Vérification seule : fichiers écrits dans supabase/functions/.build/
@@ -115,7 +117,29 @@ Fonctions assemblées :
 | Fonction | `verify_jwt` | Pourquoi |
 | --- | --- | --- |
 | `cinetpay-init` | `true` | Appelée par l'application, avec la session du pressing. |
+| `cinetpay-status` | `true` | Interrogée par l'application après connexion. Ne renvoie que des booléens et les **noms** des variables manquantes, jamais une valeur de secret. |
 | `cinetpay-webhook` | `false` | L'appelant est CinetPay, qui ne peut pas fournir de JWT Supabase. Sa sécurité vient du HMAC (`x-token`) et de la reconfirmation du statut auprès de l'API. |
+
+### `cinetpay-status` : pourquoi une troisième fonction
+
+Le bouton « Payer par Mobile Money » ne doit pas être proposé quand le guichet
+ne peut pas s'ouvrir. Or les clés marchandes vivent dans les secrets du projet,
+que le navigateur ne peut pas lire. `cinetpay-status` répond donc :
+
+```json
+{ "configured": false, "mode": "production",
+  "missing": ["CINETPAY_API_KEY", "CINETPAY_SITE_ID", "CINETPAY_SECRET_KEY"] }
+```
+
+L'application mémorise la réponse pour la session (10 minutes) et **masque le
+bouton** quand `configured` vaut `false`. Si la sonde échoue (hors ligne,
+fonction non déployée), l'état reste « inconnu » et le bouton est conservé : on
+ne masque jamais une action qui pourrait fonctionner. Aucun paiement n'est
+simulé dans aucun cas.
+
+Conséquence pratique : après avoir collé les clés et relancé
+`npm run deploy:fonctions`, le bouton réapparaît **au rechargement suivant**, en
+attendant l'expiration du cache de session.
 
 ---
 

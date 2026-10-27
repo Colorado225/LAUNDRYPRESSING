@@ -2,39 +2,64 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LocalOrder } from '@/db/localDb'
+import type { DisponibilitePaiement } from '@/services/paymentAvailability'
 
 /**
- * Bouton « Payer par Mobile Money », avant l'installation de la clé marchande.
+ * Bouton « Payer par Mobile Money » — règle : aucun paiement fictif.
  *
- * Ce que le comptoir doit voir aujourd'hui : ni erreur technique, ni commande
- * marquée payée à tort, mais un message clair disant que le parcours a été
- * **simulé** et que rien n'a été encaissé.
+ * Trois situations sont couvertes :
+ *  1. clés marchandes absentes → le bouton n'est pas rendu du tout ;
+ *  2. disponibilité inconnue (sonde muette) → bouton visible, mais un clic qui
+ *     révèle l'absence de clés affiche une erreur claire **sans rien simuler** ;
+ *  3. guichet installé → le clic ouvre réellement le guichet CinetPay.
  */
 
-vi.mock('@/lib/env', () => ({ isSupabaseConfigured: false }))
+const etat: { disponibilite: DisponibilitePaiement | null; charger: () => Promise<DisponibilitePaiement | null> } =
+  {
+    disponibilite: null,
+    charger: async () => null,
+  }
 
-vi.mock('@/services/paymentService', async () => {
-  const reel = await vi.importActual<typeof import('@/services/paymentService')>(
-    '@/services/paymentService',
-  )
+const toastErreur = vi.fn()
+const toastSucces = vi.fn()
+
+vi.mock('react-hot-toast', () => {
+  const appelable = Object.assign(vi.fn(), { error: toastErreur, success: toastSucces })
+  return { default: appelable }
+})
+
+vi.mock('@/lib/env', () => ({ isSupabaseConfigured: true }))
+
+vi.mock('@/services/paymentAvailability', async () => {
+  const reel =
+    await vi.importActual<typeof import('@/services/paymentAvailability')>(
+      '@/services/paymentAvailability',
+    )
   return {
     ...reel,
-    canInitiatePayment: () => ({
-      ok: false,
-      reason: 'Supabase n’est pas configuré : simulation locale uniquement.',
-    }),
-    initiatePayment: async () => {
-      throw new reel.PaymentError(
-        'supabase_unconfigured',
-        'Supabase n’est pas configuré : simulation locale uniquement.',
-      )
-    },
-    redirectToPayment: () => undefined,
+    // Le composant lit le cache au premier rendu puis interroge le serveur.
+    lireDisponibiliteMemoisee: () => etat.disponibilite,
+    chargerDisponibilitePaiement: () => etat.charger(),
+    memoriserDisponibilite: () => undefined,
+  }
+})
+
+const initiatePayment = vi.fn()
+const redirectToPayment = vi.fn()
+
+vi.mock('@/services/paymentService', async () => {
+  const reel =
+    await vi.importActual<typeof import('@/services/paymentService')>('@/services/paymentService')
+  return {
+    ...reel,
+    initiatePayment: (...args: unknown[]) => initiatePayment(...args),
+    redirectToPayment: (...args: unknown[]) => redirectToPayment(...args),
   }
 })
 
 const { db } = await import('@/db/localDb')
 const { useTenantStore } = await import('@/lib/tenantContext')
+const { MESSAGE_CINETPAY_ABSENT, PaymentError } = await import('@/services/paymentService')
 const { default: PaymentButton } = await import('@/components/PaymentButton')
 
 let racine: Root
@@ -88,15 +113,31 @@ function texte(): string {
   return (hote.textContent ?? '').replace(/\u202f|\u00a0/g, ' ')
 }
 
-function boutonPay(): HTMLButtonElement {
+function boutonPay(): HTMLButtonElement | null {
   const trouve = [...hote.querySelectorAll('button')].find((element) =>
     element.textContent?.includes('Payer par Mobile Money'),
   )
-  if (!trouve) throw new Error('Bouton de paiement introuvable')
-  return trouve as HTMLButtonElement
+  return (trouve as HTMLButtonElement | undefined) ?? null
+}
+
+async function cliquerPayer() {
+  const bouton = boutonPay()
+  if (!bouton) throw new Error('Bouton de paiement introuvable')
+  await act(async () => {
+    bouton.click()
+  })
+  await act(async () => {
+    await new Promise((resoudre) => setTimeout(resoudre, 0))
+  })
 }
 
 beforeEach(async () => {
+  etat.disponibilite = null
+  etat.charger = async () => null
+  toastErreur.mockClear()
+  toastSucces.mockClear()
+  initiatePayment.mockReset()
+  redirectToPayment.mockReset()
   await db.pendingPayments.clear()
   await db.orders.clear()
   useTenantStore.setState({
@@ -110,74 +151,100 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('Bouton Mobile Money sans clé CinetPay', () => {
-  it('simule le paiement au lieu d’afficher une erreur technique', async () => {
+describe('Bouton Mobile Money', () => {
+  it('n’affiche rien quand les clés marchandes sont absentes', async () => {
+    etat.disponibilite = {
+      configured: false,
+      mode: 'production',
+      missing: ['CINETPAY_API_KEY', 'CINETPAY_SITE_ID', 'CINETPAY_SECRET_KEY'],
+    }
+    etat.charger = async () => etat.disponibilite
+
     const order = commande()
     await db.orders.put(order)
     await monter(order)
 
-    await act(async () => {
-      boutonPay().click()
-    })
-    await act(async () => {
-      await new Promise((resoudre) => setTimeout(resoudre, 0))
-    })
-
-    const lignes = await db.pendingPayments.where('orderId').equals(order.id).toArray()
-    expect(lignes).toHaveLength(1)
-    expect(lignes[0].status).toBe('simulated')
-    expect(texte()).toContain('simulé')
-    expect(texte()).toContain('Aucun argent n’a été encaissé')
+    expect(hote.textContent).toBe('')
+    expect(boutonPay()).toBeNull()
 
     demonter()
   })
 
-  it('laisse la commande à régler', async () => {
+  it('disparaît après que le serveur a révélé l’absence de clés, sans rien simuler', async () => {
+    // Sonde muette : le bouton reste proposé (on ne masque pas un paiement qui
+    // pourrait fonctionner).
+    etat.charger = async () => null
+    initiatePayment.mockRejectedValue(
+      new PaymentError('provider_not_configured', 'CinetPay n’est pas configuré.'),
+    )
+
     const order = commande()
     await db.orders.put(order)
     await monter(order)
 
-    await act(async () => {
-      boutonPay().click()
-    })
-    await act(async () => {
-      await new Promise((resoudre) => setTimeout(resoudre, 0))
-    })
+    expect(boutonPay()).not.toBeNull()
 
-    const locale = await db.orders.get(order.id)
-    expect(locale?.paymentStatus).toBe('pending')
-    expect(locale?.paymentMethod).toBeNull()
+    await cliquerPayer()
+
+    // Message explicite, et aucune trace de paiement fictif.
+    expect(toastErreur).toHaveBeenCalledWith(MESSAGE_CINETPAY_ABSENT, expect.anything())
+    expect(toastSucces).not.toHaveBeenCalled()
+    expect(await db.pendingPayments.count()).toBe(0)
+    expect((await db.orders.get(order.id))?.paymentStatus).toBe('pending')
+
+    // Le bouton est retiré immédiatement (la réponse serveur est mémorisée).
+    expect(hote.textContent).toBe('')
+    expect(boutonPay()).toBeNull()
 
     demonter()
   })
 
-  it('rappelle une simulation déjà faite après rechargement', async () => {
-    const order = commande()
-    await db.pendingPayments.put({
-      id: 'paiement-simule',
-      orderId: order.id,
-      tenantId: order.tenantId,
-      amount: 15000,
-      method: 'wave',
-      status: 'simulated',
-      reference: 'SIM-20261023140509',
-      createdAt: '2026-10-23T14:05:09.000Z',
-      lastError: null,
+  it('ouvre réellement le guichet quand les clés sont installées', async () => {
+    etat.disponibilite = { configured: true, mode: 'test', missing: [] }
+    etat.charger = async () => etat.disponibilite
+    initiatePayment.mockResolvedValue({
+      paymentUrl: 'https://checkout.cinetpay.com/paiement/exemple',
+      transactionId: 'TX-12345',
+      chargedAmount: 15000,
+      orderAmount: 15000,
     })
 
+    const order = commande()
+    await db.orders.put(order)
     await monter(order)
 
-    expect(texte()).toContain('SIM-20261023140509')
-    expect(texte()).toContain('simulé')
+    expect(texte()).toContain('Payer par Mobile Money')
+
+    await cliquerPayer()
+
+    expect(initiatePayment).toHaveBeenCalledTimes(1)
+    expect(redirectToPayment).toHaveBeenCalledWith('https://checkout.cinetpay.com/paiement/exemple')
+    expect(toastErreur).not.toHaveBeenCalled()
+    expect(await db.pendingPayments.count()).toBe(0)
 
     demonter()
   })
 
   it('n’affiche rien pour un rôle sans droit d’encaisser', async () => {
+    etat.disponibilite = { configured: true, mode: 'production', missing: [] }
     useTenantStore.setState({ role: 'artisan' })
+
     await monter(commande())
 
     expect(hote.textContent).toBe('')
+
+    demonter()
+  })
+
+  it('signale une commande déjà réglée sans proposer de nouveau paiement', async () => {
+    etat.disponibilite = { configured: true, mode: 'production', missing: [] }
+
+    const order = commande({ paymentStatus: 'paid' })
+    await db.orders.put(order)
+    await monter(order)
+
+    expect(texte()).toContain('Commande réglée')
+    expect(boutonPay()).toBeNull()
 
     demonter()
   })
