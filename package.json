@@ -22,7 +22,13 @@
     "typecheck": "tsc --noEmit",
     "recette": "node scripts/recette.mjs",
     "simulateur": "node scripts/cinetpay-simule.mjs",
-    "deploy:fonctions": "node scripts/deploy-fonctions.mjs"
+    "deploy:fonctions": "node scripts/deploy-fonctions.mjs",
+    "e2e": "playwright test",
+    "e2e:demo": "playwright test --project=demo --project=demo-mobile",
+    "e2e:reel": "playwright test --project=reel",
+    "e2e:ui": "playwright test --ui",
+    "e2e:install": "playwright install --with-deps chromium",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",
@@ -43,6 +49,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.64.1",
     "@types/node": "26.6.5",
     "@types/qrcode": "^1.5.5",
     "@types/react": "19.3.0",

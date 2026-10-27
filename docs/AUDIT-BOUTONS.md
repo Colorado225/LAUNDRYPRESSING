@@ -165,9 +165,10 @@ péremption, règle de masquage).
 
 ## 6. Ce qui n'a pas pu être testé, et pourquoi
 
-- **Parcours navigateur de bout en bout** : aucun outil E2E n'est installé
-  (ni Playwright ni Cypress) et l'environnement d'audit n'a pas d'accès sortant
-  vers `supabase.co` ; les tests existants s'appuient sur Dexie/`fake-indexeddb`.
+- **Parcours navigateur contre un vrai Supabase** : l'environnement d'audit
+  n'a pas d'accès sortant vers `supabase.co`. Les parcours hors ligne sont en
+  revanche couverts depuis le 27/10 par de vrais scénarios navigateur
+  (Playwright) — voir §7 ci-dessous.
 - **Authentification réelle, Edge Functions en production, paiement CinetPay** :
   dépendent de secrets et d'un navigateur.
 - **Multi-appareils** : nécessite deux sessions réelles sur le même pressing.
@@ -175,3 +176,47 @@ péremption, règle de masquage).
 
 Ces scénarios figurent dans `docs/RECETTE-BOUTONS.md` sous forme de checklist
 manuelle à cocher sur l'environnement de recette.
+
+## 7. Couverture navigateur (ajoutée après l'audit, le 27/10/2026)
+
+L'audit reprochait une chose précise : « les tests s'appuient sur
+Dexie/`fake-indexeddb`, aucun vrai navigateur ne clique ». C'est corrigé.
+
+**Outils** : `@playwright/test` (Chromium), `playwright.config.ts`,
+scénarios dans `e2e/`.
+
+| Projet | Cible | Ce qu'il prouve |
+| --- | --- | --- |
+| `demo` (Desktop Chrome) | Vite local, variables Supabase **vides** | Connexion démonstration, création de commande, refus de validation, double commande, encaissement (acompte et solde), reçu, page de caisse, absence de Mobile Money |
+| `demo-mobile` (Pixel 7) | idem | Les mêmes gestes sur le format réellement utilisé au comptoir |
+| `reel` | `E2E_BASE_URL` + compte de recette | Écriture serveur, relecture après rechargement, second appareil ; **ignoré** si les variables manquent |
+
+**Ce que les scénarios vérifient** (règle de l'audit : jamais un *toast* comme
+preuve) : l'URL attendue, le contenu réellement réaffiché **après rechargement
+complet** (donc depuis IndexedDB en mode démonstration), le solde recalculé, la
+disparition du bouton d'encaissement quand la commande est soldée, et
+l'absence de toute mention de paiement simulé.
+
+**Résultat de l'exécution locale du 27/10/2026** : `demo` 7/7, `demo-mobile`
+7/7 (`e2e:demo`, 66 s au total, Chromium sans GPU). `reel` : 2 scénarios
+**ignorés** faute de cible — ils n'ont donc jamais tourné, et ne sont pas
+annoncés comme vérifiés.
+
+**Deux limites annoncées, pas masquées :**
+
+1. Les scénarios tournent avec `reducedMotion: 'reduce'`. L'application gère ce
+   profil (`src/index.css`), mais c'est aussi le seul profil fiable ici : dans
+   le Chromium sans GPU de cet environnement, un clic souris émis pendant que la
+   carte se soulève (`perspective() rotateX() scale()` sur l'ancêtre) **et** que
+   le bouton se soulève à son tour est remis au conteneur parent et perdu
+   (`elementFromPoint` désigne pourtant le bouton). Ce comportement est
+   reproductible, indépendant du viewport et du point cliqué, et disparaît dès
+   que l'une des deux transformations est coupée — ce que fait justement le bloc
+   `prefers-reduced-motion`. **Le profil « animations activées » n'a donc pas
+   été exercé** ; il mérite un essai sur un Chrome avec GPU avant d'être déclaré
+   sain.
+2. Le projet `reel` écrit dans une vraie base et n'a pas été exécuté ici.
+
+**CI** : le job `bout_en_bout` de `.github/workflows/ci.yml` rejoue `demo` +
+`demo-mobile` à chaque poussée (`npm run e2e:demo`), avec Chromium mis en cache
+et rapport/traces publiés en artefact en cas d'échec.

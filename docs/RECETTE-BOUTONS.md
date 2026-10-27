@@ -103,6 +103,49 @@ l'heure, le compte utilisé et le message affiché).
 - [ ] Impression d'un reçu → mise en page correcte (pas de QR coupé)
 - [ ] Bouton retour Android → navigation cohérente, pas de sortie inattendue
 
+## 10 bis. Scénarios navigateur automatisés (Playwright)
+
+Ces scénarios ne remplacent pas la checklist ci-dessus : ils la **précèdent**.
+Ils tournent à chaque poussée (job `bout_en_bout` de la CI) et sur le poste.
+
+```bash
+npm run e2e:install     # une seule fois : Chromium + dépendances système
+npm run e2e:demo        # projets « demo » + « demo-mobile », sans backend ni secret
+npm run typecheck:e2e   # types des scénarios eux-mêmes
+```
+
+Contre un vrai projet : renseigner `E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD`
+puis `npm run e2e:reel`. **Sans ces trois variables, les scénarios sont
+ignorés** — un scénario qui ne peut pas tourner doit être visiblement sauté.
+
+### Ce que les scénarios couvrent déjà (mode démonstration)
+
+- [x] Connexion par l'écran « Choisir le pressing » → `/commandes`
+- [x] Création d'une commande en trois étapes, deux lignes, total calculé
+- [x] Refus d'une commande sans nom de client, sans quitter le formulaire
+- [x] Deux commandes distinctes, chacune avec ses propres lignes
+- [x] Recherche dans la liste, y compris une recherche sans résultat
+- [x] Persistance vérifiée **après rechargement complet** (donc IndexedDB)
+- [x] Encaissement d'un acompte → reçu → reste à payer → rechargement
+- [x] Règlement immédiat (`?regler=1`) : panneau espèces déjà déplié
+- [x] Bouton d'encaissement retiré quand la commande est soldée
+- [x] Page de caisse : l'encaissement du jour apparaît
+- [x] Aucune mention ni bouton de paiement Mobile Money sans projet configuré
+- [x] Les mêmes parcours sur un format téléphone (Pixel 7)
+
+### Ce qui reste à faire à la main
+
+- [ ] **Profil « animations activées »** : les scénarios tournent en
+  `reducedMotion: 'reduce'` (voir `playwright.config.ts`). Dans un Chromium
+  sans GPU, le clic souris est perdu quand la carte **et** le bouton se
+  soulèvent en même temps. À rejouer une fois sur un Chrome avec GPU pour
+  savoir s'il s'agit d'un défaut réel ou d'une limite de l'environnement.
+- [ ] Authentification réelle (e-mail + mot de passe) et confirmation d'e-mail
+- [ ] Synchronisation serveur, conflits, RLS : projet `reel`
+- [ ] Second appareil sur le même pressing : projet `reel`
+- [ ] Coupe réseau physique, mode avion, installation PWA
+- [ ] Paiement CinetPay réel (guichet → webhook → statut)
+
 ## 11. Clôture de recette
 
 - [ ] Consigner les échecs dans `docs/AUDIT-BOUTONS.md` (statut `BUG CONFIRMÉ`)

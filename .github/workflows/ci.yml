@@ -8,11 +8,17 @@
 #    `package-lock.json`, reproductible, et échec immédiat si le verrou est
 #    désynchronisé de `package.json` ;
 #  - Node 22 : même version majeure que le poste de développement ;
-#  - deux jobs : l'application (types, style, tests, build) et le SQL réel
-#    (migrations, RLS, rôles, verrou optimiste) sur un PostgreSQL 16 jetable.
-#    Le second n'a besoin ni de Supabase ni de Docker : le fichier
+#  - trois jobs : l'application (types, style, tests, build), le SQL réel
+#    (migrations, RLS, rôles, verrou optimiste) sur un PostgreSQL 16 jetable,
+#    et les parcours navigateur (Playwright, mode démonstration) ;
+#    le job SQL n'a besoin ni de Supabase ni de Docker : le fichier
 #    `supabase/tests/local/00_bootstrap.sql` recrée l'environnement Supabase
 #    minimal (rôles, schéma `auth`, `auth.uid()`) ;
+#  - le job navigateur ne rejoue que les projets `demo` et `demo-mobile` : ils
+#    démarrent Vite avec un projet Supabase volontairement vide, donc sans
+#    secret ni accès réseau. Le projet `reel` (vrai Supabase, variables
+#    `E2E_BASE_URL`/`E2E_EMAIL`/`E2E_PASSWORD`) reste hors CI : il exige des
+#    secrets et une base de recette, et il est explicitement ignoré sinon ;
 #  - `concurrency` : une nouvelle poussée annule la vérification précédente de
 #    la même branche, inutile dès qu'elle est obsolète.
 #
@@ -65,6 +71,53 @@ jobs:
 
       - name: Construire l'application
         run: npm run build
+
+  bout_en_bout:
+    name: Parcours navigateur (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      # Le navigateur n'est pas dans `node_modules` : on le télécharge une fois
+      # et on le garde tant que `package-lock.json` ne change pas.
+      - name: Mettre en cache le Chromium de Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Installer Chromium et ses dépendances système
+        run: npx playwright install --with-deps chromium
+
+      - name: Vérifier les types des scénarios
+        run: npm run typecheck:e2e
+
+      # Le serveur Vite des scénarios (port 3100) est démarré par Playwright
+      # lui-même : `webServer` dans playwright.config.ts.
+      - name: Rejouer les parcours en mode démonstration
+        run: npm run e2e:demo
+
+      - name: Publier le rapport et les traces si un scénario échoue
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-playwright
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   sql:
     name: SQL réel (PostgreSQL 16)

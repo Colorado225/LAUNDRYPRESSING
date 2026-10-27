@@ -54,6 +54,10 @@ Le serveur Vite écoute sur `0.0.0.0:3000`. Pour un environnement réellement co
 | `npm run typecheck` | Vérification TypeScript |
 | `npm run lint` | ESLint |
 | `npm test` | Suite Vitest |
+| `npm run e2e:install` | Installer Chromium pour les scénarios navigateur (une fois) |
+| `npm run e2e:demo` | Scénarios navigateur hors ligne (bureau + téléphone) |
+| `npm run e2e:reel` | Scénarios navigateur contre un vrai projet (`E2E_BASE_URL`, `E2E_EMAIL`, `E2E_PASSWORD`) |
+| `npm run typecheck:e2e` | Vérification TypeScript des scénarios |
 | `npm run build` | Typecheck et build PWA |
 | `npm run preview` | Prévisualisation du build |
 | `npm run setup:check` | Vérifier la configuration `.env` |

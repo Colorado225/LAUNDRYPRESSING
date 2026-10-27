@@ -41,3 +41,9 @@ supabase/.temp
 
 # Assemblage des Edge Functions (scripts/deploy-fonctions.mjs --verifier)
 supabase/functions/.build/
+
+# Playwright : rapports, traces et résultats (régénérés à chaque exécution)
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
