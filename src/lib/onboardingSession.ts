@@ -13,16 +13,16 @@
  */
 
 /** Pressings dont la configuration a été confirmée pendant cette session. */
-const onboardingTermineEnSession = new Set<string>()
+const onboardingTermineEnSession = new Set<string>();
 
 /** Vrai si la configuration de ce pressing a déjà été confirmée en session. */
 export function estTermineEnSession(tenantId: string): boolean {
-  return onboardingTermineEnSession.has(tenantId)
+  return onboardingTermineEnSession.has(tenantId);
 }
 
 /** Mémorise qu'un pressing vient de terminer sa configuration. */
 export function marquerTermineEnSession(tenantId: string): void {
-  onboardingTermineEnSession.add(tenantId)
+  onboardingTermineEnSession.add(tenantId);
 }
 
 /**
@@ -32,6 +32,6 @@ export function marquerTermineEnSession(tenantId: string): void {
  * verrait jamais l'étape de configuration, et les tests ne seraient pas isolés.
  */
 export function oublierOnboardingEnSession(tenantId?: string): void {
-  if (tenantId) onboardingTermineEnSession.delete(tenantId)
-  else onboardingTermineEnSession.clear()
+  if (tenantId) onboardingTermineEnSession.delete(tenantId);
+  else onboardingTermineEnSession.clear();
 }
