@@ -65,7 +65,14 @@ test.describe('Commandes — parcours comptoir hors ligne', () => {
     await page.getByRole('button', { name: 'Précédent' }).click()
     await choisirParcours(page, 'blanchisserie')
     await expect(page.getByRole('button', { name: 'Ajouter Drap' })).toBeVisible()
-    // Le lot au kilo existe dès l'arrivée : poids et tarif saisissables.
+    // Le linge se compte au vêtement par défaut : aucun poids à inventer.
+    await expect(page.getByRole('button', { name: 'Facturer au vêtement' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await expect(page.getByLabel('Quantité Lavage au kilo')).toHaveCount(0)
+    // Le kilo reste à un clic : le lot apparaît alors avec son poids et son tarif.
+    await page.getByRole('button', { name: 'Facturer au kilo' }).click()
     await expect(page.getByLabel('Quantité Lavage au kilo')).toBeVisible()
   })
 

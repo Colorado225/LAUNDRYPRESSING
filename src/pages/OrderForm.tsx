@@ -160,10 +160,6 @@ export default function OrderForm() {
   // `null` = choix par défaut, déduit du catalogue ; une valeur = choix explicite
   // du comptoir, que l'arrivée du catalogue ne doit plus écraser.
   const [modeManuel, setModeManuel] = useState<'piece' | 'kilo' | null>(null)
-  // Le catalogue est chargé (ou a échoué) : tant qu'on ne sait pas ce qui est
-  // configuré, on n'ouvre aucun panier — sinon un lot au kilo apparaîtrait
-  // puis resterait là alors que la blanchisserie se compte au vêtement.
-  const [cataloguePret, setCataloguePret] = useState(false)
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
 
   const [errors, setErrors] = useState<string[]>([])
@@ -182,9 +178,8 @@ export default function OrderForm() {
         if (!active) return
         setActivites(configuration.activities)
         setPrestations(configuration.services)
-        setCataloguePret(true)
       })
-      .catch(() => setCataloguePret(true))
+      .catch(() => undefined)
     return () => {
       active = false
     }
@@ -346,13 +341,13 @@ export default function OrderForm() {
   // articles : le comptoir voit tout de suite où saisir le poids et le tarif.
   useEffect(() => {
     if (etape !== 1 || parcours !== 'blanchisserie' || modeBlanchisserie !== 'kilo') return
-    if (!cataloguePret || lotInitialise.current) return
+    if (lotInitialise.current) return
     lotInitialise.current = true
     assurerLot()
     // `assurerLot` ne dépend que de l'état courant ; l'effet ne doit se
     // déclencher qu'une fois par entrée dans l'écran.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etape, parcours, modeBlanchisserie, cataloguePret])
+  }, [etape, parcours, modeBlanchisserie])
 
   // Prix par défaut du lot quand le catalogue arrive après l'écran.
   useEffect(() => {
@@ -996,64 +991,63 @@ export default function OrderForm() {
           <div className="grid gap-3 sm:grid-cols-2">
             {parcours === 'blanchisserie' ? (
               <div className="space-y-3">
-                {prestationsPiece.length > 0 && (
-                  <div>
-                    <span className="text-xs font-semibold text-slate-600">Facturation</span>
-                    <div
-                      role="group"
-                      aria-label="Mode de facturation de la blanchisserie"
-                      className="mt-1.5 grid gap-2 sm:grid-cols-2"
+                <div>
+                  <span className="text-xs font-semibold text-slate-600">Facturation</span>
+                  <div
+                    role="group"
+                    aria-label="Mode de facturation de la blanchisserie"
+                    className="mt-1.5 grid gap-2 sm:grid-cols-2"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={modeBlanchisserie === 'piece'}
+                      aria-label="Facturer au vêtement"
+                      onClick={() => changerModeBlanchisserie('piece')}
+                      className={`min-h-12 rounded-xl border px-3 text-sm font-semibold ${
+                        modeBlanchisserie === 'piece'
+                          ? 'border-brand-teal bg-brand-teal/5 text-brand-teal'
+                          : 'border-slate-300 text-slate-700 hover:border-brand-teal'
+                      }`}
                     >
-                      <button
-                        type="button"
-                        aria-pressed={modeBlanchisserie === 'piece'}
-                        aria-label="Facturer au vêtement"
-                        onClick={() => changerModeBlanchisserie('piece')}
-                        className={`min-h-12 rounded-xl border px-3 text-sm font-semibold ${
-                          modeBlanchisserie === 'piece'
-                            ? 'border-brand-teal bg-brand-teal/5 text-brand-teal'
-                            : 'border-slate-300 text-slate-700 hover:border-brand-teal'
-                        }`}
-                      >
-                        Au vêtement (nombre de pièces)
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={modeBlanchisserie === 'kilo'}
-                        aria-label="Facturer au kilo"
-                        onClick={() => changerModeBlanchisserie('kilo')}
-                        className={`min-h-12 rounded-xl border px-3 text-sm font-semibold ${
-                          modeBlanchisserie === 'kilo'
-                            ? 'border-brand-teal bg-brand-teal/5 text-brand-teal'
-                            : 'border-slate-300 text-slate-700 hover:border-brand-teal'
-                        }`}
-                      >
-                        Au kilo (linge pesé)
-                      </button>
-                    </div>
+                      Au vêtement (nombre de pièces)
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={modeBlanchisserie === 'kilo'}
+                      aria-label="Facturer au kilo"
+                      onClick={() => changerModeBlanchisserie('kilo')}
+                      className={`min-h-12 rounded-xl border px-3 text-sm font-semibold ${
+                        modeBlanchisserie === 'kilo'
+                          ? 'border-brand-teal bg-brand-teal/5 text-brand-teal'
+                          : 'border-slate-300 text-slate-700 hover:border-brand-teal'
+                      }`}
+                    >
+                      Au kilo (linge pesé)
+                    </button>
                   </div>
-                )}
+                </div>
+
                 {modeBlanchisserie === 'kilo' ? (
-                <label className="block space-y-1.5">
-                <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
-                <select
-                  value={prestationKilo}
-                  onChange={(evenement) => changerPrestationKilo(evenement.target.value)}
-                  aria-label="Prestation au kilo"
-                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
-                >
-                  <option value="">Lavage au kilo (saisie libre)</option>
-                  {prestationsKilo.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.serviceName}
-                      {service.unitPrice ? ` — ${formatFcfa(service.unitPrice)}/kg` : ''}
-                    </option>
-                  ))}
-                </select>
-                <span className="block text-xs text-slate-500">
-                  Le tarif configuré est proposé ; celui saisi dans le panier fait foi.
-                </span>
-                </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
+                    <select
+                      value={prestationKilo}
+                      onChange={(evenement) => changerPrestationKilo(evenement.target.value)}
+                      aria-label="Prestation au kilo"
+                      className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                    >
+                      <option value="">Lavage au kilo (saisie libre)</option>
+                      {prestationsKilo.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.serviceName}
+                          {service.unitPrice ? ` — ${formatFcfa(service.unitPrice)}/kg` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="block text-xs text-slate-500">
+                      Le tarif configuré est proposé ; celui saisi dans le panier fait foi.
+                    </span>
+                  </label>
                 ) : (
                   <div className="rounded-xl border border-slate-200 p-3">
                     <span className="text-xs font-semibold text-slate-600">Prix par article</span>
@@ -1063,12 +1057,24 @@ export default function OrderForm() {
                     </p>
                     <ul className="mt-2 space-y-1 text-sm text-slate-700">
                       {articles.map((article) => {
-                        const tarif = prestationPourArticle(prestationsPiece, article.type, article.libelle)
+                        const tarif = prestationPourArticle(
+                          prestationsPiece,
+                          article.type,
+                          article.libelle,
+                        )
                         return (
                           <li key={article.type} className="flex justify-between gap-3">
                             <span>{article.libelle}</span>
-                            <span className={tarif?.unitPrice ? 'font-semibold text-brand-navy' : 'text-slate-500'}>
-                              {tarif?.unitPrice ? `${formatFcfa(tarif.unitPrice)}/pièce` : 'prix au comptoir'}
+                            <span
+                              className={
+                                tarif?.unitPrice
+                                  ? 'font-semibold text-brand-navy'
+                                  : 'text-slate-500'
+                              }
+                            >
+                              {tarif?.unitPrice
+                                ? `${formatFcfa(tarif.unitPrice)}/pièce`
+                                : 'prix au comptoir'}
                             </span>
                           </li>
                         )

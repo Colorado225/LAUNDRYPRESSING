@@ -220,14 +220,21 @@ export function prestationPourArticle(
 }
 
 /**
- * Mode de facturation proposé d'emblée en blanchisserie : **à la pièce** dès
- * qu'un prix par article existe, au kilo sinon. Le comptoir peut toujours
- * basculer vers l'autre mode ; ce choix ne fait que décider de l'écran affiché.
+ * Mode de facturation proposé d'emblée en blanchisserie.
+ *
+ * Le **comptage au vêtement** est le geste normal : il ne demande aucune
+ * configuration préalable, un article sans forfait se réglant au comptoir.
+ * Le kilo n'est proposé d'emblée que dans un seul cas : la boutique n'a
+ * configuré **que** des prestations au kilo (elle travaille réellement au
+ * poids). Le comptoir peut toujours basculer ; ce choix ne décide que de
+ * l'écran affiché au départ.
  */
 export function modeFacturationParDefaut(
   services: readonly TenantServiceOffering[],
 ): 'piece' | 'kilo' {
-  return servicesALaPiece(services).length > 0 ? 'piece' : 'kilo'
+  const nombreALaPiece = servicesALaPiece(services).length
+  const nombreAuKilo = servicesAuKilo(services).length
+  return nombreALaPiece === 0 && nombreAuKilo > 0 ? 'kilo' : 'piece'
 }
 
 /** Présentation des deux cartes de l'écran 1. */

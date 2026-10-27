@@ -205,10 +205,11 @@ describe('blanchisserie facturée au vêtement', () => {
     expect(prestationPourArticle([], 'DRAP')).toBeNull()
   })
 
-  it('choisit le comptage au vêtement dès qu’un prix par article existe', () => {
+  it('choisit le comptage au vêtement, sauf boutique qui ne travaille qu’au kilo', () => {
     expect(modeFacturationParDefaut([drap, kilo])).toBe('piece')
+    // Aucun catalogue : on compte quand même, les prix se saisissent au panier.
+    expect(modeFacturationParDefaut([])).toBe('piece')
+    // Seule exception : la boutique n'a configuré que du pesage.
     expect(modeFacturationParDefaut([kilo])).toBe('kilo')
-    // Aucun catalogue : on garde le comportement historique, le lot pesé.
-    expect(modeFacturationParDefaut([])).toBe('kilo')
   })
 })

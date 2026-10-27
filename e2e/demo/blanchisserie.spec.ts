@@ -2,12 +2,17 @@ import { expect, test } from '@playwright/test'
 import { creerCommande, entrerEnDemonstration } from '../helpers'
 
 /**
- * Blanchisserie : linge pesé, facturé au kilo.
+ * Blanchisserie : le linge se compte **au vêtement**, le kilo reste une option.
  *
- * Le scénario vérifie la chaîne complète du second parcours : composition du lot
- * saisie à la grille (drap, serviette), poids et tarif au kilo, enregistrement,
- * puis relecture **après rechargement** pour prouver que la ligne est bien
- * persistée avec son unité et sa composition — et non seulement affichée.
+ * Deux scénarios, un par facturation :
+ *
+ *  - au vêtement (défaut) : chaque tuile ajoute une pièce facturée à son prix
+ *    d'article, sans aucun poids à inventer ;
+ *  - au kilo (bascule explicite) : la composition du lot, le poids et le
+ *    tarif/kg sont conservés.
+ *
+ * Dans les deux cas la commande est relue **après rechargement** pour prouver
+ * que la ligne est persistée avec son unité — et non seulement affichée.
  */
 
 test.describe('Commandes — parcours blanchisserie', () => {
@@ -47,6 +52,8 @@ test.describe('Commandes — parcours blanchisserie', () => {
   test('le poids saisi fait varier le total au kilo', async ({ page }) => {
     await page.getByRole('link', { name: 'Nouvelle commande' }).first().click()
     await page.getByRole('button', { name: 'Choisir Blanchisserie' }).click()
+    // Le comptage des vêtements est le mode par défaut : on demande le pesage.
+    await page.getByRole('button', { name: 'Facturer au kilo' }).click()
 
     await page.getByRole('button', { name: 'Ajouter Drap' }).click()
     await page.getByLabel('Tarif au kilo Lavage au kilo (FCFA)').fill('2500')
@@ -67,5 +74,30 @@ test.describe('Commandes — parcours blanchisserie', () => {
     await expect(page).toHaveURL(/\/commandes\/nouvelle$/)
     // Un lot au kilo n'a pas de « prix unitaire » : le refus parle en kilos.
     await expect(page.getByRole('alert')).toContainText('tarif au kilo')
+  })
+
+  test('compte les vêtements et facture le prix de chaque article', async ({ page }) => {
+    const identifiant = await creerCommande(page, {
+      client: 'Hôtel Ivoire',
+      telephone: '05 05 05 05 07',
+      parcours: 'blanchisserie',
+      articles: [
+        { libelle: 'Drap', quantite: 2, prixUnitaire: 500 },
+        { libelle: 'Serviette', quantite: 1, prixUnitaire: 300 },
+      ],
+    })
+
+    // 2 × 500 + 1 × 300 = 1 300 FCFA, sans aucun poids saisi.
+    await expect(page.getByRole('heading', { name: 'Hôtel Ivoire' })).toBeVisible()
+    await expect(page.getByText(/1\s?300\s?FCFA/).first()).toBeVisible()
+    await expect(page.getByText(/500\s?FCFA\/pièce/).first()).toBeVisible()
+    // Aucune ligne au kilo ne doit subsister dans une commande comptée.
+    await expect(page.getByText(/FCFA\/kg/)).toHaveCount(0)
+
+    // --- Rechargement complet : la donnée vient d'IndexedDB ---------------
+    await page.reload()
+    await expect(page).toHaveURL(new RegExp(`/commandes/${identifiant}$`))
+    await expect(page.getByText(/1\s?300\s?FCFA/).first()).toBeVisible()
+    await expect(page.getByText(/500\s?FCFA\/pièce/).first()).toBeVisible()
   })
 })

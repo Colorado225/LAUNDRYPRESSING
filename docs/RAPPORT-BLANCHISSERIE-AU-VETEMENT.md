@@ -77,9 +77,10 @@ Fichiers : `src/services/tenantServices.ts`, `src/pages/ServicesPressing.tsx`.
 Fichiers : `src/lib/orderServices.ts` (règles pures), `src/pages/OrderForm.tsx`
 (écran), sans toucher au moteur d'enregistrement.
 
-- **Mode par défaut déduit du catalogue**, sans état intermédiaire : dès qu'une
-  prestation `PIECE` existe en blanchisserie, l'écran compte les vêtements ;
-  sinon il conserve le lot pesé historique ;
+- **Le comptage au vêtement est le mode par défaut**, y compris quand rien n'est
+  configuré : un article sans forfait se règle au comptoir, alors qu'inventer un
+  poids n'a aucun sens. Seule exception, une boutique qui n'a déclaré **que** des
+  prestations au kilo s'ouvre directement sur le pesage (`modeFacturationParDefaut`) ;
 - **chaque appui sur une tuile ajoute une pièce** ; le prix unitaire vient de la
   prestation du **même nom** (rapprochement sans casse ni accent, tolérant sur
   les pluriels : « Serviette » ↔ « serviettes »). Aucun rapprochement
@@ -87,7 +88,7 @@ Fichiers : `src/lib/orderServices.ts` (règles pures), `src/pages/OrderForm.tsx`
   « prix au comptoir » ;
 - un tableau **« Prix par article »** liste, avant la grille, le tarif retenu pour
   chaque article — le comptoir voit ce qui est configuré et ce qui ne l'est pas ;
-- **bascule « Au kilo (linge pesé) »** : le lot réapparaît (poids + tarif/kg),
+- **bascule toujours visible « Au kilo (linge pesé) »** : le lot réapparaît (poids + tarif/kg),
   avec le tarif au kilo configuré pré-rempli. Les deux modes ne partagent pas
   leurs lignes : changer de mode vide le panier, avec **confirmation** s'il y a
   quelque chose à perdre ;
@@ -101,18 +102,17 @@ Fichiers : `src/lib/orderServices.ts` (règles pures), `src/pages/OrderForm.tsx`
 
 ### Détail technique : pas de lot fantôme
 
-Le lot pesé ne doit pas être créé puis abandonné quand le catalogue arrive après
-l'affichage. Le mode est donc **calculé** (`modeManuel ?? modeFacturationParDefaut(...)`)
-et la création du lot attend que le catalogue soit chargé (`cataloguePret`).
-Sans catalogue configuré, le comportement historique est conservé : lot au kilo
-immédiat.
+Le mode est **calculé** (`modeManuel ?? modeFacturationParDefaut(...)`), jamais
+semé par un état par défaut : le lot pesé n'est créé que si le mode effectif est
+le kilo, et l'arrivée tardive du catalogue ne peut donc plus laisser un lot
+abandonné au panier.
 
 ## 6. Tests
 
 | Fichier | Ce qui est verrouillé |
 | --- | --- |
 | `src/test/orderServices.test.ts` (+4 tests, 19 au total) | rapprochement article ↔ prestation (casse, pluriel), refus de rapprocher une prestation `KG`, `null` sans forfait, choix du mode par défaut |
-| `src/test/orderFormBlanchisserie.test.tsx` (nouveau, 6 tests) | ouverture sur le comptage ; prix par article affichés ; 2 × Drap + 1 × Serviette = 1 300 FCFA ; enregistrement en lignes `PIECE` (quantité 2, prix 500, total 1 000, `tenantServiceId` conservé) ; refus d'un article à 0 FCFA ; bascule kilo ↔ vêtement |
+| `src/test/orderFormBlanchisserie.test.tsx` (nouveau, 7 tests) | ouverture sur le comptage ; prix par article affichés ; 2 × Drap + 1 × Serviette = 1 300 FCFA ; enregistrement en lignes `PIECE` (quantité 2, prix 500, total 1 000, `tenantServiceId` conservé) ; refus d'un article à 0 FCFA ; bascule kilo ↔ vêtement ; boutique « kilo uniquement » ouverte sur le pesage |
 | `src/test/servicesPressing.test.tsx` (+4 tests, 6 au total) | prix 500 accepté sur une prestation `PIECE`, affichage `500 FCFA/pièce` vs `prix saisi au comptoir`, refus hors bornes (99 999 999) sans appel au service |
 
 Porte complète au moment de la livraison :
@@ -125,10 +125,29 @@ Porte complète au moment de la livraison :
 ## 7. Ce qui n'a pas été vérifié
 
 - **Aucun navigateur dans l'environnement de développement** : pas de capture
-  d'écran, et les tests Playwright n'ont pas été rejoués. Les parcours ci-dessus
-  sont couverts par les tests jsdom, pas par une recette navigateur.
+  d'écran, et les tests Playwright n'ont **pas** été rejoués. Les parcours
+  ci-dessus sont couverts par les tests jsdom, pas par une recette navigateur.
+  Les scénarios E2E ont néanmoins été mis à jour (§ 8) et compilent
+  (`npx tsc -p tsconfig.e2e.json`), mais **ils n'ont pas été exécutés**.
 - **Aucune commande réelle créée en production** : la contrainte est vérifiée
   (définition SQL ci-dessus) et le chemin d'écriture testé sur IndexedDB, mais
   aucun service `PIECE` payant n'a été inséré puis supprimé en base réelle.
 - La recette manuelle correspondante est à cocher dans `docs/RECETTE-BOUTONS.md`
   (§3, trois nouvelles lignes).
+
+## 8. Phase suivante — cohérence du reste de l'application
+
+La correction du formulaire laissait deux incohérences, traitées dans la même
+branche :
+
+| Endroit | Ce qui décrivait encore « blanchisserie = kilo » | Correction |
+| --- | --- | --- |
+| `e2e/helpers.ts` | `creerCommande` remplissait toujours poids + tarif/kg | Le mode est choisi explicitement (`modeBlanchisserie`, ou déduit de la présence de `poidsKg`/`tarifKilo`), la bascule se faisant **avant** l'ajout de lignes (sinon le navigateur demande confirmation) |
+| `e2e/demo/blanchisserie.spec.ts` | Un seul scénario, au kilo | Le scénario au kilo demande désormais la bascule ; un second scénario couvre le comptage (2 × Drap + 1 × Serviette = 1 300 FCFA, lignes `PIECE`, aucune ligne `kg`) |
+| `e2e/demo/parcours-commande.spec.ts` | « Le lot au kilo existe dès l'arrivée » | Vérifie le comptage par défaut, l'absence de champ poids, puis l'apparition du lot après bascule |
+| `docs/USER_GUIDE.md`, `docs/RECETTE-BOUTONS.md` | Fiche et checklist « lot au kilo » | Comptage par défaut, exception « kilo uniquement », confirmation au changement de mode |
+| `src/test/orderForm.test.tsx` | Deux tests figeaient le lot à l'arrivée | Réécrits sur le comptage, avec la bascule kilo vérifiée dans le même test |
+
+**Non exécuté :** les trois fichiers E2E (`blanchisserie`, `parcours-commande`,
+`helpers`) ne peuvent pas tourner ici (aucun navigateur). Ils compilent, ils sont
+relus, ils ne sont **pas** prouvés.

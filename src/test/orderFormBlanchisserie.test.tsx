@@ -26,6 +26,55 @@ vi.mock('react-hot-toast', () => ({
   default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }))
 
+/** Une prestation du catalogue de recette, telle que la renvoie le service. */
+interface ServiceCatalogue {
+  id: string
+  tenantId: string
+  activityId: string
+  activityName: string
+  activityCode: 'blanchisserie'
+  serviceName: string
+  billingUnit: 'PIECE' | 'KG'
+  unitPrice: number | null
+  sortOrder: number
+}
+
+const catalogueComplet: ServiceCatalogue[] = [
+  {
+    id: '50000000-0000-4000-8000-00000000d001',
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    activityId: 'a0000000-0000-4000-8000-00000000b001',
+    activityName: 'Blanchisserie',
+    activityCode: 'blanchisserie',
+    serviceName: 'Drap',
+    billingUnit: 'PIECE',
+    unitPrice: 500,
+    sortOrder: 0,
+  },
+  {
+    id: '50000000-0000-4000-8000-00000000d002',
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    activityId: 'a0000000-0000-4000-8000-00000000b001',
+    activityName: 'Blanchisserie',
+    activityCode: 'blanchisserie',
+    serviceName: 'Serviette',
+    billingUnit: 'PIECE',
+    unitPrice: 300,
+    sortOrder: 1,
+  },
+  {
+    id: '50000000-0000-4000-8000-00000000d003',
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    activityId: 'a0000000-0000-4000-8000-00000000b001',
+    activityName: 'Blanchisserie',
+    activityCode: 'blanchisserie',
+    serviceName: 'Lavage au kilo',
+    billingUnit: 'KG',
+    unitPrice: 1500,
+    sortOrder: 2,
+  },
+]
+
 const catalogue = vi.hoisted(() => ({
   activities: [
     {
@@ -43,41 +92,7 @@ const catalogue = vi.hoisted(() => ({
       legacyCode: 'pressing' as const,
     },
   ],
-  services: [
-    {
-      id: '50000000-0000-4000-8000-00000000d001',
-      tenantId: '11111111-1111-4111-8111-111111111111',
-      activityId: 'a0000000-0000-4000-8000-00000000b001',
-      activityName: 'Blanchisserie',
-      activityCode: 'blanchisserie' as const,
-      serviceName: 'Drap',
-      billingUnit: 'PIECE' as const,
-      unitPrice: 500,
-      sortOrder: 0,
-    },
-    {
-      id: '50000000-0000-4000-8000-00000000d002',
-      tenantId: '11111111-1111-4111-8111-111111111111',
-      activityId: 'a0000000-0000-4000-8000-00000000b001',
-      activityName: 'Blanchisserie',
-      activityCode: 'blanchisserie' as const,
-      serviceName: 'Serviette',
-      billingUnit: 'PIECE' as const,
-      unitPrice: 300,
-      sortOrder: 1,
-    },
-    {
-      id: '50000000-0000-4000-8000-00000000d003',
-      tenantId: '11111111-1111-4111-8111-111111111111',
-      activityId: 'a0000000-0000-4000-8000-00000000b001',
-      activityName: 'Blanchisserie',
-      activityCode: 'blanchisserie' as const,
-      serviceName: 'Lavage au kilo',
-      billingUnit: 'KG' as const,
-      unitPrice: 1500,
-      sortOrder: 2,
-    },
-  ],
+  services: [] as ServiceCatalogue[],
 }))
 
 vi.mock('@/services/tenantServices', async (importOriginal) => {
@@ -203,6 +218,8 @@ async function ouvrirBlanchisserie() {
 }
 
 beforeEach(async () => {
+  // Catalogue complet par défaut ; un test peut le réduire (boutique au kilo).
+  catalogue.services = [...catalogueComplet]
   await db.orders.clear()
   await db.orderItems.clear()
   await db.tenantServices.clear()
@@ -313,6 +330,18 @@ describe('blanchisserie — facturation au vêtement', () => {
     expect(hote.querySelector('input[aria-label="Quantité Lavage au kilo"]')).toBeNull()
     await cliquer(boutonAria('Ajouter Drap'))
     expect(champAria('Quantité Drap').value).toBe('1')
+
+    demonter()
+  })
+
+  it('une boutique qui ne travaille qu’au kilo s’ouvre directement sur le pesage', async () => {
+    catalogue.services = [catalogueComplet[2]!]
+
+    await ouvrirBlanchisserie()
+
+    expect(boutonAria('Facturer au kilo').getAttribute('aria-pressed')).toBe('true')
+    expect(champAria('Quantité Lavage au kilo')).toBeTruthy()
+    expect(champAria('Tarif au kilo Lavage au kilo (FCFA)').value).toBe('1500')
 
     demonter()
   })

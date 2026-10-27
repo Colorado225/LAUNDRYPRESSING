@@ -27,7 +27,7 @@ Dans **Commandes**, choisir **Nouvelle commande**. Le parcours se déroule en tr
 Deux cartes, deux gestes différents :
 
 - **Pressing** : les vêtements sont identifiés un par un et facturés à la pièce (chemise, pantalon, robe, costume…).
-- **Blanchisserie** : le linge est **compté au vêtement** et facturé au prix de l'article, défini une fois pour toutes dans « Services & activités » (drap 500 FCFA, serviette 300 FCFA…). Chaque appui sur une tuile ajoute une pièce au panier. Le **kilo** reste disponible en option : le bouton « Au kilo (linge pesé) » prépare alors un lot dont les tuiles décrivent la composition (2 draps, 1 serviette…).
+- **Blanchisserie** : le linge est **compté au vêtement** et facturé au prix de l'article, défini une fois pour toutes dans « Services & activités » (drap 500 FCFA, serviette 300 FCFA…). Chaque appui sur une tuile ajoute une pièce au panier. Le **kilo** reste disponible en option : le bouton « Au kilo (linge pesé) » prépare alors un lot dont les tuiles décrivent la composition (2 draps, 1 serviette…). Le comptage est proposé d'emblée, même si aucun prix n'est encore configuré ; seul un pressing qui n'a déclaré **que** des prestations au kilo s'ouvre directement sur le pesage.
 
 Le choix fixe la grille d'articles. **Changer de service** depuis l'écran 2 ramène ici.
 

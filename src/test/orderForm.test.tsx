@@ -200,15 +200,21 @@ describe('écran 1 — choix du service', () => {
     demonter()
   })
 
-  it('ouvre le parcours blanchisserie avec un lot au kilo prêt à saisir', async () => {
+  it('ouvre le parcours blanchisserie sur le comptage des vêtements', async () => {
     await monter()
     await cliquer(boutonAria('Choisir Blanchisserie'))
 
     expect(hote.textContent).toContain('Blanchisserie — client et articles')
-    // Le lot existe dès l'arrivée : le poids et le tarif se saisissent tout de suite.
+    // Aucun catalogue : le comptage reste possible, chaque prix se saisissant
+    // au panier. Le lot pesé n'apparaît que si le comptoir le demande.
+    expect(boutonAria('Facturer au vêtement').getAttribute('aria-pressed')).toBe('true')
+    expect(hote.querySelector('input[aria-label="Quantité Lavage au kilo"]')).toBeNull()
+    expect(hote.querySelector('button[aria-label="Ajouter Drap"]')).toBeTruthy()
+
+    // Le kilo reste à un clic, avec son lot prêt à saisir.
+    await cliquer(boutonAria('Facturer au kilo'))
     expect(champAria('Quantité Lavage au kilo')).toBeTruthy()
     expect(champAria('Tarif au kilo Lavage au kilo (FCFA)')).toBeTruthy()
-    expect(hote.querySelector('button[aria-label="Ajouter Drap"]')).toBeTruthy()
 
     demonter()
   })
@@ -385,6 +391,8 @@ describe('enregistrement d’une nouvelle commande', () => {
   it('enregistre un lot au kilo avec sa composition', async () => {
     await monter()
     await cliquer(boutonAria('Choisir Blanchisserie'))
+    // Le kilo est désormais une option explicite du parcours blanchisserie.
+    await cliquer(boutonAria('Facturer au kilo'))
     await saisir(champ('Nom du client'), 'Hôtel Ivoire')
     await saisir(champ('Téléphone'), '07 00 00 00 43')
     await cliquer(boutonAria('Ajouter Drap'))

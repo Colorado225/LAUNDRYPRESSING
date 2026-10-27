@@ -36,6 +36,7 @@ l'heure, le compte utilisé et le message affiché).
 
 - [ ] **Écran 1** : les deux cartes (Pressing, Blanchisserie) sont cliquables à la souris **et** activables au clavier (Tab puis Entrée)
 - [ ] Pressing → grille des vêtements à la pièce ; Blanchisserie → grille du linge, facturation **au vêtement** par défaut (prix par article affichés), bascule « Au kilo (linge pesé) » → lot déjà présent (poids + tarif/kg saisissables)
+- [ ] Blanchisserie avec un panier garni : changer de mode demande une confirmation ; refuser la confirmation laisse le panier intact
 - [ ] Blanchisserie au vêtement : 2 × Drap + 1 × Serviette → 2 lignes, quantités 2 et 1, total = 2 × prix du drap + prix de la serviette ; l'enregistrement produit des lignes `PIECE`
 - [ ] Blanchisserie au vêtement : un article sans forfait configuré (ex. Chemise) → prix 0, « Suivant » puis « Enregistrer » refusés avec le message nommant l'article
 - [ ] Ajouter un article, puis une seconde fois → une seule ligne, quantité 2 ; corriger la quantité au panier → total recalculé

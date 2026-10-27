@@ -45,7 +45,12 @@ export interface OptionsCommande {
   telephone: string
   articles: ArticleCommande[]
   parcours?: ParcoursCommande
-  /** Blanchisserie : poids pesé et tarif au kilo du lot. */
+  /**
+   * Blanchisserie : facturation **au vêtement** (défaut) ou **au kilo**.
+   * Sans valeur explicite, la présence de `poidsKg`/`tarifKilo` choisit le kilo.
+   */
+  modeBlanchisserie?: 'piece' | 'kilo'
+  /** Blanchisserie au kilo : poids pesé et tarif au kilo du lot. */
   poidsKg?: number
   tarifKilo?: number
   /** `especes` ouvre le panneau d'encaissement dès la création (`?regler=1`). */
@@ -104,17 +109,41 @@ export async function creerCommande(page: Page, options: OptionsCommande): Promi
   await page.getByLabel('Téléphone').fill(options.telephone)
 
   if (parcours === 'blanchisserie') {
-    // Chaque tuile ajoute une pièce à la composition du lot pesé.
+    // Deux facturations : au vêtement (défaut) ou au kilo (option explicite).
+    // La bascule se fait **avant** d'ajouter des lignes : changer de mode avec
+    // un panier garni demande une confirmation au navigateur.
+    const auKilo =
+      options.modeBlanchisserie === 'kilo' ||
+      (options.modeBlanchisserie === undefined &&
+        (options.poidsKg !== undefined || options.tarifKilo !== undefined))
+    const bascule = page.getByRole('button', {
+      name: auKilo ? 'Facturer au kilo' : 'Facturer au vêtement',
+    })
+    if ((await bascule.count()) > 0) await bascule.click()
+
+    // Chaque tuile ajoute une pièce : au panier (au vêtement) ou à la
+    // composition du lot (au kilo).
     for (const article of options.articles) {
       const tuile = page.getByRole('button', { name: `Ajouter ${article.libelle}`, exact: true })
       for (let appui = 0; appui < article.quantite; appui += 1) {
         await tuile.click()
       }
     }
-    const poids = options.poidsKg ?? 1
-    const tarif = options.tarifKilo ?? options.articles[0]?.prixUnitaire ?? 0
-    await page.getByLabel('Quantité Lavage au kilo').fill(String(poids))
-    await page.getByLabel('Tarif au kilo Lavage au kilo (FCFA)').fill(String(tarif))
+
+    if (auKilo) {
+      const poids = options.poidsKg ?? 1
+      const tarif = options.tarifKilo ?? options.articles[0]?.prixUnitaire ?? 0
+      await page.getByLabel('Quantité Lavage au kilo').fill(String(poids))
+      await page.getByLabel('Tarif au kilo Lavage au kilo (FCFA)').fill(String(tarif))
+    } else {
+      // Le prix de chaque article se saisit au panier (le forfait configuré
+      // fait foi quand il existe, mais il n'y a pas de catalogue en démo).
+      for (const article of options.articles) {
+        await page
+          .getByLabel(`Prix unitaire ${article.libelle} (FCFA)`)
+          .fill(String(article.prixUnitaire))
+      }
+    }
   } else {
     for (const article of options.articles) {
       await ajouterArticle(page, article)
