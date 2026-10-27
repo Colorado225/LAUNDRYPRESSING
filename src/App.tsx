@@ -45,9 +45,10 @@ const Support = lazy(() => import('@/pages/Support'))
 const Supervision = lazy(() => import('@/pages/Supervision'))
 const Rapports = lazy(() => import('@/pages/Rapports'))
 const Parametres = lazy(() => import('@/pages/Parametres'))
+const ServicesPressing = lazy(() => import('@/pages/ServicesPressing'))
 const Audit = lazy(() => import('@/pages/Audit'))
 const Reinitialisation = lazy(() => import('@/pages/Reinitialisation'))
-const ServicesPressing = lazy(() => import('@/pages/ServicesPressing'))
+const BlanchisserieGrid = lazy(() => import('@/pages/BlanchisserieGrid'))
 
 export default function App() {
   useEffect(() => {
@@ -103,10 +104,9 @@ function RootRoutes() {
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/" element={<Accueil />} />
-                <Route path="/bienvenue" element={<ServicesPressing />} />
-                <Route path="/prestations" element={<ServicesPressing />} />
                 <Route path="/commandes" element={<Orders />} />
                 <Route path="/commandes/nouvelle" element={<OrderForm />} />
+                <Route path="/commandes/blanchisserie" element={<BlanchisserieGrid />} />
                 <Route path="/commandes/:orderId" element={<OrderDetail />} />
                 <Route path="/atelier" element={<Atelier />} />
                 <Route path="/caisse" element={<Caisse />} />
@@ -119,6 +119,7 @@ function RootRoutes() {
                 <Route path="/support" element={<Support />} />
                 <Route path="/supervision" element={<Supervision />} />
                 <Route path="/parametres" element={<Parametres />} />
+                <Route path="/prestations" element={<ServicesPressing />} />
                 <Route path="/audit" element={<Audit />} />
                 <Route path="/commandes/:orderId/recu" element={<Receipt />} />
                 <Route path="/commandes/:orderId/facture" element={<Facture />} />

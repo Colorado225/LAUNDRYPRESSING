@@ -17,6 +17,13 @@
       content="Pressing Pro — gestion de commandes, étiquettes QR, atelier hors ligne et paiement Mobile Money pour les pressings d'Abidjan."
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!--
+      Chrome déprécie `apple-mobile-web-app-capable` : son équivalent standard
+      est `mobile-web-app-capable`, qu'il faut déclarer EN PLUS pour les
+      navigateurs non-Apple. Sans cette ligne, Chrome émet un avertissement à
+      chaque chargement et l'installation PWA dépend d'une balise non standard.
+    -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Pressing Pro" />
     <title>Pressing Pro — Gestion de pressing</title>

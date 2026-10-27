@@ -784,6 +784,109 @@ export interface Database {
         Update: Partial<TenantUserRow>
         Relationships: []
       }
+      type_service: {
+        Row: TypeServiceRow
+        Insert: InsertOf<TypeServiceRow, 'id' | 'actif' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<TypeServiceRow, 'id'>>
+        Relationships: []
+      }
+      mode_facturation: {
+        Row: ModeFacturationRow
+        Insert: InsertOf<ModeFacturationRow, 'id' | 'actif'>
+        Update: Partial<Omit<ModeFacturationRow, 'id'>>
+        Relationships: []
+      }
+      statut_commande: {
+        Row: StatutCommandeRow
+        Insert: StatutCommandeRow
+        Update: Partial<StatutCommandeRow>
+        Relationships: []
+      }
+      mode_paiement: {
+        Row: ModePaiementRow
+        Insert: InsertOf<ModePaiementRow, 'id' | 'actif'>
+        Update: Partial<Omit<ModePaiementRow, 'id'>>
+        Relationships: []
+      }
+      role_employe: {
+        Row: RoleEmployeRow
+        Insert: InsertOf<RoleEmployeRow, 'id'>
+        Update: Partial<RoleEmployeRow>
+        Relationships: []
+      }
+      type_vetement: {
+        Row: TypeVetementRow
+        Insert: InsertOf<TypeVetementRow, 'id' | 'actif'>
+        Update: Partial<Omit<TypeVetementRow, 'id'>>
+        Relationships: []
+      }
+      etablissement: {
+        Row: EtablissementRow
+        Insert: InsertOf<EtablissementRow, 'id' | 'actif' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<EtablissementRow, 'id'>>
+        Relationships: []
+      }
+      employe: {
+        Row: EmployeRow
+        Insert: InsertOf<EmployeRow, 'id' | 'actif' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<EmployeRow, 'id'>>
+        Relationships: []
+      }
+      client_new: {
+        Row: ClientRowNew
+        Insert: InsertOf<ClientRowNew, 'id' | 'actif' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ClientRowNew, 'id'>>
+        Relationships: []
+      }
+      prestation: {
+        Row: PrestationRow
+        Insert: InsertOf<PrestationRow, 'id' | 'actif' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<PrestationRow, 'id'>>
+        Relationships: []
+      }
+      tarif_kilo: {
+        Row: TarifKiloRow
+        Insert: InsertOf<TarifKiloRow, 'id' | 'actif' | 'created_at'>
+        Update: Partial<Omit<TarifKiloRow, 'id'>>
+        Relationships: []
+      }
+      forfait_pieces: {
+        Row: ForfaitPiecesRow
+        Insert: InsertOf<ForfaitPiecesRow, 'id' | 'actif' | 'created_at'>
+        Update: Partial<Omit<ForfaitPiecesRow, 'id'>>
+        Relationships: []
+      }
+      commande: {
+        Row: CommandeRow
+        Insert: InsertOf<CommandeRow, 'id' | 'montant_total' | 'montant_paye' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<CommandeRow, 'id'>>
+        Relationships: []
+      }
+      ligne_commande: {
+        Row: LigneCommandeRow
+        Insert: InsertOf<LigneCommandeRow, 'id'>
+        Update: Partial<Omit<LigneCommandeRow, 'id'>>
+        Relationships: []
+      }
+      vetement_saisi: {
+        Row: VetementSaisiRow
+        Insert: InsertOf<VetementSaisiRow, 'id' | 'created_at'>
+        Update: Partial<Omit<VetementSaisiRow, 'id'>>
+        Relationships: []
+      }
+      paiement_new: {
+        Row: PaiementRowNew
+        Insert: InsertOf<PaiementRowNew, 'id' | 'created_at'>
+        Update: Partial<Omit<PaiementRowNew, 'id'>>
+        Relationships: []
+      }
+      historique_statut: {
+        Row: HistoriqueStatutRow
+        Insert: InsertOf<HistoriqueStatutRow, 'id' | 'date_changement'>
+        Update: Partial<Omit<HistoriqueStatutRow, 'id'>>
+        Relationships: []
+      }
+
       orders: {
         Row: OrderRow
         Insert: InsertOf<
@@ -1223,3 +1326,195 @@ export type OrderIssue = OrderIssueRow
 export type PaymentRefund = PaymentRefundRow
 export type Tenant = TenantRow
 export type TenantUser = TenantUserRow
+
+
+/** Types selon RESTRUCTURATION.md */
+export type TypeServiceRow = {
+  id: number
+  code: string
+  libelle: string
+  description: string | null
+  actif: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ModeFacturationRow = {
+  id: number
+  code: string
+  libelle: string
+  description: string | null
+  actif: boolean
+}
+
+export type StatutCommandeRow = {
+  id: number
+  code: string
+  libelle: string
+  ordre: number
+  est_final: boolean
+  actif: boolean
+}
+
+export type ModePaiementRow = {
+  id: number
+  code: string
+  libelle: string
+  actif: boolean
+}
+
+export type RoleEmployeRow = {
+  id: number
+  code: string
+  libelle: string
+  description: string | null
+}
+
+export type TypeVetementRow = {
+  id: number
+  code: string
+  libelle: string
+  description: string | null
+  actif: boolean
+}
+
+export type EtablissementRow = {
+  id: number
+  code: string
+  nom: string
+  adresse: string | null
+  ville: string | null
+  telephone: string | null
+  email: string | null
+  actif: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type EmployeRow = {
+  id: number
+  etablissement_id: number
+  role_id: number
+  code: string | null
+  nom: string
+  prenom: string | null
+  telephone: string | null
+  email: string | null
+  date_embauche: string | null
+  actif: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ClientRowNew = {
+  id: number
+  code: string | null
+  nom: string
+  prenom: string | null
+  telephone: string
+  email: string | null
+  adresse: string | null
+  note: string | null
+  actif: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type PrestationRow = {
+  id: number
+  type_service_id: number
+  code: string
+  libelle: string
+  description: string | null
+  actif: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type TarifKiloRow = {
+  id: number
+  etablissement_id: number
+  prestation_id: number
+  prix_par_kg: string
+  date_debut: string
+  date_fin: string | null
+  actif: boolean
+  created_at: string
+}
+
+export type ForfaitPiecesRow = {
+  id: number
+  etablissement_id: number
+  prestation_id: number
+  nb_pieces_min: number
+  nb_pieces_max: number | null
+  prix_forfait: string
+  date_debut: string
+  date_fin: string | null
+  actif: boolean
+  created_at: string
+}
+
+export type CommandeRow = {
+  id: number
+  numero_commande: string
+  etablissement_id: number
+  client_id: number
+  receptionniste_id: number | null
+  type_service_id: number
+  mode_facturation_id: number
+  statut_id: number
+  forfait_pieces_id: number | null
+  date_reception: string
+  date_livraison_prevue: string | null
+  date_livraison_reelle: string | null
+  poids_total_kg: string | null
+  nb_pieces_total: number | null
+  montant_total: string
+  montant_paye: string
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LigneCommandeRow = {
+  id: number
+  commande_id: number
+  prestation_id: number
+  tarif_kilo_id: number | null
+  poids_kg: string | null
+  quantite: number | null
+  prix_unitaire: string
+  montant_ligne: string
+  description: string | null
+}
+
+export type VetementSaisiRow = {
+  id: number
+  commande_id: number
+  type_vetement_id: number
+  description: string | null
+  etat_constate: string | null
+  created_at: string
+}
+
+export type PaiementRowNew = {
+  id: number
+  commande_id: number
+  mode_paiement_id: number
+  montant: string
+  date_paiement: string
+  reference: string | null
+  encaisse_par_id: number | null
+  note: string | null
+  created_at: string
+}
+
+export type HistoriqueStatutRow = {
+  id: number
+  commande_id: number
+  statut_id: number
+  employe_id: number | null
+  date_changement: string
+  commentaire: string | null
+}
