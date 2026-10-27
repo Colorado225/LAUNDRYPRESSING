@@ -11,6 +11,10 @@ Application web installable (PWA) pour gérer les commandes d’un pressing. Le 
   article libre, lot pesé), récapitulatif puis enregistrement. Voir
   [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) et
   [`docs/RAPPORT-PARCOURS-COMMANDE.md`](docs/RAPPORT-PARCOURS-COMMANDE.md).
+- Interface de gestion : tableau de bord (KPI, courbe sur sept jours, commandes
+  récentes), réception en trois écrans, atelier en Kanban ou en liste. Un mode
+  démonstration étiqueté permet de présenter la maquette sans jamais écrire de
+  données réelles ([`docs/RAPPORT-REFONTE-INTERFACE.md`](docs/RAPPORT-REFONTE-INTERFACE.md)).
 - Commandes, lignes d’articles, statuts de traitement, échéance promise et attribution.
 - QR code de commande, impression d’étiquette et scan à l’atelier.
 - Mode hors ligne : stockage IndexedDB, création locale et synchronisation différée.
@@ -30,6 +34,8 @@ Les prix sont saisis sur les lignes de commande. Il n’existe plus de grille de
 ## Stack
 
 - React 19, TypeScript strict, Vite 8, Tailwind CSS 4
+- Primitives d'interface façon shadcn/ui (Radix + CVA) et Recharts pour la
+  courbe du chiffre d'affaires
 - React Router, Zustand, Zod
 - Dexie / IndexedDB pour le mode local
 - Supabase Auth, PostgreSQL/RLS et Edge Functions

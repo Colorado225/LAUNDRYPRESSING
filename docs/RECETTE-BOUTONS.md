@@ -57,6 +57,21 @@ l'heure, le compte utilisé et le message affiché).
 - [ ] Imprimer l'étiquette QR → aperçu d'impression avec QR lisible
 - [ ] Scanner l'étiquette à l'atelier → la commande s'ouvre (autoriser la caméra)
 
+## 3 bis. Interface (refonte)
+
+- [ ] Barre latérale : la marque, les entrées autorisées pour le rôle, la carte d'abonnement et le bouton Quitter
+- [ ] En-tête : recherche globale (nom, téléphone sans espaces, référence, page), cloche d'activité, menu de compte
+- [ ] Tableau de bord : quatre KPI cohérents avec la liste des commandes du jour
+- [ ] Une journée sans encaissement la veille n'affiche **aucune** flèche de variation (pas de « +100 % »)
+- [ ] Courbe du chiffre d'affaires : sept points, infobulle en FCFA, lisible au clavier (résumé textuel)
+- [ ] Commandes récentes : actions « Ouvrir la fiche » et « Encaisser » fonctionnelles
+- [ ] Mode démonstration : bandeau ambre non fermable, KPI à 482 500 FCFA, blocs marqués « démo »
+- [ ] En démonstration : enregistrer une commande → refus explicite, rien dans la liste
+- [ ] En démonstration : changer un statut depuis le Kanban → refus explicite
+- [ ] Réception : pastilles de catégorie, panier non vidé au changement de filtre
+- [ ] Atelier : bascule Kanban / Liste, trois colonnes avec compteurs, menu de carte limité aux transitions autorisées
+- [ ] Tablette paysage (1024–1366 px) : barre latérale visible, quatre KPI sur une ligne, trois colonnes Kanban
+
 ## 4. Caisse et paiements
 
 - [ ] Encaisser un acompte → `payment_transactions` créé, solde réduit, reçu proposé

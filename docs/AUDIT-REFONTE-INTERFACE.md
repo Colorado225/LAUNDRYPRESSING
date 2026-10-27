@@ -151,9 +151,20 @@ commit (les libellés actuels sont verrouillés par les tests).
 
 ---
 
-## 5. Décisions attendues avant le lot A
+## 5. Décisions arbitrées (27/10/2026)
 
-1. **Référence visuelle** : prompt texte (bleu `#2563EB`, barre latérale blanche) ou maquettes HTML (barre latérale noire) ?
-2. **Palette** : adopter le bleu de la maquette comme couleur primaire, ou garder l'identité navy/teal existante et n'emprunter que la mise en page ?
-3. **Données** : KPI réels uniquement, ou mode démonstration clairement étiqueté avec les chiffres de la maquette ?
-4. **Dépendances** : aucune ajout (SVG et composants maison), ou Recharts (+ shadcn/ui) ?
+1. **Référence visuelle** : structure et libellés du master prompt, **identité
+   navy/teal existante conservée** — aucune troisième teinte introduite. Les
+   maquettes HTML jointes ne servent que de repère de densité.
+2. **Palette** : navy `#0f172a` et teal `#0f766e` restent la marque ; les
+   couleurs sémantiques de la maquette (ambre = en cours, vert = prêt, rouge =
+   alerte) sont reprises telles quelles.
+3. **Données** : réel par défaut **plus** un mode démonstration explicite
+   (`src/lib/demoMode.ts`, `src/data/demo-data.ts`), bandeau non fermable,
+   écritures désactivées.
+4. **Dépendances** : Recharts + primitives shadcn/ui (Radix, CVA, clsx,
+   tailwind-merge). Ni TanStack Table ni React Hook Form : le dépôt a déjà
+   l'équivalent (tableaux natifs, Zod).
+5. **Ordre** : lots A → E, porte complète à chaque lot.
+
+Le résultat détaillé est dans [`docs/RAPPORT-REFONTE-INTERFACE.md`](RAPPORT-REFONTE-INTERFACE.md).

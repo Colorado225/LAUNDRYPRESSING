@@ -82,7 +82,10 @@ export default function GlobalSearch({ onNavigate }: { onNavigate?: () => void }
           onBlur={() => window.setTimeout(() => setOuvert(false), 120)}
           onKeyDown={surTouche}
           placeholder="Rechercher une commande, un client…"
-          aria-label="Rechercher une commande, un client"
+          // Libellé volontairement distinct de « Rechercher une commande » de
+          // la page Commandes : deux champs au même nom accessible rendraient
+          // la sélection ambiguë pour un lecteur d'écran comme pour un test.
+          aria-label="Recherche globale (commande ou client)"
           aria-expanded={afficher}
           aria-controls="resultats-recherche-globale"
           role="combobox"
