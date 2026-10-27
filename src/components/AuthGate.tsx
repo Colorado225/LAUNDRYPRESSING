@@ -8,6 +8,7 @@ import { restoreSession, signOut } from '@/services/authService'
 import { syncPendingOrders } from '@/sync/syncEngine'
 import { useSubscriptionStore } from '@/lib/subscriptionContext'
 import { isPlatformAdmin } from '@/services/platformService'
+import { oublierOnboardingEnSession } from '@/lib/onboardingSession'
 
 /**
  * Porte d'entrée de l'application (phase 5).
@@ -113,6 +114,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
       useTenantStore.getState().clear()
       useSubscriptionStore.getState().clear()
+      // La configuration du pressing est revalidée à la prochaine connexion :
+      // un gérant a pu la modifier depuis une autre tablette entre-temps.
+      oublierOnboardingEnSession()
       setNotice('Votre session a expiré. Reconnectez-vous pour synchroniser vos commandes.')
       setPhase('anonyme')
     })
