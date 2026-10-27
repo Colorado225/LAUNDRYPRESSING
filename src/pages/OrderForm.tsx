@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder, useLocalOrders } from '@/db/hooks'
-import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
+import { suggestCustomersByPhone, countPreviousOrders, lastCustomerNameByPhone } from '@/lib/customerSuggestions'
 import { signalerIncidentCommande, signalerSonde, syncOrderNow } from '@/sync/syncEngine'
 import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
 import { problemeTarifaire } from '@/lib/orderPricing'
@@ -76,10 +76,30 @@ export default function OrderForm() {
   const [etape, setEtape] = useState(0)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [previousOrderCount, setPreviousOrderCount] = useState(0)
+  const [suggestedName, setSuggestedName] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [items, setItems] = useState<OrderItemDraft[]>([createEmptyItem()])
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
   const [errors, setErrors] = useState<string[]>([])
+
+  // Historique client : quand le téléphone est saisi, on compte les commandes
+  // précédentes et on retient le nom le plus récent pour le pré-remplir.
+  useEffect(() => {
+    const query = customerPhone.replace(/\D/g, '')
+    if (query.length < 3) {
+      setPreviousOrderCount(0)
+      setSuggestedName('')
+      return
+    }
+    const orders = localOrders ?? []
+    setPreviousOrderCount(countPreviousOrders(orders, customerPhone))
+    const nom = lastCustomerNameByPhone(orders, customerPhone)
+    setSuggestedName(nom)
+    // Pré-remplit le nom si le champ est encore vide et qu’un client est connu.
+    if (nom && !customerName) setCustomerName(nom)
+  }, [customerPhone, localOrders, customerName])
+
   // Chemins Zod des champs refusés : sert à marquer les champs en rouge et à
   // placer le focus, pour qu'un « Suivant » sans effet ne soit jamais muet.
   const [champsInvalides, setChampsInvalides] = useState<string[]>([])
@@ -510,8 +530,28 @@ export default function OrderForm() {
                 aria-invalid={champsInvalides.includes('customerPhone') || undefined}
                 className={`min-h-12 w-full rounded-xl border px-3 text-base outline-none focus:border-brand-teal ${champsInvalides.includes('customerPhone') ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}
               />
-              {customerPhone && suggestCustomersByPhone(localOrders ?? [], customerPhone).length > 0 && (
-                <span className="block text-xs text-slate-500">Un client connu utilise déjà ce numéro.</span>
+              {customerPhone && (
+                <>
+                  {suggestedName && previousOrderCount > 0 && (
+                    <span className="block text-xs text-slate-500">
+                      {suggestedName} — {previousOrderCount} commande{previousOrderCount > 1 ? 's' : ''} précédente{previousOrderCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {suggestedName && !customerName && previousOrderCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomerName(suggestedName)}
+                      className="text-xs text-brand-teal underline underline-offset-4 hover:text-brand-teal-dark"
+                    >
+                      Utiliser ce nom
+                    </button>
+                  )}
+                  {!suggestedName && suggestCustomersByPhone(localOrders ?? [], customerPhone).length > 0 && (
+                    <span className="block text-xs text-slate-500">
+                      Un client connu utilise déjà ce numéro.
+                    </span>
+                  )}
+                </>
               )}
             </label>
             <label className="block space-y-1.5">

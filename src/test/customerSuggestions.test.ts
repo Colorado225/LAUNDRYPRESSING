@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { suggestCustomersByPhone } from '@/lib/customerSuggestions'
+import { suggestCustomersByPhone, countPreviousOrders, lastCustomerNameByPhone } from '@/lib/customerSuggestions'
 
 const orders = [
   { customerName: 'Awa Koné', customerPhone: '07 00 00 00 01', createdAt: '2026-01-01T10:00:00.000Z' },
@@ -30,5 +30,31 @@ describe('suggestCustomersByPhone', () => {
     expect(suggestCustomersByPhone(orders, '07')).toEqual([])
     expect(suggestCustomersByPhone(orders, '07', 0)).toEqual([])
     expect(suggestCustomersByPhone(orders, '0', 2)).toEqual([])
+  })
+})
+
+describe('countPreviousOrders', () => {
+  it('compte toutes les commandes d’un même numéro malgré les formats', () => {
+    expect(countPreviousOrders(orders, '+225 07 00 00 00 01')).toBe(2)
+    expect(countPreviousOrders(orders, '07 00 00 00 01')).toBe(2)
+    expect(countPreviousOrders(orders, '0700000001')).toBe(2)
+  })
+
+  it('retourne 0 pour un numéro inconnu ou trop court', () => {
+    expect(countPreviousOrders(orders, '07')).toBe(0)
+    expect(countPreviousOrders(orders, '0500000003')).toBe(1)
+    expect(countPreviousOrders(orders, '9999999999')).toBe(0)
+  })
+})
+
+describe('lastCustomerNameByPhone', () => {
+  it('retourne le nom le plus récent associé au numéro', () => {
+    expect(lastCustomerNameByPhone(orders, '+225 07 00 00 00 01')).toBe('Awa Koné')
+    expect(lastCustomerNameByPhone(orders, '07 00 00 00 02')).toBe('Mariam Traoré')
+  })
+
+  it('retourne une chaîne vide pour un numéro inconnu', () => {
+    expect(lastCustomerNameByPhone(orders, '9999999999')).toBe('')
+    expect(lastCustomerNameByPhone(orders, '07')).toBe('')
   })
 })

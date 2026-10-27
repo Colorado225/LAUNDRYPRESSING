@@ -46,3 +46,44 @@ export function suggestCustomersByPhone(
     .sort((a, b) => b.lastOrderAt.localeCompare(a.lastOrderAt))
     .slice(0, limit)
 }
+
+/**
+ * Compte le nombre de commandes précédentes pour un numéro de téléphone.
+ *
+ * Utilisé pour afficher l'historique du client à l'étape « Client » du
+ * formulaire de commande (ex. « Awa Ndiaye — 4 commandes précédentes »).
+ */
+export function countPreviousOrders(
+  orders: readonly Pick<LocalOrder, 'customerPhone'>[],
+  phone: string,
+): number {
+  const query = digitsOnly(phone)
+  if (query.length < 3) return 0
+
+  return orders.reduce((somme, order) => {
+    const normalized = digitsOnly(order.customerPhone)
+    return normalized === query ? somme + 1 : somme
+  }, 0)
+}
+
+/**
+ * Retourne le nom le plus récent associé à un numéro de téléphone, ou
+ * une chaîne vide si aucun client n'a été trouvé.
+ */
+export function lastCustomerNameByPhone(
+  orders: readonly Pick<LocalOrder, 'customerName' | 'customerPhone' | 'createdAt'>[],
+  phone: string,
+): string {
+  const query = digitsOnly(phone)
+  if (query.length < 3) return ''
+
+  let latest: { name: string; createdAt: string } | null = null
+  for (const order of orders) {
+    const normalized = digitsOnly(order.customerPhone)
+    if (normalized !== query) continue
+    if (!latest || order.createdAt > latest.createdAt) {
+      latest = { name: order.customerName, createdAt: order.createdAt }
+    }
+  }
+  return latest?.name ?? ''
+}

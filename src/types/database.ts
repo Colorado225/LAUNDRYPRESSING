@@ -77,9 +77,13 @@ export type OrderGarmentType =
   | 'SERVIETTE'
   | 'AUTRE'
 
+export type OrderGarmentCondition = 'BON' | 'TACHE'
+
 export type OrderGarmentDetail = {
   type: OrderGarmentType
   quantity: number
+  /** État de la pièce (ou du lot pour ce type). Valeur par défaut : BON. */
+  condition?: OrderGarmentCondition
 }
 
 export type TenantActivityRow = {

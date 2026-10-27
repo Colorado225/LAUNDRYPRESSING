@@ -69,7 +69,7 @@ export default function OrderDetail() {
   // Le nom du pressing est `null` dans le store seulement avant la résolution du
   // rattachement. La fiche n'est affichée qu'après `AuthGate`, mais le type doit
   // rester honnête : on fournit un libellé de repli plutôt qu'un `!` non sûr.
-  const nomPressing = tenantName ?? 'Pressing'
+  const nomPressing: string = tenantName ?? 'Pressing'
 
   // Déclarés AVANT tout retour anticipé : l'ordre des hooks doit rester stable
   // entre le chargement et l'affichage de la fiche.
@@ -580,7 +580,10 @@ export default function OrderDetail() {
           </p>
           <button
             type="button"
-            onClick={() => void supprimerCommande()}
+            onClick={() => {
+                if (!window.confirm('Supprimer définitivement cette commande ? Cette action ne peut pas être annulée.')) return;
+                supprimerCommande()
+              }}
             disabled={suppressionEnCours}
             className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 text-sm font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
           >

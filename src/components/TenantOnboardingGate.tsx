@@ -103,6 +103,11 @@ export function TenantOnboardingProvider({ children }: { children: ReactNode }) 
 export function TenantOnboardingGate({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
   const { state } = useTenantOnboarding()
+  // Empêche un double-rendu (StrictMode, re-rendu consécutif) de
+  // redéclencher la même navigation vers la même destination au sein d'un
+  // même cycle. Le drapeau est réinitialisé à chaque remontage du composant
+  // (après une navigation effective) ou dès qu'aucune navigation n'est requise.
+  const [didNavigate, setDidNavigate] = useState(false)
 
   if (state === 'loading') {
     return (
@@ -113,8 +118,18 @@ export function TenantOnboardingGate({ children }: { children: ReactNode }) {
     )
   }
 
-  if (state === 'required' && pathname !== '/bienvenue') return <Navigate to="/bienvenue" replace />
-  if (state === 'complete' && pathname === '/bienvenue') return <Navigate to="/commandes" replace />
+  if (state === 'required' && pathname !== '/bienvenue') {
+    if (didNavigate) return <>{children}</>
+    setDidNavigate(true)
+    return <Navigate to="/bienvenue" replace />
+  }
 
+  if (state === 'complete' && pathname === '/bienvenue') {
+    if (didNavigate) return <>{children}</>
+    setDidNavigate(true)
+    return <Navigate to="/commandes" replace />
+  }
+
+  setDidNavigate(false)
   return <>{children}</>
 }

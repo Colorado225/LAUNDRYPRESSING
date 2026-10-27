@@ -1,26 +1,13 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, Search, Trash2 } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Search, Trash2 } from 'lucide-react'
 import { GARMENT_GRID, getGarmentImage } from '@/constants/garmentImages'
-import type { OrderGarmentType } from '@/types/database'
+import type { OrderGarmentCondition, OrderGarmentType } from '@/types/database'
 
-/**
- * Grille tactile de sélection des vêtements pour une commande au comptoir.
- *
- * Conçue pour une tablette Android : grandes cibles (`min-h-12`), pas de
- * dépendance au survol, et **aucun appel réseau**. L'écran précédent lisait
- * les tables `type_vetement` et `forfait_pieces`, supprimées par la migration
- * destructrice écartée : il affichait donc une erreur au lieu de la grille.
- * Les types et les icônes viennent désormais de constantes embarquées, ce qui
- * rend l'écran utilisable hors ligne comme les autres écrans de commande.
- *
- * Le comptage se fait par appui (+) et par appui long / clic droit (−) : c'est
- * le geste le plus rapide en atelier, sans clavier.
- */
+type EtatPiece = OrderGarmentCondition
 
-type Selection = Partial<Record<OrderGarmentType, number>>
+type Selection = Partial<Record<OrderGarmentType, { quantity: number; condition: EtatPiece }>>
 
-/** Référence d'un vêtement tel qu'affiché dans la grille. */
 interface LigneGrille {
   type: OrderGarmentType
   libelle: string
@@ -35,44 +22,103 @@ const LIGNES: LigneGrille[] = GARMENT_GRID.map(({ type, label, favori }) => ({
   image: getGarmentImage(type),
 }))
 
+/** Libellé court de l'état pour l'accessibilité. */
+function libelleEtat(condition: EtatPiece): string {
+  return condition === 'TACHE' ? 'Tache' : 'Bon état'
+}
+
 export default function BlanchisserieGrid() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [selection, setSelection] = useState<Selection>({})
   const [recherche, setRecherche] = useState('')
+
+  // Restaure une sélection transmise depuis l'écran de création (re-ouverture).
+  const state = location.state as {
+    garmentDetails?: Array<{
+      type: OrderGarmentType
+      quantity: number
+      condition?: EtatPiece
+    }>
+  } | undefined
 
   const filtrees = useMemo(() => {
     const terme = recherche.trim().toLowerCase()
     if (!terme) return LIGNES
-    return LIGNES.filter((ligne) => ligne.libelle.toLowerCase().includes(terme))
+    return LIGNES.filter((ligne) =>
+      ligne.libelle.toLowerCase().includes(terme)
+    )
   }, [recherche])
 
-  const total = Object.values(selection).reduce((somme, quantite) => somme + (quantite ?? 0), 0)
+  const total = Object.values(selection).reduce(
+    (somme, ligne) => somme + (ligne?.quantity ?? 0),
+    0
+  )
 
   const ajouter = (type: OrderGarmentType) =>
-    setSelection((actuelle) => ({ ...actuelle, [type]: (actuelle[type] ?? 0) + 1 }))
+    setSelection((actuelle) => {
+      const existe = actuelle[type]
+      return {
+        ...actuelle,
+        [type]: existe
+          ? { ...existe, quantity: existe.quantity + 1 }
+          : { quantity: 1, condition: 'BON' },
+      }
+    })
 
   const retirer = (type: OrderGarmentType) =>
     setSelection((actuelle) => {
+      const existe = actuelle[type]
+      if (!existe) return actuelle
+      if (existe.quantity > 1)
+        return {
+          ...actuelle,
+          [type]: { ...existe, quantity: existe.quantity - 1 },
+        }
       const suivant = { ...actuelle }
-      const quantite = suivant[type] ?? 0
-      if (quantite > 1) suivant[type] = quantite - 1
-      else delete suivant[type]
+      delete suivant[type]
       return suivant
     })
 
-  /**
-   * La commande est préparée sur l'écran de création, qui porte déjà la
-   * validation (client, tarif, ligne libre). On y transmet le décompte par
-   * type plutôt que de dupliquer ici la logique d'enregistrement.
-   */
+  const basculerEtat = (type: OrderGarmentType) =>
+    setSelection((actuelle) => {
+      const existe = actuelle[type]
+      if (!existe) return actuelle
+      return {
+        ...actuelle,
+        [type]: {
+          ...existe,
+          condition: existe.condition === 'BON' ? 'TACHE' : 'BON',
+        },
+      }
+    })
+
+  /** Transmet le décompte structuré à l'écran de création de commande. */
   const preparerCommande = () => {
-    const detail = LIGNES.filter((ligne) => (selection[ligne.type] ?? 0) > 0)
-      .map((ligne) => `${selection[ligne.type]} × ${ligne.libelle}`)
-      .join(', ')
-    navigate('/commandes/nouvelle', { state: { composition: detail } })
+    const garmentDetails = LIGNES.filter(
+      (ligne) => (selection[ligne.type]?.quantity ?? 0) > 0
+    ).map((ligne) => ({
+      type: ligne.type,
+      quantity: selection[ligne.type]!.quantity,
+      condition: selection[ligne.type]!.condition,
+    }))
+
+    navigate('/commandes/nouvelle', { state: { garmentDetails } })
   }
 
-  return (
+  // Restaure la sélection transmise en état de navigation, une seule fois.
+  useMemo(() => {
+    if (!state?.garmentDetails?.length) return
+    const suivante: Selection = {}
+    for (const detail of state.garmentDetails) {
+      suivante[detail.type] = {
+        quantity: detail.quantity,
+        condition: detail.condition ?? 'BON',
+      }
+    }
+    setSelection(suivante)
+  }, [state])
+return (
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-3">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
@@ -86,30 +132,25 @@ export default function BlanchisserieGrid() {
               <ArrowLeft size={20} aria-hidden />
             </button>
             <div>
-              <h1 className="text-base font-bold text-brand-navy">Vêtements à traiter</h1>
-              <p className="text-xs text-slate-500">{total} pièce(s) sélectionnée(s)</p>
+              <h1 className="text-base font-semibold text-slate-800">Vêtements</h1>
+              <p className="text-xs text-slate-500">
+                Sélectionnez les pièces et leur état
+              </p>
             </div>
           </div>
-
           <button
             type="button"
             onClick={preparerCommande}
             disabled={total === 0}
-            className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-navy px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className={`min-h-12 rounded-xl px-5 font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${total === 0 ? 'bg-slate-300 text-slate-500' : 'bg-brand-teal hover:bg-brand-teal-dark'}`}
           >
-            <Check size={18} aria-hidden />
-            Continuer ({total})
+            {total} pièce(s) — Continuer
           </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl p-4">
-        <div className="relative mb-4">
-          <Search
-            size={16}
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-          />
+<main className="mx-auto max-w-5xl px-4 py-5">
+        <div className="flex items-center gap-3 mb-4">
           <input
             type="search"
             value={recherche}
@@ -118,6 +159,20 @@ export default function BlanchisserieGrid() {
             aria-label="Rechercher un vêtement"
             className="min-h-12 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-base"
           />
+          {total > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+          if (window.confirm('Êtes-vous sûr de vouloir tout vider ?')) {
+            setSelection({})
+          }
+        }}
+              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-rose-600 active:bg-rose-50"
+            >
+              <Trash2 size={16} aria-hidden />
+              Tout vider
+            </button>
+          )}
         </div>
 
         {filtrees.length === 0 ? (
@@ -127,7 +182,11 @@ export default function BlanchisserieGrid() {
         ) : (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
             {filtrees.map((ligne) => {
-              const quantite = selection[ligne.type] ?? 0
+              const existe = selection[ligne.type]
+              const quantite = existe?.quantity ?? 0
+              const condition = existe?.condition ?? 'BON'
+              const selectionnee = quantite > 0
+
               return (
                 <button
                   key={ligne.type}
@@ -137,27 +196,32 @@ export default function BlanchisserieGrid() {
                     evenement.preventDefault()
                     retirer(ligne.type)
                   }}
-                  aria-label={`${ligne.libelle}${quantite > 0 ? `, ${quantite} sélectionné(s)` : ''}`}
-                  aria-pressed={quantite > 0}
-                  className={`relative flex min-h-24 flex-col items-center justify-center rounded-2xl border-2 bg-white p-2 transition-colors active:scale-95 ${
-                    quantite > 0
-                      ? 'border-brand-teal bg-teal-50'
-                      : 'border-slate-200 active:border-brand-teal'
-                  }`}
+                  aria-label={`${ligne.libelle}, ${quantite} pièce${quantite > 1 ? 's' : ''}, état ${libelleEtat(condition)}`}
+                  aria-pressed={selectionnee}
+                  className={`relative flex min-h-24 flex-col items-center justify-center rounded-2xl border-2 bg-white p-2 transition-colors active:scale-95 ${selectionnee ? condition === 'TACHE' ? 'border-rose-500 bg-rose-50' : 'border-brand-teal bg-teal-50' : 'border-slate-200 active:border-brand-teal'}`}
                 >
                   {ligne.favori && (
-                    <span
-                      aria-hidden
-                      className="absolute left-1.5 top-1.5 text-xs text-amber-500"
-                    >
+                    <span aria-hidden className="absolute left-1.5 top-1.5 text-xs text-amber-500">
                       ★
                     </span>
                   )}
+
                   {quantite > 0 && (
                     <span className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-brand-teal text-xs font-bold text-white">
                       {quantite}
                     </span>
                   )}
+
+                  {selectionnee && (
+                    <span
+                      className={`absolute right-1 top-1 flex size-5 items-center justify-center rounded-full text-xs font-bold ${condition === 'TACHE' ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}
+                      title={`État : ${libelleEtat(condition)}`}
+                      aria-label={`État : ${libelleEtat(condition)}`}
+                    >
+                      {condition === 'TACHE' ? '🟡' : '🟢'}
+                    </span>
+                  )}
+
                   <img
                     src={ligne.image}
                     alt=""
@@ -166,8 +230,23 @@ export default function BlanchisserieGrid() {
                     height={56}
                     loading="lazy"
                     decoding="async"
-                    className="mb-1 size-14 object-contain"
+                    className={`mb-1 size-14 object-contain ${condition === 'TACHE' ? 'opacity-60 grayscale-40' : ''}`}
                   />
+
+                  {selectionnee && (
+                    <button
+                      type="button"
+                      onClick={(evenement) => {
+                        evenement.stopPropagation()
+                        basculerEtat(ligne.type)
+                      }}
+                      aria-label={`Passer en ${libelleEtat(condition === 'BON' ? 'TACHE' : 'BON')}`}
+                      className="absolute bottom-1 left-1/2 -translate-x-1/2 flex size-6 items-center justify-center rounded-full bg-white shadow-sm text-sm transition-colors hover:bg-slate-100"
+                    >
+                      {condition === 'TACHE' ? '🟢' : '🟡'}
+                    </button>
+                  )}
+
                   <span className="text-center text-xs font-medium leading-tight text-slate-700">
                     {ligne.libelle}
                   </span>
@@ -178,19 +257,26 @@ export default function BlanchisserieGrid() {
         )}
 
         {total > 0 && (
-          <div className="sticky bottom-3 mt-4 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-            <span className="text-sm font-semibold text-slate-700">{total} pièce(s)</span>
-            <button
-              type="button"
-              onClick={() => setSelection({})}
-              className="inline-flex min-h-12 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-rose-600 active:bg-rose-50"
-            >
-              <Trash2 size={16} aria-hidden />
-              Tout vider
-            </button>
+          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">
+                Total : {total} pièce{total > 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={preparerCommande}
+                className="min-h-10 rounded-xl px-3 text-sm font-semibold text-brand-teal hover:bg-teal-50"
+              >
+                Confirmer la sélection
+              </button>
+            </div>
+            {Object.values(selection).some((l) => l?.condition === 'TACHE') && (
+              <p className="mt-2 text-xs text-rose-600">
+                Certaines pièces sont marquées « Tache ».
+              </p>
+            )}
           </div>
         )}
       </main>
-    </div>
-  )
+    )
 }
