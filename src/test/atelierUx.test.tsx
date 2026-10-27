@@ -11,7 +11,12 @@ const depot = vi.hoisted(() => ({
 
 vi.mock('dexie-react-hooks', () => ({ useLiveQuery: () => depot.workshopOrders }))
 vi.mock('@/components/QrScanner', () => ({ default: () => null }))
-vi.mock('@/db/hooks', () => ({ useUpdateOrderStatus: () => depot.updateStatus }))
+vi.mock('@/db/hooks', () => ({
+  useUpdateOrderStatus: () => depot.updateStatus,
+  // Le Kanban compte les pièces de chaque commande ; ce scénario ne teste pas
+  // ce compteur, un dépôt vide suffit.
+  useAllLocalItems: () => [],
+}))
 vi.mock('@/db/ordersRepository', () => ({
   findOrderByQrCode: async () => depot.found,
   getOrderWithItems: async () => depot.found,
@@ -136,6 +141,14 @@ describe('améliorations UX de l’atelier', () => {
     ]
     depot.workshopOrders[1]!['dueDate'] = '2000-01-01'
     await mount()
+
+    // La vue par défaut est le Kanban ; ce scénario vérifie la file sous forme
+    // de liste, on bascule donc explicitement.
+    const vueListe = [...host.querySelectorAll('button')].find(
+      (bouton) => bouton.textContent?.trim() === 'Liste',
+    )
+    if (!vueListe) throw new Error('Bascule « Liste » introuvable')
+    act(() => vueListe.click())
 
     expect(host.querySelector('ul.grid li a')?.textContent).toContain('Koffi Yao')
     expect(host.textContent).toContain('En retard')

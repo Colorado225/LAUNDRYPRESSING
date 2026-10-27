@@ -9,6 +9,8 @@ import {
   Keyboard,
   Loader2,
   QrCode,
+  LayoutGrid,
+  List,
   ScanLine,
   Search,
   X,
@@ -16,6 +18,9 @@ import {
 import toast from 'react-hot-toast'
 import { formatGarmentComposition } from '@/constants/garmentTypes'
 import QrScanner from '@/components/QrScanner'
+import KanbanBoard from '@/components/workshop/KanbanBoard'
+import { useAllLocalItems } from '@/db/hooks'
+import { useDemoStore } from '@/lib/demoMode'
 import { useUpdateOrderStatus } from '@/db/hooks'
 import { findOrderByQrCode, getOrderWithItems, getWorkshopOrders } from '@/db/ordersRepository'
 import type { LocalOrderWithItems } from '@/db/ordersRepository'
@@ -66,6 +71,17 @@ export default function Atelier() {
   const [manualCode, setManualCode] = useState('')
   const [workshopSearch, setWorkshopSearch] = useState('')
   const [workshopStatusFilter, setWorkshopStatusFilter] = useState<OrderStatus | 'all'>('all')
+  /**
+   * Vue par défaut : le Kanban. C'est la vue de pilotage demandée par la
+   * maquette ; la liste reste à un clic pour l'usage « je cherche une
+   * commande précise dans la file ».
+   */
+  const [vue, setVue] = useState<'kanban' | 'liste'>('kanban')
+  /** Commande dont le statut est en cours d'enregistrement (verrou visuel). */
+  const [transition, setTransition] = useState<string | null>(null)
+  const demo = useDemoStore((state) => state.actif)
+  // Rôle effectif : il décide des transitions proposées sur chaque carte.
+  const roleAtelier = useTenantStore((state) => state.role)
   // Historique de session : il n'est pas persisté (l'atelier enchaîne les
   // scans, la tablette redémarre, l'écran « Commandes en atelier » reste la
   // vue durable). Il sert à rattraper un scan raté sans re-scanner.
@@ -76,6 +92,16 @@ export default function Atelier() {
     return getWorkshopOrders(tenantId)
   }, [tenantId])
   const aujourdhui = todayIso()
+  const tousLesArticles = useAllLocalItems()
+
+  /** Nombre de pièces par commande, pour les cartes du Kanban. */
+  const piecesParCommande = useMemo(() => {
+    const compte = new Map<string, number>()
+    for (const item of tousLesArticles ?? []) {
+      compte.set(item.orderId, (compte.get(item.orderId) ?? 0) + (item.quantity ?? 1))
+    }
+    return compte
+  }, [tousLesArticles])
   const filteredWorkshopOrders = useMemo(() => {
     if (!workshopOrders) return []
     const query = workshopSearch.trim().toLowerCase()
@@ -149,11 +175,17 @@ export default function Atelier() {
   )
 
   const changeStatus = async (orderId: string, status: OrderStatus) => {
+    if (demo) {
+      // La démonstration ne doit jamais modifier une vraie commande.
+      toast.error('Mode démonstration : le changement de statut est désactivé.')
+      return
+    }
     if (
       status === 'cancelled' &&
       !window.confirm('Annuler cette commande ? Cette action sera synchronisée avec le pressing.')
     ) return
 
+    setTransition(orderId)
     try {
       await updateStatus(orderId, status)
       toast.success(`Statut « ${ORDER_STATUSES[status].label} » enregistré sur la tablette.`, { icon: '✅' })
@@ -171,6 +203,8 @@ export default function Atelier() {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Mise à jour impossible')
+    } finally {
+      setTransition(null)
     }
   }
 
@@ -178,20 +212,52 @@ export default function Atelier() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-brand-navy sm:text-2xl">Atelier</h1>
+          <h1 className="text-xl font-bold text-brand-navy sm:text-2xl">
+            Suivi des commandes (Atelier)
+          </h1>
           <p className="text-sm text-slate-500">
-            Scannez l’étiquette d’un vêtement pour faire avancer sa commande.
+            Gérez le flux de vos commandes, ou scannez une étiquette pour faire avancer sa fiche.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setScannerOpen(true)}
-          className="inline-flex min-h-14 items-center gap-2 rounded-xl bg-brand-teal px-5 text-base font-bold text-white transition-colors hover:bg-brand-teal-dark"
-        >
-          <ScanLine size={20} aria-hidden />
-          Scanner un vêtement
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Bascule de vue : le Kanban pour piloter, la liste pour chercher. */}
+          <div
+            role="group"
+            aria-label="Mode d’affichage de la file d’atelier"
+            className="inline-flex overflow-hidden rounded-xl border border-input bg-card"
+          >
+            <button
+              type="button"
+              onClick={() => setVue('kanban')}
+              aria-pressed={vue === 'kanban'}
+              className={`inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-semibold ${
+                vue === 'kanban' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <LayoutGrid size={15} aria-hidden /> Kanban
+            </button>
+            <button
+              type="button"
+              onClick={() => setVue('liste')}
+              aria-pressed={vue === 'liste'}
+              className={`inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-semibold ${
+                vue === 'liste' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <List size={15} aria-hidden /> Liste
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setScannerOpen(true)}
+            className="inline-flex min-h-14 items-center gap-2 rounded-xl bg-brand-teal px-5 text-base font-bold text-white transition-colors hover:bg-brand-teal-dark"
+          >
+            <ScanLine size={20} aria-hidden />
+            Scanner un vêtement
+          </button>
+        </div>
       </div>
 
       {/* Saisie manuelle : secours si la caméra est indisponible */}
@@ -326,7 +392,17 @@ export default function Atelier() {
               </div>
             </div>
 
-            {filteredWorkshopOrders.length === 0 ? (
+            {vue === 'kanban' ? (
+              <KanbanBoard
+                commandes={filteredWorkshopOrders}
+                piecesParCommande={piecesParCommande}
+                role={roleAtelier}
+                aujourdhui={aujourdhui}
+                transition={transition}
+                demo={demo}
+                onChangerStatut={changeStatus}
+              />
+            ) : filteredWorkshopOrders.length === 0 ? (
               <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-6 text-center" role="status">
                 <p className="font-semibold text-slate-700">Aucune commande ne correspond à ces critères.</p>
                 <button
