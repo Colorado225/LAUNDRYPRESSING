@@ -31,6 +31,15 @@ Deux cartes, deux gestes différents :
 
 Le choix fixe la grille d'articles. **Changer de service** depuis l'écran 2 ramène ici.
 
+**Forfaits** (facultatif)
+
+Un forfait vend un **nombre de vêtements pour un prix global** : « Pack 10 pièces, 5 000 FCFA ». Le propriétaire le crée dans Services & activités → **Forfaits** (prix, nombre de vêtements inclus, ce qui se passe au-delà). Au comptoir :
+
+- toucher un forfait l'ajoute au panier à son prix global et ouvre sa **composition** ;
+- chaque vêtement touché ensuite est compté (`3 / 10 vêtement(s)`), sans être facturé en plus ;
+- au-delà du nombre inclus, le forfait **facture la pièce en plus** au prix configuré, ou **refuse** la vente : c'est le propriétaire qui l'a choisi ;
+- **Terminer la composition** rend la grille aux prix par article.
+
 ### Écran 2 — client et articles
 
 **Client**

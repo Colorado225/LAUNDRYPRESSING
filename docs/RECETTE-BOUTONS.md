@@ -42,6 +42,11 @@ l'heure, le compte utilisé et le message affiché).
 - [ ] Ajouter un article, puis une seconde fois → une seule ligne, quantité 2 ; corriger la quantité au panier → total recalculé
 - [ ] Supprimer une ligne, puis **Vider** → panier vide, total à 0 FCFA
 - [ ] **Article libre** (libellé hors grille) → ligne ajoutée, prix saisissable
+- [ ] Services & activités → **Forfaits** : créer « Pack 10 pièces » (5 000 FCFA, 10 inclus, 300 FCFA/pièce au-delà) → apparaît dans la liste avec ses conditions
+- [ ] Comptoir → toucher le forfait puis 3 vêtements → panier `3 / 10 vêtement(s)`, total **5 000 FCFA** (aucune pièce refacturée)
+- [ ] Toucher un 11ᵉ vêtement → total **5 300 FCFA** ; passer le forfait en « refuser au-delà » → l'appui est refusé, le total reste à 5 000 FCFA
+- [ ] Forfait au panier → ni la quantité ni le prix ne sont saisissables ; « Terminer la composition » rend la grille aux prix par article
+- [ ] Retirer un forfait de la vente → confirmation, le forfait disparaît des commandes possibles, l'historique reste consultable
 - [ ] **Rechercher un client déjà venu** → suggestion, clic qui remplit nom et téléphone
 - [ ] Prix à 0 FCFA → refus explicite, aucune commande créée (le message parle de « prix unitaire » à la pièce et de « tarif au kilo » pour un lot)
 - [ ] Enregistrer sans nom de client → retour sur l'écran des articles, motif affiché, liste des commandes inchangée

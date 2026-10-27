@@ -17,9 +17,15 @@ export interface LignePanier {
   /** Précision affichée sous le libellé (composition du lot, prestation…). */
   detail?: string | null
   quantite: number
-  unite: 'PIECE' | 'KG'
+  unite: 'PIECE' | 'KG' | 'PACKAGE'
   prixUnitaire: number
   total: number
+  /**
+   * Prix global non décomposable : un forfait se vend au forfait. La quantité
+   * et le prix n'y sont donc plus saisissables — c'est le nombre de vêtements
+   * comptés qui fait varier le montant, depuis la grille.
+   */
+  verrouille?: boolean
 }
 
 interface OrderBasketProps {
@@ -43,6 +49,10 @@ export default function OrderBasket({
     (somme, ligne) => somme + (ligne.unite === 'PIECE' ? ligne.quantite : 0),
     0,
   )
+  const forfaits = lignes.reduce(
+    (somme, ligne) => somme + (ligne.unite === 'PACKAGE' ? 1 : 0),
+    0,
+  )
 
   return (
     <aside
@@ -57,7 +67,7 @@ export default function OrderBasket({
           <p className="text-xs text-slate-500">
             {lignes.length === 0
               ? 'Aucun article pour le moment.'
-              : `${pieces} pièce${pieces > 1 ? 's' : ''} · ${lignes.length} ligne${lignes.length > 1 ? 's' : ''}`}
+              : `${pieces} pièce${pieces > 1 ? 's' : ''}${forfaits > 0 ? ` · ${forfaits} forfait${forfaits > 1 ? 's' : ''}` : ''} · ${lignes.length} ligne${lignes.length > 1 ? 's' : ''}`}
           </p>
         </div>
         {lignes.length > 0 && onVider && (
@@ -95,6 +105,11 @@ export default function OrderBasket({
                 </button>
               </div>
 
+              {ligne.verrouille ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Forfait : 1 × {formatFcfa(ligne.prixUnitaire)} — prix global, non décomposable.
+                </p>
+              ) : (
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <label className="space-y-1">
                   <span className="block text-[11px] font-semibold text-slate-600">
@@ -131,6 +146,7 @@ export default function OrderBasket({
                   />
                 </label>
               </div>
+              )}
 
               <p className="mt-2 text-right text-sm font-semibold text-slate-700">
                 {formatFcfa(ligne.total)}

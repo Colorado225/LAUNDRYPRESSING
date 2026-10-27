@@ -362,7 +362,9 @@ export default function OrderDetail() {
                 {item.activityNameSnapshot && <p className="text-xs text-slate-600">Activité : {item.activityNameSnapshot}</p>}
                 {formatGarmentComposition(item.garmentDetails) && <p className="text-xs text-slate-600">Vêtements : {formatGarmentComposition(item.garmentDetails)}</p>}
                 <p className="text-xs text-slate-500">
-                  {item.familyPackageSnapshot
+                  {item.commercialPackageId
+                    ? `Forfait · ${(item.garmentDetails ?? []).reduce((somme, detail) => somme + detail.quantity, 0)} vêtement(s) · ${formatFcfa(item.unitPrice)}`
+                    : item.familyPackageSnapshot
                     ? `${item.familyPackageSnapshot.pieceCount} pièce(s) · ${item.laundryPriceBreakdownSnapshot ?? 'forfait famille'}`
                     : item.laundryModelId
                       ? `${item.laundryWeightKg} kg · ${item.laundryPriceBreakdownSnapshot ?? 'modèle commercial'}`

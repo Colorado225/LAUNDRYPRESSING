@@ -125,8 +125,12 @@ export interface LocalOrderItem {
   laundryMinimumChargeSnapshot?: number | null
   /** Composition issue des anciennes données locales ; elle n’est plus envoyée au serveur. */
   familyPackageSnapshot?: FamilyPackageSnapshot | null
-  /** Vêtements détaillés pour une prestation au kilo. */
+  /** Vêtements détaillés pour une prestation au kilo ou un forfait. */
   garmentDetails?: OrderGarmentDetail[]
+  /** Forfait vendu (`commercialPackageId`) — la composition libre est dans `garmentDetails`. */
+  commercialPackageId?: string | null
+  /** Ligne de détail d'un forfait (prix inclus dans le forfait) ; inutilisé en v1. */
+  packageLineId?: string | null
 }
 
 /** Prestation configurée pour un pressing (cache hors ligne du référentiel). */
@@ -154,6 +158,26 @@ export interface LocalTenantService {
   billingUnit: TenantServiceBillingUnit
   unitPrice: number | null
   sortOrder: number
+}
+
+/**
+ * Forfait commercial mis en cache pour être vendu hors ligne.
+ *
+ * Les forfaits vivent côté serveur (`commercial_packages`) ; le comptoir doit
+ * pouvoir les proposer même sans réseau, comme les prestations.
+ */
+export interface LocalCommercialPackage {
+  id: string
+  tenantId: string
+  code: string
+  name: string
+  description: string | null
+  priceXof: number
+  garmentsIncluded: number | null
+  overflowPolicy: 'PER_EXTRA_ITEM' | 'REPEAT_PACKAGE' | 'REJECT_OVER_LIMIT' | 'MANUAL_QUOTE'
+  overflowUnitPriceXof: number | null
+  isActive: boolean
+  archivedAt: string | null
 }
 
 /**
@@ -366,6 +390,7 @@ export class PressingDatabase extends Dexie {
   notifications!: Table<LocalNotification, string>
   tenantActivities!: Table<LocalTenantActivity, string>
   tenantServices!: Table<LocalTenantService, string>
+  commercialPackages!: Table<LocalCommercialPackage, string>
 
   constructor() {
     super('pressing-pro')
@@ -591,6 +616,11 @@ export class PressingDatabase extends Dexie {
           if (item.activityNameSnapshot === undefined) item.activityNameSnapshot = null
         })
       })
+
+    // v16 : forfaits commerciaux (packs de N vêtements) vendables hors ligne.
+    this.version(16).stores({
+      commercialPackages: 'id, tenantId, isActive, [tenantId+isActive]',
+    })
   }
 }
 
@@ -615,6 +645,7 @@ export async function clearLocalData(): Promise<void> {
       db.notifications,
       db.tenantActivities,
       db.tenantServices,
+      db.commercialPackages,
     ],
     async () => {
       await Promise.all([
@@ -630,6 +661,7 @@ export async function clearLocalData(): Promise<void> {
         db.notifications.clear(),
         db.tenantActivities.clear(),
         db.tenantServices.clear(),
+        db.commercialPackages.clear(),
       ])
     },
   )

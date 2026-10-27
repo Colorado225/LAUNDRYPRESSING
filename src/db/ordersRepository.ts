@@ -134,6 +134,8 @@ export async function createOrderLocal(
       laundryMinimumChargeSnapshot: item.laundryMinimumChargeSnapshot ?? null,
       familyPackageSnapshot: item.familyPackageSnapshot ?? null,
       garmentDetails: item.garmentDetails ?? [],
+      commercialPackageId: item.commercialPackageId ?? null,
+      packageLineId: item.packageLineId ?? null,
     }
   })
 
@@ -751,6 +753,8 @@ export function toSupabaseOrderItem(item: LocalOrderItem): OrderItemRow {
       priceReason: item.priceReason,
     }),
     garment_details: item.garmentDetails ?? [],
+    commercial_package_id: item.commercialPackageId ?? null,
+    package_line_id: item.packageLineId ?? null,
   }
 }
 

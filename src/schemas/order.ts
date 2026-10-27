@@ -62,6 +62,13 @@ export const orderItemInputSchema = z.object({
   /** Prestation configurée source et nom de son activité figé au dépôt. */
   tenantServiceId: z.string().uuid('Référence de prestation invalide').nullable().optional(),
   activityNameSnapshot: z.string().trim().max(80).nullable().optional(),
+  /**
+   * Forfait commercial vendu (table `commercial_packages`) : la ligne porte le
+   * prix global, sa composition libre est dans `garmentDetails`.
+   */
+  commercialPackageId: z.string().uuid('Référence de forfait invalide').nullable().optional(),
+  /** Ligne de détail d'un forfait, dont le prix est déjà inclus dans l'en-tête. */
+  packageLineId: z.string().uuid('Référence de forfait invalide').nullable().optional(),
   /** Types et quantités énumérés pour une ligne de prestation au kilo. */
   garmentDetails: z.array(z.object({
     type: z.enum([
@@ -133,6 +140,29 @@ export const orderItemInputSchema = z.object({
 }).superRefine((item, context) => {
   const unite = item.billingUnit ?? 'PIECE'
   const quantite = item.quantity ?? 1
+  // Une ligne ne peut pas être à la fois un forfait et une ligne de détail :
+  // le serveur refuse exactement la même combinaison (`order_items_package_role_check`).
+  if (item.commercialPackageId && item.packageLineId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['commercialPackageId'],
+      message: 'Une ligne ne peut pas être un forfait et un détail de forfait à la fois.',
+    })
+  }
+  if (item.commercialPackageId && item.billingUnit !== 'PACKAGE') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['billingUnit'],
+      message: 'Un forfait se facture en unité « forfait ».',
+    })
+  }
+  if (item.packageLineId && item.price !== 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['price'],
+      message: 'Le détail d’un forfait est compris dans le prix global : il ne peut pas être refacturé.',
+    })
+  }
   if (item.laundryModelId) {
     if (item.catalogEntryId) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['catalogEntryId'], message: 'Une ligne modèle ne peut pas dépendre d’un tarif à la pièce.' })
@@ -200,11 +230,13 @@ export const orderItemInputSchema = z.object({
       message: 'Énumérez au moins un type de vêtement pour cette prestation au kilo.',
     })
   }
-  if (unite !== 'KG' && item.garmentDetails?.length) {
+  // Le détail des vêtements décrit aussi la composition libre d'un forfait,
+  // mais ne s'applique à aucune autre unité (une pièce reste une pièce).
+  if (unite !== 'KG' && unite !== 'PACKAGE' && item.garmentDetails?.length) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['garmentDetails'],
-      message: 'Le détail des vêtements ne s’applique qu’à une prestation au kilo.',
+      message: 'Le détail des vêtements ne s’applique qu’à une prestation au kilo ou à un forfait.',
     })
   }
   if (['PIECE', 'PAIR', 'SET', 'PACKAGE'].includes(unite) && !Number.isInteger(quantite)) {

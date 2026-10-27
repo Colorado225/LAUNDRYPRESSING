@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Activity, Check, Loader2, Pencil, Plus, Scissors, Sparkles, Trash2, X } from 'lucide-react'
+import { Activity, Check, Loader2, Package, Pencil, Plus, Scissors, Sparkles, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTenantOnboarding } from '@/lib/tenantOnboarding'
 import { can } from '@/lib/permissions'
@@ -19,6 +19,7 @@ import {
   type TenantServiceConfiguration,
   type TenantServiceOffering,
 } from '@/services/tenantServices'
+import ForfaitManager from '@/components/services/ForfaitManager'
 
 const SUGGESTIONS_ACTIVITES = [
   'Pressing',
@@ -31,7 +32,7 @@ const SUGGESTIONS_ACTIVITES = [
   'Cuir et daim',
 ]
 
-type Onglet = 'activites' | 'prestations'
+type Onglet = 'activites' | 'prestations' | 'forfaits'
 
 /** CRUD des activités et prestations, rattachées au pressing connecté. */
 export default function ServicesPressing() {
@@ -238,12 +239,15 @@ export default function ServicesPressing() {
         </p>
       </header>
 
-      <div role="tablist" aria-label="Gestion des services et activités" className="grid grid-cols-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+      <div role="tablist" aria-label="Gestion des services et activités" className="grid grid-cols-3 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
         <button type="button" role="tab" aria-selected={onglet === 'activites'} onClick={() => setOnglet('activites')} className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition-colors ${onglet === 'activites' ? 'bg-brand-navy text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
           <Activity size={17} aria-hidden /> Activités <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs">{configuration.activities.length}</span>
         </button>
         <button type="button" role="tab" aria-selected={onglet === 'prestations'} onClick={() => setOnglet('prestations')} className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition-colors ${onglet === 'prestations' ? 'bg-brand-navy text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
           <Scissors size={17} aria-hidden /> Prestations <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs">{configuration.services.length}</span>
+        </button>
+        <button type="button" role="tab" aria-selected={onglet === 'forfaits'} onClick={() => setOnglet('forfaits')} className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition-colors ${onglet === 'forfaits' ? 'bg-brand-navy text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+          <Package size={17} aria-hidden /> Forfaits
         </button>
       </div>
 
@@ -308,6 +312,10 @@ export default function ServicesPressing() {
                 </ul>
               )}
             </section>
+          )}
+
+          {onglet === 'forfaits' && (
+            <ForfaitManager tenantId={tenantId} peutGerer={isOwner} />
           )}
 
           {onglet === 'prestations' && (

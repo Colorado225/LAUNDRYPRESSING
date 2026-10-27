@@ -27,6 +27,8 @@ import {
 } from '@/services/tenantServices'
 import { GARMENT_GRID } from '@/constants/garmentImages'
 import type { OrderGarmentType } from '@/types/database'
+import { nombreVetements, resumerForfait, tariferForfait, type Forfait } from '@/lib/packagePricing'
+import { fetchCommercialPackages, forfaitsActifs } from '@/services/commercialPackages'
 import {
   articlesDuParcours,
   modeFacturationParDefaut,
@@ -82,7 +84,11 @@ type Paiement = 'plus-tard' | 'especes'
  */
 interface LigneDraft {
   id: string
-  genre: 'piece' | 'lot'
+  /**
+   * `forfait` : un prix global pour un nombre de vêtements. La composition
+   * libre est portée par `garmentDetails`, comme pour un lot pesé.
+   */
+  genre: 'piece' | 'lot' | 'forfait'
   /** Type de vêtement pour une ligne à la pièce ; `null` pour un libellé libre. */
   type: OrderGarmentType | null
   label: string
@@ -92,6 +98,8 @@ interface LigneDraft {
   tenantServiceId: string | null
   activityNameSnapshot: string | null
   garmentDetails: Array<{ type: OrderGarmentType; quantity: number }>
+  /** Forfait vendu : sa définition est figée au moment de l'ajout. */
+  forfait?: Forfait | null
 }
 
 const LIBELLES_ARTICLES = new Map<OrderGarmentType, string>(
@@ -142,6 +150,10 @@ export default function OrderForm() {
 
   const [activites, setActivites] = useState<Awaited<ReturnType<typeof fetchTenantServiceConfiguration>>['activities']>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
+  const [forfaits, setForfaits] = useState<Forfait[]>([])
+  // Ligne de forfait en cours de composition : les appuis sur la grille
+  // alimentent sa composition au lieu d'ajouter des lignes facturées.
+  const [forfaitActif, setForfaitActif] = useState<string | null>(null)
   const [parcours, setParcours] = useState<ParcoursService | null>(parcoursInitial)
   const [etape, setEtape] = useState<Etape>(parcoursInitial ? 1 : 0)
 
@@ -178,6 +190,14 @@ export default function OrderForm() {
         if (!active) return
         setActivites(configuration.activities)
         setPrestations(configuration.services)
+      })
+      .catch(() => undefined)
+    // Les forfaits sont un confort de vente : leur échec ne bloque pas la
+    // saisie, il laisse simplement le comptoir facturer à l'article.
+    void fetchCommercialPackages(tenantId)
+      .then((packages) => {
+        if (!active) return
+        setForfaits(packages)
       })
       .catch(() => undefined)
     return () => {
@@ -297,7 +317,15 @@ export default function OrderForm() {
     id: ligne.id,
     libelle: ligne.label,
     detail:
-      ligne.genre === 'lot'
+      ligne.genre === 'forfait'
+        ? `${nombreVetements(ligne.garmentDetails)} vêtement(s)${
+            ligne.garmentDetails.length > 0
+              ? ` · ${ligne.garmentDetails
+                  .map((detail) => `${detail.quantity} × ${LIBELLES_ARTICLES.get(detail.type) ?? detail.type}`)
+                  .join(', ')}`
+              : ' — touchez le linge déposé'
+          }`
+        : ligne.genre === 'lot'
         ? ligne.garmentDetails.length > 0
           ? `${ligne.quantity} kg · ${ligne.garmentDetails
               .map((detail) => `${detail.quantity} × ${LIBELLES_ARTICLES.get(detail.type) ?? detail.type}`)
@@ -305,9 +333,12 @@ export default function OrderForm() {
           : 'Composition à préciser'
         : ligne.serviceName,
     quantite: ligne.quantity,
-    unite: ligne.genre === 'lot' ? 'KG' : 'PIECE',
+    unite: ligne.genre === 'lot' ? 'KG' : ligne.genre === 'forfait' ? 'PACKAGE' : 'PIECE',
     prixUnitaire: ligne.unitPrice,
     total: totalLigne(ligne),
+    // Un forfait est un prix global : ni sa quantité ni son prix ne se
+    // saisissent, c'est le nombre de vêtements comptés qui le fait varier.
+    verrouille: ligne.genre === 'forfait',
   }))
 
   const prestationKiloCourante = prestationsKilo.find((service) => service.id === prestationKilo)
@@ -364,7 +395,84 @@ export default function OrderForm() {
     )
   }, [parcours, modeBlanchisserie, prestationKilo, prestationsKilo])
 
+  /** Forfaits réellement vendables (actifs, non archivés). */
+  const forfaitsDisponibles = useMemo(() => forfaitsActifs(forfaits), [forfaits])
+  /** Ligne de forfait en cours de composition, s'il y en a une. */
+  const ligneForfaitActive = lignes.find((ligne) => ligne.id === forfaitActif) ?? null
+
+  /**
+   * Ajoute un forfait au panier.
+   *
+   * Un seul forfait est composé à la fois : ajouter un second forfait le rend
+   * actif, sans toucher au premier. Le prix affiché est celui du forfait seul ;
+   * il augmentera avec les vêtements comptés au-delà du nombre inclus.
+   */
+  const ajouterForfait = (forfait: Forfait) => {
+    if (submitting) return
+    const id = idLigne()
+    setLignes((current) => [
+      ...current,
+      {
+        id,
+        genre: 'forfait',
+        type: null,
+        label: forfait.name,
+        quantity: 1,
+        unitPrice: forfait.priceXof,
+        serviceName: null,
+        tenantServiceId: null,
+        activityNameSnapshot: null,
+        garmentDetails: [],
+        forfait,
+      },
+    ])
+    setForfaitActif(id)
+    setErrors([])
+  }
+
+  /**
+   * Compte un vêtement dans le forfait actif.
+   *
+   * Le dépassement suit la règle configurée : supplément par pièce, ou refus
+   * net. Un refus ne modifie **rien** et l'explique : le comptoir ne doit
+   * jamais découvrir un montant différent de ce qu'il vient de toucher.
+   */
+  const ajouterAuForfait = (type: OrderGarmentType) => {
+    if (!ligneForfaitActive || !ligneForfaitActive.forfait) return
+    const forfait = ligneForfaitActive.forfait
+    const details = [...ligneForfaitActive.garmentDetails]
+    const index = details.findIndex((detail) => detail.type === type)
+    const suivants =
+      index >= 0
+        ? details.map((detail, position) =>
+            position === index ? { ...detail, quantity: detail.quantity + 1 } : detail,
+          )
+        : [...details, { type, quantity: 1 }]
+
+    const tarification = tariferForfait(forfait, nombreVetements(suivants))
+    if (tarification.statut === 'refus' || tarification.statut === 'non_pris_en_charge') {
+      toast.error(tarification.motif ?? 'Ce forfait ne peut pas couvrir ce vêtement en plus.')
+      return
+    }
+
+    setLignes((current) =>
+      current.map((ligne) =>
+        ligne.id === ligneForfaitActive.id
+          ? { ...ligne, garmentDetails: suivants, unitPrice: tarification.total }
+          : ligne,
+      ),
+    )
+  }
+
+  const terminerComposition = () => setForfaitActif(null)
+
   const ajouterArticle = (type: OrderGarmentType) => {
+    // Un forfait en cours de composition capte les appuis sur la grille.
+    if (ligneForfaitActive) {
+      ajouterAuForfait(type)
+      return
+    }
+
     if (parcours === 'blanchisserie' && modeBlanchisserie === 'kilo') {
       assurerLot()
       setLignes((current) =>
@@ -441,6 +549,7 @@ export default function OrderForm() {
     setLignes((current) =>
       current.map((ligne) => {
         if (ligne.id !== id) return ligne
+        if (ligne.genre === 'forfait') return ligne
         if (ligne.genre === 'lot') {
           const poids = Number.isFinite(valeur) ? Number(Math.max(0, valeur).toFixed(3)) : 0
           return { ...ligne, quantity: poids }
@@ -454,7 +563,7 @@ export default function OrderForm() {
   const modifierPrix = (id: string, valeur: number) => {
     setLignes((current) =>
       current.map((ligne) =>
-        ligne.id === id
+        ligne.id === id && ligne.genre !== 'forfait'
           ? { ...ligne, unitPrice: Number.isFinite(valeur) ? Math.max(0, Math.floor(valeur)) : 0 }
           : ligne,
       ),
@@ -463,6 +572,7 @@ export default function OrderForm() {
 
   const supprimerLigne = (id: string) => {
     setLignes((current) => current.filter((ligne) => ligne.id !== id))
+    setForfaitActif((current) => (current === id ? null : current))
   }
 
   const changerPrestationKilo = (serviceId: string) => {
@@ -496,6 +606,19 @@ export default function OrderForm() {
   const lignesEnregistrees = (): OrderItemInput[] =>
     lignes.map((ligne) => {
       const price = totalLigne(ligne)
+      if (ligne.genre === 'forfait' && ligne.forfait) {
+        return {
+          label: ligne.label,
+          price,
+          quantity: 1,
+          unitPrice: ligne.unitPrice,
+          billingUnit: 'PACKAGE',
+          pricingMode: 'FIXED',
+          priceStatus: 'CONFIRMED',
+          commercialPackageId: referenceServeur(ligne.forfait.id),
+          ...(ligne.garmentDetails.length > 0 ? { garmentDetails: ligne.garmentDetails } : {}),
+        } satisfies OrderItemInput
+      }
       if (ligne.genre === 'lot') {
         return {
           label: ligne.label,
@@ -1107,6 +1230,55 @@ export default function OrderForm() {
               </label>
             )}
           </div>
+
+          {/* Forfaits */}
+          {forfaitsDisponibles.length > 0 && (
+            <div className="rounded-xl border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Forfaits
+                </h3>
+                {ligneForfaitActive && (
+                  <button
+                    type="button"
+                    onClick={terminerComposition}
+                    className="min-h-9 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Terminer la composition
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {forfaitsDisponibles.map((forfait) => (
+                  <button
+                    key={forfait.id}
+                    type="button"
+                    aria-label={`Ajouter le forfait ${forfait.name}`}
+                    aria-pressed={forfaitActif === lignes.find((ligne) => ligne.forfait?.id === forfait.id)?.id}
+                    onClick={() => ajouterForfait(forfait)}
+                    disabled={submitting}
+                    className="min-h-16 rounded-xl border border-slate-300 p-3 text-left hover:border-brand-teal disabled:opacity-50"
+                  >
+                    <span className="block text-sm font-bold text-slate-800">{forfait.name}</span>
+                    <span className="mt-0.5 block text-sm font-semibold text-brand-navy">
+                      {formatFcfa(forfait.priceXof)}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      {resumerForfait(forfait)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {ligneForfaitActive?.forfait && (
+                <p role="status" className="mt-2 rounded-lg bg-brand-teal/5 p-2 text-sm text-slate-700">
+                  Composition de « {ligneForfaitActive.forfait.name} » :{' '}
+                  {nombreVetements(ligneForfaitActive.garmentDetails)} /{' '}
+                  {ligneForfaitActive.forfait.garmentsIncluded ?? '∞'} vêtement(s). Touchez le linge
+                  déposé dans la grille.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Grille + panier */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">

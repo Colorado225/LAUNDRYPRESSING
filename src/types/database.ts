@@ -108,6 +108,48 @@ export type TenantServiceRow = {
   created_at: string
 }
 
+/**
+ * Politique de dépassement d'un forfait commercial.
+ *
+ * Seules `PER_EXTRA_ITEM` et `REJECT_OVER_LIMIT` sont proposées par l'écran de
+ * configuration (v1). Les deux autres existent en base depuis la migration
+ * distante « catalogue_lot1 » ; les vendre facturerait un montant inventé.
+ */
+export type PackageOverflowPolicy =
+  | 'PER_EXTRA_ITEM'
+  | 'REPEAT_PACKAGE'
+  | 'REJECT_OVER_LIMIT'
+  | 'MANUAL_QUOTE'
+
+export type CommercialPackageRow = {
+  id: string
+  tenant_id: string
+  code: string
+  name: string
+  description: string | null
+  price_xof: number
+  is_active: boolean
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+  tenant_service_id: string | null
+  /** Nombre de vêtements couverts par le prix global ; `null` = illimité. */
+  garments_included: number | null
+  overflow_policy: PackageOverflowPolicy
+  overflow_unit_price_xof: number | null
+}
+
+export type CommercialPackageItemRow = {
+  id: string
+  tenant_id: string
+  package_id: string
+  garment_type_id: string | null
+  tenant_service_id: string | null
+  label: string | null
+  quantity: number
+  sort_order: number
+}
+
 export type TenantUserRow = {
   user_id: string
   tenant_id: string
@@ -177,9 +219,14 @@ export type OrderItemRow = {
   conditions_snapshot: string | null
   /** Motif d'un écart de tarif ou d'une ligne libre. */
   price_reason: string | null
-  /** Composition des vêtements d'une ligne au kilo, figée à la réception. */
+  /** Composition des vêtements d'une ligne au kilo ou d'un forfait. */
   garment_details: OrderGarmentDetail[]
-  /** Modèle commercial et conditions tarifaires figés à la réception. */
+  /**
+   * Forfait vendu (`commercial_package_id`) ou ligne de détail d'un forfait
+   * (`package_line_id`). Les deux ne peuvent pas être renseignés ensemble.
+   */
+  commercial_package_id: string | null
+  package_line_id: string | null
 }
 
 /** Réclamation ou vêtement abîmé (table `order_issues`, migration 005). */
@@ -782,6 +829,25 @@ export interface Database {
         Update: Partial<Omit<TenantServiceRow, 'id' | 'tenant_id' | 'created_at'>>
         Relationships: []
       }
+      commercial_packages: {
+        Row: CommercialPackageRow
+        Insert: InsertOf<
+          CommercialPackageRow,
+          'id' | 'description' | 'is_active' | 'archived_at' | 'created_at' | 'updated_at'
+          | 'tenant_service_id' | 'garments_included' | 'overflow_policy' | 'overflow_unit_price_xof'
+        >
+        Update: Partial<Omit<CommercialPackageRow, 'id' | 'tenant_id' | 'created_at'>>
+        Relationships: []
+      }
+      commercial_package_items: {
+        Row: CommercialPackageItemRow
+        Insert: InsertOf<
+          CommercialPackageItemRow,
+          'id' | 'garment_type_id' | 'tenant_service_id' | 'label' | 'quantity' | 'sort_order'
+        >
+        Update: Partial<Omit<CommercialPackageItemRow, 'id' | 'tenant_id'>>
+        Relationships: []
+      }
       tenant_users: {
         Row: TenantUserRow
         Insert: TenantUserRow
@@ -937,6 +1003,8 @@ export interface Database {
           | 'minimum_charge_snapshot'
           | 'conditions_snapshot'
           | 'garment_details'
+          | 'commercial_package_id'
+          | 'package_line_id'
         >
         Update: Partial<Omit<OrderItemRow, 'id' | 'tenant_id'>>
         Relationships: []
