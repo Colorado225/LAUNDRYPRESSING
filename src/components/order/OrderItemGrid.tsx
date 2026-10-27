@@ -21,6 +21,11 @@ interface OrderItemGridProps {
   quantites: Partial<Record<OrderGarmentType, number>>
   onAjouter: (type: OrderGarmentType) => void
   /**
+   * Prix indicatif par article, quand il est connu (mode démonstration
+   * uniquement : le produit réel n'a pas de tarif par type de vêtement).
+   */
+  prix?: Partial<Record<OrderGarmentType, number>>
+  /**
    * Texte d'aide affiché sous le titre. En blanchisserie, la tuile n'ajoute pas
    * une ligne facturée mais une pièce à la composition du lot pesé.
    */
@@ -31,20 +36,34 @@ export default function OrderItemGrid({
   articles,
   quantites,
   onAjouter,
+  prix,
   legende,
 }: OrderItemGridProps) {
   const [recherche, setRecherche] = useState('')
+  const [categorieActive, setCategorieActive] = useState<string | null>(null)
 
   const filtres = useMemo(() => filtrerArticles(articles, recherche), [articles, recherche])
+
+  /** Catégories réellement présentes, dans l'ordre de la grille. */
+  const pastilles = useMemo(
+    () => [...new Set(articles.map((article) => article.categorie))],
+    [articles],
+  )
+
+  const visibles = useMemo(
+    () => (categorieActive ? filtres.filter((article) => article.categorie === categorieActive) : filtres),
+    [filtres, categorieActive],
+  )
+
   const categories = useMemo(() => {
     const ordre = new Map<string, ArticleGrille[]>()
-    for (const article of filtres) {
+    for (const article of visibles) {
       const liste = ordre.get(article.categorie) ?? []
       liste.push(article)
       ordre.set(article.categorie, liste)
     }
     return [...ordre.entries()]
-  }, [filtres])
+  }, [visibles])
 
   return (
     <div className="space-y-4">
@@ -70,6 +89,40 @@ export default function OrderItemGrid({
           className="min-h-12 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-base outline-none focus:border-brand-teal"
         />
       </div>
+
+      {/* Filtres horizontaux de la maquette : une pastille active, les autres
+          sobres. Ils filtrent la grille sans vider le panier. */}
+      {pastilles.length > 1 && (
+        <div role="group" aria-label="Filtrer par catégorie" className="flex gap-2 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setCategorieActive(null)}
+            aria-pressed={categorieActive === null}
+            className={`min-h-10 shrink-0 rounded-full border px-3 text-sm font-semibold transition-colors ${
+              categorieActive === null
+                ? 'border-primary bg-primary text-white'
+                : 'border-input bg-card text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Tous
+          </button>
+          {pastilles.map((categorie) => (
+            <button
+              key={categorie}
+              type="button"
+              onClick={() => setCategorieActive(categorie)}
+              aria-pressed={categorieActive === categorie}
+              className={`min-h-10 shrink-0 rounded-full border px-3 text-sm font-semibold transition-colors ${
+                categorieActive === categorie
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-input bg-card text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {categorie}
+            </button>
+          ))}
+        </div>
+      )}
 
       {categories.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
@@ -120,6 +173,11 @@ export default function OrderItemGrid({
                     <span className="text-center text-xs font-medium leading-tight text-slate-700">
                       {article.libelle}
                     </span>
+                    {prix?.[article.type] !== undefined && (
+                      <span className="text-[11px] font-semibold text-brand-teal">
+                        {prix[article.type]!.toLocaleString('fr-FR')} FCFA
+                      </span>
+                    )}
                   </button>
                 )
               })}

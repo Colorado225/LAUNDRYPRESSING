@@ -271,3 +271,44 @@ describe('OrderItemGrid — grille tactile', () => {
     expect(texte()).toContain('Touchez le linge déposé : il rejoint le lot pesé.')
   })
 })
+
+describe('OrderItemGrid — filtres et prix indicatifs', () => {
+  it('filtre la grille par catégorie avec une pastille active', async () => {
+    await monter(grille(() => undefined))
+
+    const pastille = (nom: string) =>
+      [...(hote?.querySelectorAll('button') ?? [])].find(
+        (bouton) => bouton.textContent?.trim() === nom,
+      )
+
+    // « Tous » est actif au départ.
+    expect(pastille('Tous')?.getAttribute('aria-pressed')).toBe('true')
+
+    await act(async () => pastille('Divers')?.click())
+
+    expect(pastille('Divers')?.getAttribute('aria-pressed')).toBe('true')
+    expect(parLabel('Ajouter Écharpe')).toBeTruthy()
+    expect(hote?.querySelector('[aria-label="Ajouter Chemise"]')).toBeNull()
+
+    await act(async () => pastille('Tous')?.click())
+    expect(parLabel('Ajouter Chemise')).toBeTruthy()
+  })
+
+  it('n’affiche un prix que lorsque l’appelant en fournit un', async () => {
+    await monter(grille(() => undefined))
+    expect(texte()).not.toContain('FCFA')
+
+    await monter(
+      <OrderItemGrid
+        articles={ARTICLES}
+        quantites={{}}
+        onAjouter={() => undefined}
+        prix={{ CHEMISE: 2500 }}
+      />,
+    )
+
+    expect(texte()).toContain('2 500 FCFA')
+    // Un seul prix fourni : les autres tuiles restent sans montant.
+    expect(texte()).not.toContain('Pantalon2 500')
+  })
+})

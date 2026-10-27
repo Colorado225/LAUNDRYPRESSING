@@ -1,5 +1,5 @@
 import type { DashboardSnapshot } from '@/services/dashboardService'
-import type { OrderStatus } from '@/types/database'
+import type { OrderGarmentType, OrderStatus } from '@/types/database'
 
 /**
  * Jeu de données de démonstration.
@@ -51,6 +51,30 @@ export interface CarteAtelierDemo {
   montant: number
   recueLe: string
   statut: OrderStatus
+}
+
+/**
+ * Prix indicatifs affichés sur les tuiles de la réception, en mode démonstration.
+ *
+ * Le produit réel ne connaît pas de prix par type de vêtement (la migration 021
+ * a supprimé le catalogue ; le prix se saisit sur la ligne). Ces valeurs
+ * servent uniquement à montrer la maquette : elles ne sont **jamais** utilisées
+ * pour calculer un total, et n'apparaissent que si le mode démonstration est
+ * actif.
+ */
+export const PRIX_ARTICLES_DÉMO: Partial<Record<OrderGarmentType, number>> = {
+  CHEMISE: 2_500,
+  T_SHIRT: 1_500,
+  PANTALON: 2_000,
+  JEAN: 2_500,
+  ROBE: 3_500,
+  JUPE: 2_000,
+  VESTE: 4_000,
+  COSTUME: 6_000,
+  BOUBOU: 4_500,
+  DRAP: 1_800,
+  SERVIETTE: 1_000,
+  AUTRE: 1_500,
 }
 
 export const SÉRIE_DÉMO: readonly PointDemo[] = [

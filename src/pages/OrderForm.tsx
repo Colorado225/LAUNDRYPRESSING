@@ -17,6 +17,8 @@ import {
 } from '@/schemas/order'
 import { problemeTarifaire } from '@/lib/orderPricing'
 import { formatFcfa } from '@/lib/formatters'
+import { PRIX_ARTICLES_DÉMO } from '@/data/demo-data'
+import { useDemoStore } from '@/lib/demoMode'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
@@ -33,6 +35,7 @@ import {
   servicesDuParcours,
   type ParcoursService,
 } from '@/lib/orderServices'
+import PromoBanner from '@/components/order/PromoBanner'
 import ServiceChoiceCard from '@/components/order/ServiceChoiceCard'
 import OrderItemGrid from '@/components/order/OrderItemGrid'
 import OrderBasket, { type LignePanier } from '@/components/order/OrderBasket'
@@ -114,6 +117,9 @@ export default function OrderForm() {
   const createOrder = useCreateOrder()
   const localOrders = useLocalOrders()
   const role = useTenantStore((state) => state.role)
+  // Mode démonstration : les prix indicatifs et les cartes de la maquette
+  // s'affichent, mais **rien** ne peut être enregistré (voir `submit`).
+  const demo = useDemoStore((state) => state.actif)
   const tenantId = useTenantStore((state) => state.tenantId)
   // Le rôle peut manquer alors que la boutique est connue (session restaurée
   // depuis le cache, ancien stockage local). On retombe sur le rôle mémorisé
@@ -596,6 +602,18 @@ export default function OrderForm() {
       parcours,
     })
 
+    if (demo) {
+      // Règle de la refonte : en démonstration on montre, on n'écrit pas.
+      // Sinon un formateur laisserait une fausse commande dans la vraie base.
+      const message =
+        'Mode démonstration : l’enregistrement est désactivé. Désactivez le mode démo pour créer une vraie commande.'
+      setErrors([message])
+      toast.error(message)
+      window.scrollTo?.({ top: 0, behavior: 'smooth' })
+      enregistrementEnCours.current = false
+      return
+    }
+
     if (!canCreate) {
       const message = `Création refusée : votre rôle (${roleEffectif ?? 'inconnu'}) n'a pas le droit de créer une commande.`
       setErrors([message])
@@ -976,12 +994,15 @@ export default function OrderForm() {
                 articles={articles}
                 quantites={quantitesGrille}
                 onAjouter={ajouterArticle}
+                prix={demo && parcours === 'pressing' ? PRIX_ARTICLES_DÉMO : undefined}
                 legende={
                   parcours === 'blanchisserie'
                     ? 'Touchez le linge déposé : il s’ajoute à la composition du lot pesé.'
                     : 'Touchez un article pour l’ajouter. Les quantités se corrigent dans le panier.'
                 }
               />
+
+              {parcours === 'pressing' && <PromoBanner />}
 
               {parcours === 'pressing' && (
                 <div className="rounded-xl border border-slate-200 p-3">

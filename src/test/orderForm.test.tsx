@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/db/localDb'
 import { useTenantStore } from '@/lib/tenantContext'
+import { useDemoStore } from '@/lib/demoMode'
 import { createOrderSchema, normalizePhoneCi } from '@/schemas/order'
 import toast from 'react-hot-toast'
 
@@ -518,5 +519,32 @@ describe('garde de rechargement (constat D5)', () => {
     const evenement = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent
     window.dispatchEvent(evenement)
     expect(evenement.defaultPrevented).toBe(false)
+  })
+})
+
+describe('mode démonstration', () => {
+  it('affiche les prix de la maquette sans jamais enregistrer', async () => {
+    useDemoStore.setState({ actif: true })
+    await ouvrirPressing()
+
+    // Les prix indicatifs de la maquette apparaissent sur les tuiles…
+    expect(texte()).toContain('2 500 FCFA')
+
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '07 00 00 00 77')
+    await cliquer(boutonAria('Ajouter Chemise'))
+    await saisir(champAria('Prix unitaire Chemise (FCFA)'), '2500')
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Enregistrer la commande'))
+
+    // …mais rien n'est écrit : la démonstration ne fabrique pas de commande.
+    expect(await db.orders.count()).toBe(0)
+    expect(envoi.appels).toHaveLength(0)
+    expect(texte()).toContain('Mode démonstration')
+    // On reste sur le récapitulatif, avec le motif affiché à l'écran.
+    expect(texte()).toContain('Récapitulatif')
+
+    useDemoStore.setState({ actif: false })
+    demonter()
   })
 })
