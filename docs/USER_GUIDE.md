@@ -1,6 +1,6 @@
 # Guide utilisateur — Pressing Pro
 
-**Version de référence : 26 octobre 2026.** L’application se destine aux propriétaires, réceptionnistes et artisans. Elle fonctionne sur téléphone ou tablette et garde les opérations de commande disponibles hors ligne après la première connexion.
+**Version de référence : 27 octobre 2026.** L’application se destine aux propriétaires, réceptionnistes et artisans. Elle fonctionne sur téléphone ou tablette et garde les opérations de commande disponibles hors ligne après la première connexion.
 
 > Le catalogue tarifaire et les modèles commerciaux ne font plus partie de l’application actuelle. Le prix est saisi directement sur chaque ligne de commande. Les anciennes pages catalogue décrites dans les versions antérieures de ce guide ont été retirées.
 
@@ -20,34 +20,49 @@ Les droits déterminants sont aussi vérifiés côté serveur ; l’interface ne
 
 ## 3. Créer une commande
 
-Le formulaire se déroule en trois étapes — **Client**, **Vêtements**, **Paiement**. Les trois pastilles d'étape en haut sont cliquables, dans les deux sens : elles permettent de revenir sur une étape ou d'aller directement à une autre. Un défaut de saisie est signalé sans bloquer la circulation (message sous les champs, notification, champ surligné) ; c'est **Enregistrer la commande** qui vérifie tout et ramène sur l'étape du champ à corriger.
+Dans **Commandes**, choisir **Nouvelle commande**. Le parcours se déroule en trois écrans — **Service**, **Articles**, **Récapitulatif**. Les trois pastilles d'étape en haut restent cliquables dans les deux sens : elles permettent de revenir en arrière ou d'aller directement à un écran. Un défaut de saisie n'immobilise jamais le parcours (il est annoncé, et le champ est ramené à l'écran) ; c'est **Enregistrer la commande** qui vérifie tout et revient sur l'écran du champ à corriger.
 
-Dans **Commandes**, choisir **Nouvelle commande**. Le formulaire comporte trois étapes.
+### Écran 1 — choisir le service
 
-### Étape 1 — Client
+Deux cartes, deux gestes différents :
 
-- Saisir le nom et le numéro de téléphone ivoirien.
-- Ajouter, si nécessaire, la date de livraison promise.
-- Des commandes précédentes du même appareil peuvent aider à reconnaître un numéro.
-- **Annuler** abandonne le formulaire et revient à la liste.
+- **Pressing** : les vêtements sont identifiés un par un et facturés à la pièce (chemise, pantalon, robe, costume…).
+- **Blanchisserie** : le linge est pesé et facturé au kilo. Un **lot** est préparé automatiquement ; les tuiles de la grille décrivent ce que contient ce lot (2 draps, 1 serviette…).
 
-### Étape 2 — Articles
+Le choix fixe la grille d'articles. **Changer de service** depuis l'écran 2 ramène ici.
 
-Pour chaque vêtement ou prestation :
+### Écran 2 — client et articles
 
-- saisir un libellé (par exemple « Chemise » ou « Retouche ») ;
-- indiquer la quantité entière ;
-- entrer le prix unitaire en FCFA ;
-- ajouter éventuellement le type de tissu et des instructions.
+**Client**
 
-Le total de chaque ligne est calculé à partir de la quantité et du prix unitaire. Le total de la commande est calculé automatiquement. Les lignes et le total restent affichés pour vérification avant l’enregistrement.
+- **Rechercher un client déjà venu** propose les clients des commandes enregistrées sur cet appareil (nom ou téléphone). Un clic remplit le nom et le téléphone.
+- Le nom et le téléphone ivoirien restent saisissables librement : aucun fichier client n'est créé au passage.
+- La date de livraison promise est facultative.
 
-### Étape 3 — Règlement
+**Prestation**
+
+- Au pressing, la prestation choisie s'applique aux articles ajoutés ensuite. Si la boutique n'en a configuré aucune, le prix se saisit ligne par ligne — l'écran reste utilisable.
+- En blanchisserie, la prestation au kilo pré-remplit le tarif du lot quand un tarif est configuré ; il reste modifiable.
+
+**Articles**
+
+- Toucher une tuile ajoute une pièce ; les appuis suivants augmentent la même ligne.
+- Le champ **Rechercher un article** filtre la grille sans tenir compte des accents ni des majuscules.
+- **Article libre** ajoute un article absent de la grille (retouche, pièce non listée).
+- Dans le panier : corriger la quantité (le poids en kg pour un lot), corriger le prix, supprimer une ligne, ou **Vider**.
+
+Chaque correction recalcule le total de la ligne et le total de la commande ; le total affiché est exactement celui qui sera enregistré. Un prix à zéro est refusé avec le motif, avant tout envoi.
+
+### Écran 3 — récapitulatif et enregistrement
+
+Le récapitulatif reprend le service, le client, la date promise, chaque ligne (quantité, unité, prix unitaire, total) et le montant total. Deux sorties :
 
 - **Régler plus tard** : la commande est créée et reste à payer.
-- **Encaisser des espèces maintenant** : la commande est d’abord enregistrée ; sa fiche s’ouvre ensuite avec le panneau espèces déplié. Vérifier le montant reçu et confirmer l’encaissement dans ce panneau. Aucun paiement n’est enregistré simplement en choisissant cette option.
+- **Encaisser des espèces maintenant** : la commande est d'abord enregistrée ; sa fiche s'ouvre ensuite avec le panneau espèces déplié. Vérifier le montant reçu et confirmer l'encaissement dans ce panneau. **Aucun paiement n'est enregistré simplement en choisissant cette option.**
 
-Le paiement Mobile Money se lance depuis la fiche de commande après sa création. Un état de simulation ne signifie pas qu’un règlement réel a été reçu.
+Après l'enregistrement, la fiche de la commande s'ouvre. Hors ligne, la commande est conservée sur l'appareil et le message le dit : elle repartira à la synchronisation suivante, sans doublon. Recharger la page ou fermer l'onglet en pleine saisie déclenche une confirmation du navigateur : une commande en cours ne disparaît pas par inadvertance. **← Retour aux commandes** demande la même confirmation dès que des informations ont été saisies.
+
+Le paiement Mobile Money se lance depuis la fiche de commande après sa création. Un état de simulation ne signifie pas qu'un règlement réel a été reçu.
 
 ## 4. Travailler sur les commandes
 

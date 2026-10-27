@@ -6,6 +6,11 @@ Application web installable (PWA) pour gérer les commandes d’un pressing. Le 
 
 ## Fonctionnalités
 
+- Création d’une commande en trois écrans : choix du service (pressing à la
+  pièce ou blanchisserie au kilo), client et articles (grille tactile, panier,
+  article libre, lot pesé), récapitulatif puis enregistrement. Voir
+  [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) et
+  [`docs/RAPPORT-PARCOURS-COMMANDE.md`](docs/RAPPORT-PARCOURS-COMMANDE.md).
 - Commandes, lignes d’articles, statuts de traitement, échéance promise et attribution.
 - QR code de commande, impression d’étiquette et scan à l’atelier.
 - Mode hors ligne : stockage IndexedDB, création locale et synchronisation différée.

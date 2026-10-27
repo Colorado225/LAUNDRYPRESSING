@@ -162,9 +162,10 @@ saisie → createOrderSchema.safeParse → problemesTarifaires()
 
 | Commande | Résultat |
 |---|---|
-| `npx vitest run src/test/orderForm.test.tsx` | **20/20** |
+| `npx vitest run src/test/orderForm.test.tsx` | **24/24** |
+| `npx vitest run src/test/orderBasket.test.tsx` | **13/13** |
 | `npx vitest run src/test/orderServices.test.ts` | **15/15** |
-| `npm test` | **66 fichiers / 708 tests**, tous verts |
+| `npm test` | **67 fichiers / 725 tests**, tous verts |
 | `npx tsc --noEmit` | ✅ |
 | `npx tsc -p tsconfig.e2e.json` | ✅ |
 | `npm run lint` | ✅ |
@@ -254,7 +255,29 @@ Sur `npm run dev`, en mode démonstration (identifiant de pressing
 
 ---
 
-## 8. État de la branche
+## 8. Clôture du point 3
+
+Trois restes de l'audit ont été traités dans un second lot, sans toucher au
+moteur de commande :
+
+| Reste | Traitement |
+|---|---|
+| **D5** — un rechargement (F5) ou une fermeture d'onglet effaçait la saisie sans un mot | Garde `beforeunload` dans `OrderForm`, armé dès qu'un nom, un téléphone ou une ligne existe, libéré au démontage. Le message personnalisé n'est pas possible côté navigateur, mais la confirmation l'est : c'est la différence entre « commande perdue » et « clic par erreur ». |
+| Le test composant annoncé à l'audit n'existait pas | `src/test/orderBasket.test.tsx` : 13 cas sur `OrderBasket` (état vide, comptage pièces vs kilos, unité affichée, quantité/prix transmis à l'appelant, suppression, vidage) et sur `OrderItemGrid` (regroupement, ajout, badge de quantité, filtre sans accents, aucun résultat, icônes locales). |
+| La documentation utilisateur décrivait encore « Client / Vêtements / Paiement » | `docs/USER_GUIDE.md` §3 réécrit pour les trois écrans (service, client et articles, récapitulatif), avec le lot au kilo, l'article libre et le garde de rechargement. `docs/RECETTE-BOUTONS.md` §3 reçoit la checklist manuelle correspondante, `README.md` une ligne sur le parcours. |
+
+Quatre cas ont été ajoutés à `orderForm.test.tsx` : formulaire vierge → aucune
+confirmation ; nom saisi → confirmation ; ligne au panier → confirmation ;
+composant démonté → plus d'écouteur (sinon toute l'application demanderait
+confirmation à chaque rechargement).
+
+Non couvert, et assumé : le garde n'est pas rejoué dans Playwright. Le
+navigateur affiche une boîte native que le test ne peut que constater, et
+`beforeunload` n'existe pas en jsdom au-delà de l'événement — les quatre cas
+unitaires vérifient la seule chose qui nous appartienne, l'armement et le
+désarmement de l'écouteur.
+
+## 9. État de la branche
 
 Branche `arena/b47084c6-laundrypressing`, aucun changement sur `main`. Les
 points 1 et 2 sont déjà livrés (`7704e14`, `413be87`) ; ce point ajoute les

@@ -465,3 +465,58 @@ describe('enregistrement d’une nouvelle commande', () => {
     demonter()
   })
 })
+
+describe('garde de rechargement (constat D5)', () => {
+  /**
+   * Simule un F5 ou une fermeture d'onglet. jsdom n'affiche évidemment pas la
+   * boîte de dialogue du navigateur : c'est `defaultPrevented` qui dit si elle
+   * aurait été demandée — exactement ce qui distingue « rien à perdre » de
+   * « commande en cours ».
+   */
+  function recharger(): boolean {
+    const evenement = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent
+    window.dispatchEvent(evenement)
+    return evenement.defaultPrevented
+  }
+
+  it('ne demande rien sur un formulaire vierge', async () => {
+    await ouvrirPressing()
+
+    expect(recharger()).toBe(false)
+
+    demonter()
+  })
+
+  it('demande confirmation dès qu’un nom est saisi', async () => {
+    await ouvrirPressing()
+    await saisir(champ('Nom du client'), 'Awa Koné')
+
+    expect(recharger()).toBe(true)
+
+    demonter()
+  })
+
+  it('demande confirmation dès qu’une ligne est au panier', async () => {
+    await ouvrirPressing()
+    await cliquer(boutonAria('Ajouter Chemise'))
+
+    expect(recharger()).toBe(true)
+
+    demonter()
+  })
+
+  it('cesse de surveiller quand le parcours est quitté', async () => {
+    await ouvrirPressing()
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    expect(recharger()).toBe(true)
+
+    // Quitter l'écran (navigation interne ou commande enregistrée) démonte le
+    // composant : son écouteur doit disparaître, sinon toute l'application
+    // demanderait confirmation à chaque rechargement.
+    demonter()
+
+    const evenement = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent
+    window.dispatchEvent(evenement)
+    expect(evenement.defaultPrevented).toBe(false)
+  })
+})

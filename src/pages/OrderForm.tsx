@@ -553,6 +553,28 @@ export default function OrderForm() {
   const aDesDonnees =
     lignes.length > 0 || customerName.trim() !== '' || customerPhone.trim() !== ''
 
+  /**
+   * Recharger la page ou fermer l'onglet en pleine saisie effaçait la commande
+   * sans un mot (constat D5 de l'audit). Le navigateur ne peut pas afficher un
+   * message personnalisé, mais il demande bien confirmation : c'est déjà la
+   * différence entre « j'ai perdu la commande » et « j'ai cliqué par erreur ».
+   *
+   * Le garde ne s'arme que si quelque chose a réellement été saisi, et se
+   * libère de lui-même au démontage (enregistrement ou sortie du parcours).
+   */
+  useEffect(() => {
+    if (!aDesDonnees) return undefined
+
+    const prevenir = (evenement: BeforeUnloadEvent) => {
+      evenement.preventDefault()
+      // Chrome n'affiche sa boîte de dialogue qu'avec `returnValue` renseigné.
+      evenement.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', prevenir)
+    return () => window.removeEventListener('beforeunload', prevenir)
+  }, [aDesDonnees])
+
   const quitter = () => {
     if (aDesDonnees && !window.confirm('Abandonner cette commande ? Les informations saisies seront perdues.')) {
       return

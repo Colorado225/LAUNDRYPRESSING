@@ -32,6 +32,22 @@ l'heure, le compte utilisé et le message affiché).
 
 ## 3. Commandes
 
+### Parcours de création en trois écrans
+
+- [ ] **Écran 1** : les deux cartes (Pressing, Blanchisserie) sont cliquables à la souris **et** activables au clavier (Tab puis Entrée)
+- [ ] Pressing → grille des vêtements à la pièce ; Blanchisserie → grille du linge et lot au kilo déjà présent (poids + tarif/kg saisissables)
+- [ ] Ajouter un article, puis une seconde fois → une seule ligne, quantité 2 ; corriger la quantité au panier → total recalculé
+- [ ] Supprimer une ligne, puis **Vider** → panier vide, total à 0 FCFA
+- [ ] **Article libre** (libellé hors grille) → ligne ajoutée, prix saisissable
+- [ ] **Rechercher un client déjà venu** → suggestion, clic qui remplit nom et téléphone
+- [ ] Prix à 0 FCFA → refus explicite, aucune commande créée (le message parle de « prix unitaire » à la pièce et de « tarif au kilo » pour un lot)
+- [ ] Enregistrer sans nom de client → retour sur l'écran des articles, motif affiché, liste des commandes inchangée
+- [ ] **Récapitulatif** : les lignes et le total correspondent exactement au panier
+- [ ] **F5 en pleine saisie** → le navigateur demande confirmation ; après enregistrement, il ne demande plus rien
+- [ ] **← Retour aux commandes** avec des données saisies → confirmation ; sur un formulaire vierge → sortie immédiate
+- [ ] Compte sans droit de création → le bouton d'enregistrement explique le refus au lieu de rester inerte, et rien n'est écrit
+- [ ] Double clic rapide sur **Enregistrer la commande** → une seule commande dans la liste
+
 - [ ] Créer une commande en ligne → visible dans la liste **et** ligne dans `orders`
 - [ ] Créer une commande hors ligne (couper le réseau) → visible localement, bandeau hors-ligne affiché
 - [ ] Revenir en ligne → la commande remonte dans Supabase (aucun doublon après plusieurs tentatives)
