@@ -19,7 +19,7 @@ test.describe('Encaissement en espèces', () => {
     const identifiant = await creerCommande(page, {
       client: 'Awa Koné',
       telephone: '07 07 07 07 07',
-      lignes: [{ libelle: 'Chemise', quantite: 4, prixUnitaire: 1500 }],
+      articles: [{ libelle: 'Chemise', quantite: 4, prixUnitaire: 1500 }],
     })
 
     // Le panneau d'encaissement est replié : on l'ouvre comme au comptoir.
@@ -69,7 +69,7 @@ test.describe('Encaissement en espèces', () => {
     const identifiant = await creerCommande(page, {
       client: 'Awa Koné',
       telephone: '07 07 07 07 07',
-      lignes: [{ libelle: 'Chemise', quantite: 2, prixUnitaire: 1500 }],
+      articles: [{ libelle: 'Chemise', quantite: 2, prixUnitaire: 1500 }],
       paiement: 'especes',
     })
 
@@ -93,7 +93,7 @@ test.describe('Encaissement en espèces', () => {
     const identifiant = await creerCommande(page, {
       client: 'Koffi Yao',
       telephone: '05 05 05 05 05',
-      lignes: [{ libelle: 'Rideau', quantite: 1, prixUnitaire: 4500 }],
+      articles: [{ libelle: 'Rideau', quantite: 1, prixUnitaire: 4500 }],
     })
 
     await page.goto(`/commandes/${identifiant}`)
@@ -113,7 +113,7 @@ test.describe('Caisse', () => {
     const identifiant = await creerCommande(page, {
       client: 'Awa Koné',
       telephone: '07 07 07 07 07',
-      lignes: [{ libelle: 'Chemise', quantite: 1, prixUnitaire: 2000 }],
+      articles: [{ libelle: 'Chemise', quantite: 1, prixUnitaire: 2000 }],
     })
 
     await page.goto(`/commandes/${identifiant}`)

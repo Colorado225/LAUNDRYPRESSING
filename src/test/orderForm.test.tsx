@@ -77,11 +77,25 @@ function demonter() {
   hote.remove()
 }
 
+/** Texte rendu, espaces insécables comprises ramenées à un espace normal. */
+function texte(): string {
+  return (hote.textContent ?? '').replace(/[\u00a0\u202f]/g, ' ')
+}
+
 function bouton(libelle: string): HTMLButtonElement {
   const trouve = Array.from(hote.querySelectorAll('button')).find(
     (element) => element.textContent?.trim() === libelle,
   )
   if (!trouve) throw new Error(`Bouton « ${libelle} » introuvable`)
+  return trouve as HTMLButtonElement
+}
+
+/** Bouton repéré par son libellé accessible (`aria-label`). */
+function boutonAria(libelle: string): HTMLButtonElement {
+  const trouve = Array.from(hote.querySelectorAll('button')).find(
+    (element) => element.getAttribute('aria-label') === libelle,
+  )
+  if (!trouve) throw new Error(`Bouton accessible « ${libelle} » introuvable`)
   return trouve as HTMLButtonElement
 }
 
@@ -92,6 +106,13 @@ function champ(libelle: string): HTMLInputElement {
   const input = label?.querySelector('input')
   if (!input) throw new Error(`Champ « ${libelle} » introuvable`)
   return input as HTMLInputElement
+}
+
+/** Champ repéré par son libellé accessible (`aria-label`). */
+function champAria(libelle: string): HTMLInputElement {
+  const trouve = hote.querySelector<HTMLInputElement>(`input[aria-label="${libelle}"]`)
+  if (!trouve) throw new Error(`Champ accessible « ${libelle} » introuvable`)
+  return trouve
 }
 
 async function saisir(input: HTMLInputElement, valeur: string) {
@@ -111,16 +132,25 @@ async function cliquer(element: HTMLButtonElement) {
   })
 }
 
+/** Ouvre le parcours pressing et prépare le strict nécessaire. */
+async function ouvrirPressing() {
+  await monter()
+  await cliquer(boutonAria('Choisir Pressing'))
+}
+
 beforeEach(async () => {
   await db.orders.clear()
   await db.orderItems.clear()
   envoi.appels.length = 0
   envoi.incidents.length = 0
   envoi.resultat = { statut: 'synced', version: 1 }
+  vi.mocked(toast).mockClear()
+  vi.mocked(toast.error).mockClear()
+  vi.mocked(toast.success).mockClear()
   useTenantStore.setState({ tenantId: TENANT, role: 'owner', tenantName: 'Pressing Test' })
 })
 
-describe('validation des étapes du formulaire de commande', () => {
+describe('validation des données de commande', () => {
   it('accepte un nom et un numéro ivoirien à 10 chiffres', () => {
     const resultat = createOrderSchema
       .pick({ customerName: true, customerPhone: true, dueDate: true })
@@ -146,104 +176,155 @@ describe('validation des étapes du formulaire de commande', () => {
   })
 })
 
-describe('navigation du formulaire de commande', () => {
-  it('« Suivant » fait passer de l’étape client à l’étape vêtements', async () => {
+describe('écran 1 — choix du service', () => {
+  it('propose les deux parcours dès l’ouverture', async () => {
     await monter()
 
-    expect(hote.textContent).toContain('Informations client')
-
-    await saisir(champ('Nom du client'), 'Awa Koné')
-    await saisir(champ('Téléphone'), '0700000000')
-    await cliquer(bouton('Suivant'))
-
-    expect(hote.textContent).toContain('Vêtements et prestations')
+    expect(boutonAria('Choisir Pressing')).toBeTruthy()
+    expect(boutonAria('Choisir Blanchisserie')).toBeTruthy()
+    // Aucun catalogue configuré : l'écran doit le dire, sans bloquer.
+    expect(hote.textContent).toContain('Aucune prestation n’est configurée')
 
     demonter()
   })
 
-  it('avance toujours, même avec un numéro incomplet, et signale le défaut', async () => {
-    await monter()
+  it('ouvre la grille d’articles du parcours pressing', async () => {
+    await ouvrirPressing()
 
-    await saisir(champ('Nom du client'), 'Awa Koné')
-    await saisir(champ('Téléphone'), '0700')
+    expect(hote.textContent).toContain('Pressing — client et articles')
+    expect(boutonAria('Ajouter Chemise')).toBeTruthy()
+    // Le linge de lit n'appartient pas au parcours pressing.
+    expect(hote.querySelector('button[aria-label="Ajouter Drap"]')).toBeNull()
+
+    demonter()
+  })
+
+  it('ouvre le parcours blanchisserie avec un lot au kilo prêt à saisir', async () => {
+    await monter()
+    await cliquer(boutonAria('Choisir Blanchisserie'))
+
+    expect(hote.textContent).toContain('Blanchisserie — client et articles')
+    // Le lot existe dès l'arrivée : le poids et le tarif se saisissent tout de suite.
+    expect(champAria('Quantité Lavage au kilo')).toBeTruthy()
+    expect(champAria('Tarif au kilo Lavage au kilo (FCFA)')).toBeTruthy()
+    expect(hote.querySelector('button[aria-label="Ajouter Drap"]')).toBeTruthy()
+
+    demonter()
+  })
+})
+
+describe('écran 2 — grille et panier', () => {
+  it('ajoute un article, puis incrémente la quantité au second appui', async () => {
+    await ouvrirPressing()
+
+    await cliquer(boutonAria('Ajouter Chemise'))
+    expect(champAria('Quantité Chemise').value).toBe('1')
+
+    await cliquer(boutonAria('Ajouter Chemise'))
+    expect(champAria('Quantité Chemise').value).toBe('2')
+
+    demonter()
+  })
+
+  it('recalcule le total depuis la quantité et le prix saisis', async () => {
+    await ouvrirPressing()
+    await cliquer(boutonAria('Ajouter Chemise'))
+    await cliquer(boutonAria('Ajouter Chemise'))
+
+    await saisir(champAria('Prix unitaire Chemise (FCFA)'), '1500')
+    expect(texte()).toContain('3 000 FCFA')
+
+    await saisir(champAria('Quantité Chemise'), '3')
+    expect(texte()).toContain('4 500 FCFA')
+
+    demonter()
+  })
+
+  it('supprime une ligne du panier', async () => {
+    await ouvrirPressing()
+    await cliquer(boutonAria('Ajouter Pantalon'))
+    expect(champAria('Quantité Pantalon')).toBeTruthy()
+
+    await cliquer(boutonAria('Supprimer Pantalon'))
+    expect(hote.textContent).toContain('Aucun article pour le moment.')
+
+    demonter()
+  })
+
+  it('ajoute un article libre, hors grille', async () => {
+    await ouvrirPressing()
+
+    await saisir(champAria('Libellé de l’article libre'), 'Rideau')
+    await cliquer(bouton('Ajouter'))
+
+    expect(champAria('Quantité Rideau')).toBeTruthy()
+
+    demonter()
+  })
+
+  it('retrouve un client déjà venu par la recherche', async () => {
+    await db.orders.add({
+      id: 'commande-ancienne',
+      tenantId: TENANT,
+      customerName: 'Koffi Yao',
+      customerPhone: '05 05 05 05 05',
+      status: 'received',
+      totalAmount: 2000,
+      paidAmount: 0,
+      dueDate: null,
+      createdAt: '2026-10-01T08:00:00.000Z',
+      updatedAt: '2026-10-01T08:00:00.000Z',
+      synced: true,
+      serverVersion: 1,
+      syncConflict: false,
+      lastError: null,
+      notes: null,
+    } as never)
+
+    await ouvrirPressing()
+    await saisir(champAria('Rechercher un client'), 'Koffi')
+    await cliquer(boutonAria('Choisir le client Koffi Yao'))
+
+    expect(champ('Nom du client').value).toBe('Koffi Yao')
+    expect(champ('Téléphone').value).toBe('05 05 05 05 05')
+
+    demonter()
+  })
+})
+
+describe('navigation et validation', () => {
+  it('« Suivant » mène au récapitulatif, même incomplet, en annonçant le défaut', async () => {
+    await ouvrirPressing()
+
     await cliquer(bouton('Suivant'))
 
-    // La navigation ne doit jamais paraître cassée…
-    expect(hote.textContent).toContain('Vêtements et prestations')
-    // … mais le défaut est annoncé et reste rattrapé à l'enregistrement.
+    expect(hote.textContent).toContain('Montant total')
     expect(vi.mocked(toast.error)).toHaveBeenCalled()
 
-    await cliquer(bouton('Précédent'))
-    expect(hote.textContent).toContain('Informations client')
+    demonter()
+  })
+
+  it('les onglets d’étape restent utilisables dans les deux sens', async () => {
+    await ouvrirPressing()
+
+    await cliquer(boutonAria('Étape 1 : Service'))
+    expect(hote.textContent).toContain('Quel type de service ?')
+
+    await cliquer(boutonAria('Étape 2 : Articles'))
+    expect(hote.textContent).toContain('Pressing — client et articles')
 
     demonter()
   })
 
-  it('avance aussi avec des champs vides : aucun clic muet', async () => {
-    await monter()
-
+  it('un enregistrement invalide ramène sur l’écran des articles', async () => {
+    await ouvrirPressing()
     await cliquer(bouton('Suivant'))
-    expect(hote.textContent).toContain('Vêtements et prestations')
-    expect(vi.mocked(toast.error)).toHaveBeenCalled()
-    expect(hote.querySelector('[aria-invalid="true"]')).toBeNull()
-
-    demonter()
-  })
-
-  it('un champ fautif est annoncé, marqué, et reste visible au retour', async () => {
-    vi.mocked(toast.error).mockClear()
-    await monter()
-
-    // Un clic sur « Suivant » ne bloque plus, mais il parle : toast immédiat.
-    await cliquer(bouton('Suivant'))
-    expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toBe('Le nom du client est obligatoire')
-
-    // De retour sur l'étape client, la liste complète et le marquage sont là.
-    await cliquer(bouton('1. Client'))
-    expect(hote.querySelector('[role="alert"]')?.textContent).toContain(
-      'Le nom du client est obligatoire',
-    )
-
-    const telephone = champ('Téléphone')
-    expect(telephone.getAttribute('aria-invalid')).toBe('true')
-
-    demonter()
-  })
-
-  it('un enregistrement invalide ramène sur l’étape du champ fautif', async () => {
-    await monter()
-
-    await cliquer(bouton('Suivant'))
-    await cliquer(bouton('Suivant'))
-    expect(hote.textContent).toContain('Règlement')
-
     await cliquer(bouton('Enregistrer la commande'))
 
-    expect(hote.textContent).toContain('Informations client')
+    expect(hote.textContent).toContain('Pressing — client et articles')
     expect(hote.querySelector('[role="alert"]')?.textContent).toContain(
       'Le nom du client est obligatoire',
     )
-
-    demonter()
-  })
-
-  it('l’onglet « Vêtements » est cliquable et valide l’étape en cours', async () => {
-    await monter()
-
-    // L'onglet répond immédiatement, champs remplis ou non.
-    await cliquer(bouton('2. Vêtements'))
-    expect(hote.textContent).toContain('Vêtements et prestations')
-
-    await cliquer(bouton('1. Client'))
-    await saisir(champ('Nom du client'), 'Awa Koné')
-    await saisir(champ('Téléphone'), '+225 07 00 00 00 00')
-    await cliquer(bouton('2. Vêtements'))
-    expect(hote.textContent).toContain('Vêtements et prestations')
-
-    // Retour arrière libre vers l'étape client.
-    await cliquer(bouton('1. Client'))
-    expect(hote.textContent).toContain('Informations client')
 
     demonter()
   })
@@ -253,18 +334,11 @@ describe('compte sans droit de création', () => {
   it('explique le refus au lieu de laisser un bouton inerte', async () => {
     useTenantStore.setState({ tenantId: TENANT, role: 'artisan', tenantName: 'Pressing Test' })
 
-    await monter()
-
-    // Le motif est affiché dès l'ouverture, sans avoir à cliquer.
-    expect(hote.textContent).toContain('Ce compte ne peut pas créer de commande')
-    expect(hote.textContent).toContain('artisan')
-
-    // Et le clic reste possible : il produit un message, pas un silence.
+    await ouvrirPressing()
     await saisir(champ('Nom du client'), 'Awa Koné')
     await saisir(champ('Téléphone'), '07 00 00 00 42')
-    await cliquer(bouton('Suivant'))
-    await saisir(champ('Article / vêtement'), 'Chemise')
-    await saisir(champ('Prix unitaire (FCFA)'), '2500')
+    await cliquer(boutonAria('Ajouter Chemise'))
+    await saisir(champAria('Prix unitaire Chemise (FCFA)'), '2500')
     await cliquer(bouton('Suivant'))
     await cliquer(bouton('Enregistrer la commande'))
 
@@ -280,18 +354,14 @@ describe('enregistrement d’une nouvelle commande', () => {
   async function remplirEtEnregistrer() {
     await saisir(champ('Nom du client'), 'Awa Koné')
     await saisir(champ('Téléphone'), '07 00 00 00 42')
-    await cliquer(bouton('Suivant'))
-
-    // Étape vêtements : une ligne libre chiffrée.
-    await saisir(champ('Article / vêtement'), 'Chemise')
-    await saisir(champ('Prix unitaire (FCFA)'), '2500')
-
+    await cliquer(boutonAria('Ajouter Chemise'))
+    await saisir(champAria('Prix unitaire Chemise (FCFA)'), '2500')
     await cliquer(bouton('Suivant'))
     await cliquer(bouton('Enregistrer la commande'))
   }
 
   it('écrit la commande en local, l’envoie aussitôt et ouvre sa fiche', async () => {
-    await monter()
+    await ouvrirPressing()
     await remplirEtEnregistrer()
 
     const commandes = await db.orders.toArray()
@@ -303,29 +373,55 @@ describe('enregistrement d’une nouvelle commande', () => {
 
     // L'envoi immédiat a bien été déclenché pour CETTE commande.
     expect(envoi.appels).toEqual([commande.id])
-
-    // La fiche s'ouvre (l'URL n'est pas rendue ici, mais le formulaire disparaît
-    // de l'écran d'après l'état de navigation).
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
       'Commande enregistrée et synchronisée.',
       expect.anything(),
     )
+
+    demonter()
+  })
+
+  it('enregistre un lot au kilo avec sa composition', async () => {
+    await monter()
+    await cliquer(boutonAria('Choisir Blanchisserie'))
+    await saisir(champ('Nom du client'), 'Hôtel Ivoire')
+    await saisir(champ('Téléphone'), '07 00 00 00 43')
+    await cliquer(boutonAria('Ajouter Drap'))
+    await cliquer(boutonAria('Ajouter Serviette'))
+    await saisir(champAria('Quantité Lavage au kilo'), '3')
+    await saisir(champAria('Tarif au kilo Lavage au kilo (FCFA)'), '2000')
+    await cliquer(bouton('Suivant'))
+    await cliquer(bouton('Enregistrer la commande'))
+
+    const commandes = await db.orders.toArray()
+    expect(commandes).toHaveLength(1)
+    expect(commandes[0]!.totalAmount).toBe(6000)
+
+    const lignes = await db.orderItems.toArray()
+    expect(lignes).toHaveLength(1)
+    expect(lignes[0]!.billingUnit).toBe('KG')
+    expect(lignes[0]!.quantity).toBe(3)
+    expect(lignes[0]!.unitPrice).toBe(2000)
+    expect(lignes[0]!.garmentDetails).toEqual([
+      { type: 'DRAP', quantity: 1 },
+      { type: 'SERVIETTE', quantity: 1 },
+    ])
+
+    demonter()
   })
 
   it('refuse une ligne à 0 FCFA avant tout envoi', async () => {
-    await monter()
+    await ouvrirPressing()
     await saisir(champ('Nom du client'), 'Awa Koné')
     await saisir(champ('Téléphone'), '07 00 00 00 42')
-    await cliquer(bouton('Suivant'))
-    await saisir(champ('Article / vêtement'), 'Chemise')
+    await cliquer(boutonAria('Ajouter Chemise'))
     await cliquer(bouton('Suivant'))
     await cliquer(bouton('Enregistrer la commande'))
 
     expect(await db.orders.count()).toBe(0)
     expect(envoi.appels).toEqual([])
     expect(hote.textContent).toContain('prix unitaire')
-    // On revient sur l'étape où le prix se corrige.
-    expect(hote.textContent).toContain('Vêtements et prestations')
+    expect(hote.textContent).toContain('Pressing — client et articles')
 
     demonter()
   })
@@ -336,13 +432,36 @@ describe('enregistrement d’une nouvelle commande', () => {
       message: 'Hors ligne : la commande reste sur cet appareil et partira à la reconnexion.',
     }
 
-    await monter()
+    await ouvrirPressing()
     await remplirEtEnregistrer()
 
-    // La commande reste enregistrée sur l'appareil…
     expect(await db.orders.count()).toBe(1)
-    // … et le comptoir voit pourquoi elle n'est pas encore en base.
     const messages = vi.mocked(toast).mock.calls.map((appel) => String(appel[0]))
     expect(messages.some((message) => message.includes('reste sur cet appareil'))).toBe(true)
+
+    demonter()
+  })
+
+  it('un double clic sur « Enregistrer » ne crée qu’une commande', async () => {
+    await ouvrirPressing()
+    await saisir(champ('Nom du client'), 'Awa Koné')
+    await saisir(champ('Téléphone'), '07 00 00 00 42')
+    await cliquer(boutonAria('Ajouter Chemise'))
+    await saisir(champAria('Prix unitaire Chemise (FCFA)'), '2500')
+    await cliquer(bouton('Suivant'))
+
+    const enregistrer = bouton('Enregistrer la commande')
+    await act(async () => {
+      enregistrer.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      enregistrer.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await new Promise((resoudre) => setTimeout(resoudre, 10))
+    })
+
+    expect(await db.orders.count()).toBe(1)
+    expect(envoi.appels).toHaveLength(1)
+
+    demonter()
   })
 })

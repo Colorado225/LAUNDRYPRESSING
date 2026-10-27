@@ -108,7 +108,7 @@ beforeEach(() => {
   configuration = { activities: [], services: [] }
   serviceMocks.fetchTenantServiceConfiguration.mockReset().mockImplementation(async () => structuredClone(configuration))
   serviceMocks.createTenantActivity.mockReset().mockImplementation(async (_tenantId: string, name: string) => {
-    configuration.activities.push({ id: 'activity-1', tenantId: 'tenant-new', name, sortOrder: 0 })
+    configuration.activities.push({ id: 'activity-1', tenantId: 'tenant-new', name, sortOrder: 0, legacyCode: null })
   })
   serviceMocks.updateTenantActivity.mockReset().mockImplementation(async (_tenantId: string, id: string, name: string) => {
     configuration.activities = configuration.activities.map((activity) => activity.id === id ? { ...activity, name } : activity)
@@ -127,7 +127,8 @@ beforeEach(() => {
     const activity = configuration.activities.find((entry) => entry.id === activityId)
     if (!activity) return
     configuration.services.push({
-      id: 'service-1', tenantId: 'tenant-new', activityId, activityName: activity.name, serviceName, billingUnit, unitPrice, sortOrder: 0,
+      id: 'service-1', tenantId: 'tenant-new', activityId, activityName: activity.name,
+      activityCode: activity.legacyCode ?? null, serviceName, billingUnit, unitPrice, sortOrder: 0,
     })
   })
   serviceMocks.updateTenantService.mockReset().mockImplementation(async (
@@ -174,7 +175,7 @@ describe('CRUD des activités et prestations du pressing', () => {
   })
 
   it('permet de renommer et supprimer une activité', async () => {
-    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Pressing', sortOrder: 0 }]
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Pressing', sortOrder: 0, legacyCode: 'pressing' }]
     await mount()
 
     await act(async () => button('Modifier').click())
@@ -189,7 +190,7 @@ describe('CRUD des activités et prestations du pressing', () => {
   })
 
   it('configure une prestation au kilo avec un tarif personnalisé optionnel', async () => {
-    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0 }]
+    configuration.activities = [{ id: 'activity-1', tenantId: 'tenant-new', name: 'Blanchisserie', sortOrder: 0, legacyCode: 'blanchisserie' }]
     await mount()
     await act(async () => button('Prestations').click())
     await saisir(input('Nom de la nouvelle prestation'), 'Lavage et repassage au kilo')

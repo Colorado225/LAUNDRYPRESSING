@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { creerCommande, entrerEnDemonstration } from '../helpers'
+import { choisirParcours, creerCommande, entrerEnDemonstration } from '../helpers'
 
 /**
  * Chaîne complète vérifiable sans backend : interface → IndexedDB → retour à
@@ -21,7 +21,7 @@ test.describe('Commandes — parcours comptoir hors ligne', () => {
     const identifiant = await creerCommande(page, {
       client: 'Awa Koné',
       telephone: '07 07 07 07 07',
-      lignes: [
+      articles: [
         { libelle: 'Chemise', quantite: 2, prixUnitaire: 1500 },
         { libelle: 'Pantalon', quantite: 1, prixUnitaire: 2000 },
       ],
@@ -48,33 +48,99 @@ test.describe('Commandes — parcours comptoir hors ligne', () => {
     await expect(page.getByText('Awa Koné')).toHaveCount(0)
   })
 
-  test('refuse une commande sans nom de client et reste sur l’étape fautive', async ({ page }) => {
+  test('le choix du service ouvre bien la grille correspondante', async ({ page }) => {
     await page.getByRole('link', { name: 'Nouvelle commande' }).first().click()
     await expect(page).toHaveURL(/\/commandes\/nouvelle$/)
 
-    // Téléphone valide, nom vide : l'enregistrement ne doit pas aboutir.
+    // Écran 1 : deux cartes réelles, actionnables au clavier comme à la souris.
+    await expect(page.getByRole('button', { name: 'Choisir Pressing' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Choisir Blanchisserie' })).toBeVisible()
+
+    await choisirParcours(page, 'pressing')
+    await expect(page.getByRole('button', { name: 'Ajouter Chemise' })).toBeVisible()
+    // Le linge de lit n'appartient pas au parcours pressing.
+    await expect(page.getByRole('button', { name: 'Ajouter Drap', exact: true })).toHaveCount(0)
+
+    // Retour à l'écran 1, puis parcours blanchisserie.
+    await page.getByRole('button', { name: 'Précédent' }).click()
+    await choisirParcours(page, 'blanchisserie')
+    await expect(page.getByRole('button', { name: 'Ajouter Drap' })).toBeVisible()
+    // Le lot au kilo existe dès l'arrivée : poids et tarif saisissables.
+    await expect(page.getByLabel('Quantité Lavage au kilo')).toBeVisible()
+  })
+
+  test('la grille et le panier font le calcul attendu', async ({ page }) => {
+    await page.getByRole('link', { name: 'Nouvelle commande' }).first().click()
+    await choisirParcours(page, 'pressing')
+
+    await page.getByRole('button', { name: 'Ajouter Chemise' }).click()
+    await page.getByRole('button', { name: 'Ajouter Chemise' }).click()
+    await page.getByLabel('Prix unitaire Chemise (FCFA)').fill('1500')
+    await expect(page.getByText(/3\s?000\s?FCFA/).first()).toBeVisible()
+
+    // Correction de quantité au panier : le total suit.
+    await page.getByLabel('Quantité Chemise').fill('3')
+    await expect(page.getByText(/4\s?500\s?FCFA/).first()).toBeVisible()
+
+    // Suppression : le panier se vide et le total retombe à zéro.
+    await page.getByRole('button', { name: 'Supprimer Chemise' }).click()
+    await expect(page.getByText('Aucun article pour le moment.')).toBeVisible()
+    await expect(page.getByText(/^0\s?FCFA$/).first()).toBeVisible()
+
+    // Rien n'a été enregistré : on est toujours sur le formulaire.
+    await expect(page).toHaveURL(/\/commandes\/nouvelle$/)
+  })
+
+  test('refuse une commande sans nom de client et reste sur le formulaire', async ({ page }) => {
+    await page.getByRole('link', { name: 'Nouvelle commande' }).first().click()
+    await choisirParcours(page, 'pressing')
+
+    // Téléphone valide, nom vide, une ligne chiffrée : l'enregistrement doit
+    // échouer explicitement, sans quitter le formulaire.
     await page.getByLabel('Téléphone').fill('07 07 07 07 07')
+    await page.getByRole('button', { name: 'Ajouter Chemise' }).click()
+    await page.getByLabel('Prix unitaire Chemise (FCFA)').fill('1000')
+
     await page.getByRole('button', { name: 'Suivant' }).click()
+    await expect(page.getByRole('heading', { name: 'Récapitulatif' })).toBeVisible()
+    // Le récapitulatif annonce déjà le défaut, avant le clic.
+    await expect(page.getByRole('alert')).toContainText('Le nom du client est obligatoire')
+
+    await page.getByRole('button', { name: 'Enregistrer la commande' }).click()
+
+    await expect(page).toHaveURL(/\/commandes\/nouvelle$/)
+    await expect(page.getByText('Pressing — client et articles')).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText('Le nom du client est obligatoire')
+  })
+
+  test('refuse une ligne à 0 FCFA avant tout envoi', async ({ page }) => {
+    await page.getByRole('link', { name: 'Nouvelle commande' }).first().click()
+    await choisirParcours(page, 'pressing')
+
+    await page.getByLabel('Nom du client').fill('Awa Koné')
+    await page.getByLabel('Téléphone').fill('07 07 07 07 07')
+    await page.getByRole('button', { name: 'Ajouter Chemise' }).click()
+
     await page.getByRole('button', { name: 'Suivant' }).click()
     await page.getByRole('button', { name: 'Enregistrer la commande' }).click()
 
-    // Une alerte explicite, et toujours sur le formulaire (aucune navigation).
-    await expect(page.getByRole('alert').first()).toBeVisible()
+    // Toujours sur le formulaire, avec le motif exact du refus.
     await expect(page).toHaveURL(/\/commandes\/nouvelle$/)
+    await expect(page.getByRole('alert')).toContainText('prix unitaire')
   })
 
   test('conserve deux commandes distinctes sans les confondre', async ({ page }) => {
     await creerCommande(page, {
       client: 'Awa Koné',
       telephone: '07 07 07 07 07',
-      lignes: [{ libelle: 'Chemise', quantite: 1, prixUnitaire: 1000 }],
+      articles: [{ libelle: 'Chemise', quantite: 1, prixUnitaire: 1000 }],
     })
 
     await page.goto('/commandes')
     const second = await creerCommande(page, {
       client: 'Koffi Yao',
       telephone: '05 05 05 05 05',
-      lignes: [{ libelle: 'Rideau', quantite: 1, prixUnitaire: 4500 }],
+      articles: [{ libelle: 'Rideau', quantite: 1, prixUnitaire: 4500 }],
     })
 
     await page.goto('/commandes')

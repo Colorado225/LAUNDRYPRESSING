@@ -56,7 +56,7 @@ test.describe('Parcours réel (Supabase)', () => {
     const identifiant = await creerCommande(page, {
       client,
       telephone: '07 00 00 00 01',
-      lignes: [{ libelle: 'Chemise recette', quantite: 1, prixUnitaire: 1000 }],
+      articles: [{ libelle: 'Chemise', quantite: 1, prixUnitaire: 1000 }],
     })
 
     // --- Rechargement : la fiche revient du serveur ------------------------

@@ -30,60 +30,108 @@ export async function entrerEnDemonstration(page: Page, nom = 'Pressing Recette'
   await expect(page).toHaveURL(/\/commandes$/)
 }
 
-export interface LigneCommande {
+export type ParcoursCommande = 'pressing' | 'blanchisserie'
+
+export interface ArticleCommande {
+  /** Nom de la tuile de la grille (Chemise, Drap…) ou libellé libre. */
   libelle: string
   quantite: number
+  /** Prix unitaire saisi au panier (FCFA). */
   prixUnitaire: number
+}
+
+export interface OptionsCommande {
+  client: string
+  telephone: string
+  articles: ArticleCommande[]
+  parcours?: ParcoursCommande
+  /** Blanchisserie : poids pesé et tarif au kilo du lot. */
+  poidsKg?: number
+  tarifKilo?: number
+  /** `especes` ouvre le panneau d'encaissement dès la création (`?regler=1`). */
+  paiement?: 'plus-tard' | 'especes'
+}
+
+/**
+ * Ouvre l'écran 1 et choisit le service.
+ *
+ * On passe par le vrai bouton de la carte : c'est ce que fait le
+ * réceptionniste, et cela vérifie au passage que la carte est actionnable.
+ */
+export async function choisirParcours(page: Page, parcours: ParcoursCommande): Promise<void> {
+  const titre = parcours === 'pressing' ? 'Pressing' : 'Blanchisserie'
+  await page.getByRole('button', { name: `Choisir ${titre}` }).click()
+  await expect(
+    page.getByRole('heading', { name: `${titre} — client et articles` }),
+  ).toBeVisible()
+}
+
+/** Ajoute un article par la grille (ou par la ligne libre) et fixe son prix. */
+async function ajouterArticle(
+  page: Page,
+  article: ArticleCommande,
+  quantite = article.quantite,
+): Promise<void> {
+  const tuile = page.getByRole('button', { name: `Ajouter ${article.libelle}`, exact: true })
+
+  if ((await tuile.count()) > 0) {
+    for (let appui = 0; appui < quantite; appui += 1) {
+      await tuile.click()
+    }
+  } else {
+    await page.getByLabel('Libellé de l’article libre').fill(article.libelle)
+    await page.getByRole('button', { name: 'Ajouter', exact: true }).click()
+    await page.getByLabel(`Quantité ${article.libelle}`).fill(String(quantite))
+  }
+
+  await page.getByLabel(`Prix unitaire ${article.libelle} (FCFA)`).fill(String(article.prixUnitaire))
 }
 
 /**
  * Crée une commande par l'interface, exactement comme au comptoir :
- * informations client → lignes → confirmation. Renvoie l'identifiant de la
- * commande lu dans l'URL de la fiche.
+ * choix du service → client et articles → récapitulatif → enregistrement.
+ * Renvoie l'identifiant de la commande lu dans l'URL de la fiche.
  */
-export async function creerCommande(
-  page: Page,
-  options: {
-    client: string
-    telephone: string
-    lignes: LigneCommande[]
-    /**
-     * `plus-tard` (défaut) laisse le solde dû sur la fiche ; `especes` choisit
-     * l'encaissement immédiat, et la fiche s'ouvre alors avec le panneau
-     * espèces déjà déplié (`?regler=1`).
-     */
-    paiement?: 'plus-tard' | 'especes'
-  },
-): Promise<string> {
+export async function creerCommande(page: Page, options: OptionsCommande): Promise<string> {
+  const parcours = options.parcours ?? 'pressing'
+
   await page.getByRole('link', { name: 'Nouvelle commande' }).first().click()
   await expect(page).toHaveURL(/\/commandes\/nouvelle$/)
 
-  // --- Étape 1 : client -----------------------------------------------------
+  await choisirParcours(page, parcours)
+
   await page.getByLabel('Nom du client').fill(options.client)
   await page.getByLabel('Téléphone').fill(options.telephone)
-  await page.getByRole('button', { name: 'Suivant' }).click()
 
-  // --- Étape 2 : lignes -----------------------------------------------------
-  for (const [index, ligne] of options.lignes.entries()) {
-    if (index > 0) {
-      await page.getByRole('button', { name: 'Ajouter une ligne' }).click()
+  if (parcours === 'blanchisserie') {
+    // Chaque tuile ajoute une pièce à la composition du lot pesé.
+    for (const article of options.articles) {
+      const tuile = page.getByRole('button', { name: `Ajouter ${article.libelle}`, exact: true })
+      for (let appui = 0; appui < article.quantite; appui += 1) {
+        await tuile.click()
+      }
     }
-    await page.getByPlaceholder('Ex. Chemise').nth(index).fill(ligne.libelle)
-    await page.getByLabel(`Quantité ligne ${index + 1}`).fill(String(ligne.quantite))
-    await page
-      .getByLabel(`Prix unitaire ligne ${index + 1} (FCFA)`)
-      .fill(String(ligne.prixUnitaire))
+    const poids = options.poidsKg ?? 1
+    const tarif = options.tarifKilo ?? options.articles[0]?.prixUnitaire ?? 0
+    await page.getByLabel('Quantité Lavage au kilo').fill(String(poids))
+    await page.getByLabel('Tarif au kilo Lavage au kilo (FCFA)').fill(String(tarif))
+  } else {
+    for (const article of options.articles) {
+      await ajouterArticle(page, article)
+    }
   }
-  await page.getByRole('button', { name: 'Suivant' }).click()
 
-  // --- Étape 3 : règlement --------------------------------------------------
-  const libellePaiement =
-    options.paiement === 'especes' ? 'Encaisser des espèces maintenant' : 'Régler plus tard'
-  await page.getByRole('button', { name: libellePaiement }).click()
+  // --- Récapitulatif ---------------------------------------------------------
+  await page.getByRole('button', { name: 'Suivant' }).click()
+  await expect(page.getByRole('heading', { name: 'Récapitulatif' })).toBeVisible()
+
+  if (options.paiement === 'especes') {
+    await page.getByRole('button', { name: 'Encaisser des espèces maintenant' }).click()
+  }
 
   await page.getByRole('button', { name: 'Enregistrer la commande' }).click()
 
-  await expect(page).toHaveURL(/\/commandes\/[0-9a-f-]{36}/)
+  await expect(page).toHaveURL(/\/commandes\/[0-9a-f-]{36}(\?regler=1)?$/)
   const identifiant = page.url().match(/\/commandes\/([0-9a-f-]{36})/)?.[1]
   if (!identifiant) throw new Error(`Identifiant de commande illisible dans l'URL : ${page.url()}`)
   return identifiant

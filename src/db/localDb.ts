@@ -135,6 +135,12 @@ export interface LocalTenantActivity {
   tenantId: string
   name: string
   sortOrder: number
+  /**
+   * Code du référentiel (`pressing`, `blanchisserie`…) reçu du serveur.
+   * Absent des caches écrits par les versions précédentes : le code de repli
+   * est alors `null`, jamais une valeur devinée.
+   */
+  legacyCode?: TenantActivityCode | null
 }
 
 export interface LocalTenantService {

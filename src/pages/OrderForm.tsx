@@ -1,112 +1,160 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Check, Plus, Trash2, UserRound, Shirt, Wallet } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Check, ClipboardCheck, Plus, Search, Shirt, Sparkles, Wallet } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCreateOrder, useLocalOrders } from '@/db/hooks'
-import { suggestCustomersByPhone, countPreviousOrders, lastCustomerNameByPhone } from '@/lib/customerSuggestions'
+import {
+  countPreviousOrders,
+  lastCustomerNameByPhone,
+  suggestCustomersByPhone,
+} from '@/lib/customerSuggestions'
 import { signalerIncidentCommande, signalerSonde, syncOrderNow } from '@/sync/syncEngine'
-import { createOrderSchema, zodMessages, type OrderItemInput } from '@/schemas/order'
+import {
+  createOrderSchema,
+  normalizePhoneCi,
+  zodMessages,
+  type OrderItemInput,
+} from '@/schemas/order'
 import { problemeTarifaire } from '@/lib/orderPricing'
 import { formatFcfa } from '@/lib/formatters'
 import { can } from '@/lib/permissions'
 import { useTenantStore } from '@/lib/tenantContext'
 import {
   fetchTenantServiceConfiguration,
-  type TenantActivity,
   type TenantServiceOffering,
 } from '@/services/tenantServices'
-import { GARMENT_TYPES, formatGarmentComposition } from '@/constants/garmentTypes'
-import type { OrderGarmentDetail, OrderGarmentType } from '@/types/database'
+import { GARMENT_GRID } from '@/constants/garmentImages'
+import type { OrderGarmentType } from '@/types/database'
+import {
+  articlesDuParcours,
+  PRESENTATION_PARCOURS,
+  servicesALaPiece,
+  servicesAuKilo,
+  servicesDuParcours,
+  type ParcoursService,
+} from '@/lib/orderServices'
+import ServiceChoiceCard from '@/components/order/ServiceChoiceCard'
+import OrderItemGrid from '@/components/order/OrderItemGrid'
+import OrderBasket, { type LignePanier } from '@/components/order/OrderBasket'
+import OrderSummary from '@/components/order/OrderSummary'
 
-/** Formulaire local-first de création d'une commande en trois étapes. */
-interface OrderItemDraft extends Omit<OrderItemInput, 'garmentDetails'> {
-  quantity: number
-  unitPrice: number
-  selectedActivityId: string
-  selectedOfferingId: string
-  garmentDetails: Array<{ type: OrderGarmentType | ''; quantity: number }>
-}
+/**
+ * Création d'une commande au comptoir — trois écrans.
+ *
+ *   1. **Service**    : Pressing (à la pièce) ou Blanchisserie (au kilo) ;
+ *   2. **Articles**   : client, dates, grille d'articles à icônes et panier ;
+ *   3. **Récapitulatif** : relecture, mode de règlement, enregistrement.
+ *
+ * Rien n'est réinventé ici : la validation (`createOrderSchema`,
+ * `problemeTarifaire`), l'écriture locale (`createOrderLocal` via
+ * `useCreateOrder`), l'envoi immédiat (`syncOrderNow`) et les règles de
+ * permission restent ceux de l'application. Ce fichier n'est qu'une nouvelle
+ * façade sur le même moteur de commandes.
+ *
+ * Règle issue du terrain, conservée : un bouton « Suivant » produit **toujours**
+ * quelque chose. Les défauts sont signalés (message, champ marqué, aller-retour
+ * sur l'étape fautive au moment d'enregistrer), jamais par un clic muet.
+ */
 
-const formatDraftComposition = (details: OrderItemDraft['garmentDetails']) =>
-  formatGarmentComposition(details.filter((detail): detail is OrderGarmentDetail => detail.type !== ''))
+type Etape = 0 | 1 | 2
 
-const createEmptyItem = (): OrderItemDraft => ({
-  label: '',
-  fabricType: '',
-  specialInstructions: '',
-  price: 0,
-  quantity: 1,
-  unitPrice: 0,
-  billingUnit: 'PIECE',
-  pricingMode: 'FIXED',
-  priceStatus: 'CONFIRMED',
-  serviceName: '',
-  tenantServiceId: null,
-  activityNameSnapshot: null,
-  selectedActivityId: '',
-  selectedOfferingId: '',
-  garmentDetails: [],
-})
+const ETAPES = [
+  { titre: 'Service', icon: Sparkles },
+  { titre: 'Articles', icon: Shirt },
+  { titre: 'Récapitulatif', icon: ClipboardCheck },
+] as const
 
 type Paiement = 'plus-tard' | 'especes'
 
-const ETAPES = [
-  { titre: 'Client', icon: UserRound },
-  { titre: 'Vêtements', icon: Shirt },
-  { titre: 'Paiement', icon: Wallet },
-] as const
+/**
+ * Ligne en cours de saisie.
+ *
+ * - `piece` : un vêtement identifié, facturé à la pièce (`billingUnit: PIECE`) ;
+ * - `lot`   : un lot pesé facturé au kilo (`billingUnit: KG`), dont la
+ *   composition (`garmentDetails`) décrit le linge réellement déposé.
+ */
+interface LigneDraft {
+  id: string
+  genre: 'piece' | 'lot'
+  /** Type de vêtement pour une ligne à la pièce ; `null` pour un libellé libre. */
+  type: OrderGarmentType | null
+  label: string
+  quantity: number
+  unitPrice: number
+  serviceName: string | null
+  tenantServiceId: string | null
+  activityNameSnapshot: string | null
+  garmentDetails: Array<{ type: OrderGarmentType; quantity: number }>
+}
+
+const LIBELLES_ARTICLES = new Map<OrderGarmentType, string>(
+  GARMENT_GRID.map(({ type, label }) => [type, label]),
+)
+
+/** Identifiant local de ligne : suffisant pour une clé React, jamais envoyé. */
+function idLigne(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `ligne-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+/** Une référence de prestation n'est transmise que si c'est un UUID serveur. */
+function referenceServeur(id: string | null | undefined): string | null {
+  if (!id) return null
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    ? id
+    : null
+}
+
+function totalLigne(ligne: Pick<LigneDraft, 'quantity' | 'unitPrice'>): number {
+  return Math.round(ligne.quantity * ligne.unitPrice)
+}
 
 export default function OrderForm() {
   const navigate = useNavigate()
+  const location = useLocation()
   const createOrder = useCreateOrder()
   const localOrders = useLocalOrders()
   const role = useTenantStore((state) => state.role)
   const tenantId = useTenantStore((state) => state.tenantId)
   // Le rôle peut manquer alors que la boutique est connue (session restaurée
   // depuis le cache, ancien stockage local). On retombe sur le rôle mémorisé
-  // pour la boutique active : sinon le bouton restait grisé sans explication.
+  // pour la boutique active : sinon le bouton resterait grisé sans explication.
   const roleBoutique = useTenantStore(
     (state) => state.shops.find((shop) => shop.tenantId === state.tenantId)?.role ?? null,
   )
   const roleEffectif = role ?? roleBoutique
   const canCreate = can(roleEffectif, 'orders.create')
 
-  const [activites, setActivites] = useState<TenantActivity[]>([])
+  // `/commandes/blanchisserie` redirige ici avec `?service=blanchisserie` :
+  // le parcours est choisi d'avance et l'écran 1 est sauté.
+  const serviceDemande = new URLSearchParams(location.search).get('service')
+  const parcoursInitial: ParcoursService | null =
+    serviceDemande === 'pressing' || serviceDemande === 'blanchisserie' ? serviceDemande : null
+
+  const [activites, setActivites] = useState<Awaited<ReturnType<typeof fetchTenantServiceConfiguration>>['activities']>([])
   const [prestations, setPrestations] = useState<TenantServiceOffering[]>([])
-  const [etape, setEtape] = useState(0)
+  const [parcours, setParcours] = useState<ParcoursService | null>(parcoursInitial)
+  const [etape, setEtape] = useState<Etape>(parcoursInitial ? 1 : 0)
+
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [rechercheClient, setRechercheClient] = useState('')
   const [previousOrderCount, setPreviousOrderCount] = useState(0)
   const [suggestedName, setSuggestedName] = useState('')
   const [dueDate, setDueDate] = useState('')
-  const [items, setItems] = useState<OrderItemDraft[]>([createEmptyItem()])
+
+  const [lignes, setLignes] = useState<LigneDraft[]>([])
+  const [articleLibre, setArticleLibre] = useState('')
+  const [prestationPiece, setPrestationPiece] = useState('')
+  const [prestationKilo, setPrestationKilo] = useState('')
   const [paiement, setPaiement] = useState<Paiement>('plus-tard')
+
   const [errors, setErrors] = useState<string[]>([])
-
-  // Historique client : quand le téléphone est saisi, on compte les commandes
-  // précédentes et on retient le nom le plus récent pour le pré-remplir.
-  useEffect(() => {
-    const query = customerPhone.replace(/\D/g, '')
-    if (query.length < 3) {
-      setPreviousOrderCount(0)
-      setSuggestedName('')
-      return
-    }
-    const orders = localOrders ?? []
-    setPreviousOrderCount(countPreviousOrders(orders, customerPhone))
-    const nom = lastCustomerNameByPhone(orders, customerPhone)
-    setSuggestedName(nom)
-    // Pré-remplit le nom si le champ est encore vide et qu’un client est connu.
-    if (nom && !customerName) setCustomerName(nom)
-  }, [customerPhone, localOrders, customerName])
-
-  // Chemins Zod des champs refusés : sert à marquer les champs en rouge et à
-  // placer le focus, pour qu'un « Suivant » sans effet ne soit jamais muet.
-  const [champsInvalides, setChampsInvalides] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
-  // Étape d'enregistrement affichée pendant que la commande part au serveur :
-  // le comptoir doit voir que le travail continue après le clic.
   const [enregistrement, setEnregistrement] = useState<'local' | 'serveur' | null>(null)
+  const lotInitialise = useRef(false)
+  // Verrou d'envoi : `submitting` est un état React, donc pas encore à jour si
+  // deux clics arrivent dans le même cycle. Le ref, lui, bloque le second.
+  const enregistrementEnCours = useRef(false)
 
   useEffect(() => {
     if (!tenantId) return
@@ -124,8 +172,7 @@ export default function OrderForm() {
   }, [tenantId])
 
   // Sonde d'ouverture : si l'enregistrement ne produit AUCUN événement, c'est
-  // que le poste n'exécute pas cette version du formulaire. La sonde, elle,
-  // laisse une trace à chaque ouverture.
+  // que le poste n'exécute pas cette version du formulaire.
   useEffect(() => {
     void signalerSonde({
       role: roleEffectif,
@@ -134,201 +181,397 @@ export default function OrderForm() {
       boutique: tenantId,
       peut_creer: canCreate,
       en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+      parcours,
     })
-  }, [role, roleEffectif, roleBoutique, tenantId, canCreate])
+  }, [role, roleEffectif, roleBoutique, tenantId, canCreate, parcours])
 
-  const activitesDisponibles = [...activites].sort((a, b) => a.name.localeCompare(b.name, 'fr'))
-
-  const total = items.reduce((sum, item) => sum + item.price, 0)
-
-  const updateItem = (index: number, patch: Partial<OrderItemDraft>) => {
-    setItems((current) => current.map((item, itemIndex) => {
-      if (itemIndex !== index) return item
-      const updated = { ...item, ...patch }
-      updated.price = Math.round(updated.quantity * updated.unitPrice)
-      return updated
-    }))
-  }
-
-  const choisirActivite = (index: number, activityId: string) => {
-    const item = items[index]
-    updateItem(index, {
-      selectedActivityId: activityId,
-      label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
-      selectedOfferingId: '',
-      serviceName: '',
-      tenantServiceId: null,
-      activityNameSnapshot: null,
-      billingUnit: 'PIECE',
-      quantity: 1,
-      unitPrice: 0,
-      garmentDetails: [],
-    })
-  }
-
-  const choisirPrestation = (index: number, offeringId: string) => {
-    const item = items[index]
-    const selectedActivity = activitesDisponibles.find((activity) => activity.id === item?.selectedActivityId)
-    if (offeringId === '__free__') {
-      updateItem(index, {
-        selectedOfferingId: offeringId,
-        label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
-        serviceName: '',
-        tenantServiceId: null,
-        activityNameSnapshot: selectedActivity?.name ?? null,
-        billingUnit: 'PIECE',
-        quantity: 1,
-        unitPrice: 0,
-        garmentDetails: [],
-      })
+  // Historique client : quand le téléphone est saisi, on compte les commandes
+  // précédentes et on retient le nom le plus récent pour le pré-remplir.
+  useEffect(() => {
+    const query = customerPhone.replace(/\D/g, '')
+    if (query.length < 3) {
+      setPreviousOrderCount(0)
+      setSuggestedName('')
       return
     }
-    const offering = prestations.find((service) => service.id === offeringId && service.activityId === item?.selectedActivityId)
-    if (!offering) {
-      updateItem(index, {
-        selectedOfferingId: '',
-        label: item?.billingUnit === 'KG' ? '' : item?.label ?? '',
-        serviceName: '',
-        tenantServiceId: null,
-        activityNameSnapshot: null,
-        billingUnit: 'PIECE',
+    const orders = localOrders ?? []
+    setPreviousOrderCount(countPreviousOrders(orders, customerPhone))
+    const nom = lastCustomerNameByPhone(orders, customerPhone)
+    setSuggestedName(nom)
+    if (nom && !customerName) setCustomerName(nom)
+  }, [customerPhone, localOrders, customerName])
+
+  /** Prestations réellement configurées pour le parcours choisi. */
+  const prestationsParcours = useMemo(
+    () => (parcours ? servicesDuParcours(prestations, parcours) : []),
+    [prestations, parcours],
+  )
+  const prestationsKilo = useMemo(() => servicesAuKilo(prestationsParcours), [prestationsParcours])
+  const prestationsPiece = useMemo(
+    () => servicesALaPiece(prestationsParcours),
+    [prestationsParcours],
+  )
+
+  const articles = useMemo(
+    () => (parcours ? articlesDuParcours(parcours) : []),
+    [parcours],
+  )
+
+  /** Clients déjà rencontrés sur cet appareil (aucun appel réseau). */
+  const clientsConnus = useMemo(() => {
+    const parTelephone = new Map<string, { name: string; phone: string; commandes: number; dernier: string }>()
+    for (const commande of localOrders ?? []) {
+      const cle = normalizePhoneCi(commande.customerPhone)
+      if (!cle) continue
+      const connu = parTelephone.get(cle)
+      if (!connu) {
+        parTelephone.set(cle, {
+          name: commande.customerName,
+          phone: commande.customerPhone,
+          commandes: 1,
+          dernier: commande.createdAt,
+        })
+        continue
+      }
+      connu.commandes += 1
+      if (commande.createdAt > connu.dernier) {
+        connu.name = commande.customerName
+        connu.phone = commande.customerPhone
+        connu.dernier = commande.createdAt
+      }
+    }
+    return [...parTelephone.values()].sort((a, b) => b.dernier.localeCompare(a.dernier))
+  }, [localOrders])
+
+  const resultatsClient = useMemo(() => {
+    const terme = rechercheClient.trim().toLocaleLowerCase('fr')
+    if (terme.length < 2) return []
+    return clientsConnus
+      .filter(
+        (client) =>
+          client.name.toLocaleLowerCase('fr').includes(terme) ||
+          client.phone.replace(/\D/g, '').includes(terme.replace(/\D/g, '')),
+      )
+      .slice(0, 5)
+  }, [clientsConnus, rechercheClient])
+
+  /** Quantités affichées sur les tuiles de la grille. */
+  const quantitesGrille = useMemo(() => {
+    const quantites: Partial<Record<OrderGarmentType, number>> = {}
+    for (const ligne of lignes) {
+      if (ligne.genre === 'piece' && ligne.type) {
+        quantites[ligne.type] = (quantites[ligne.type] ?? 0) + ligne.quantity
+      }
+      for (const detail of ligne.garmentDetails) {
+        quantites[detail.type] = (quantites[detail.type] ?? 0) + detail.quantity
+      }
+    }
+    return quantites
+  }, [lignes])
+
+  const total = lignes.reduce((somme, ligne) => somme + totalLigne(ligne), 0)
+
+  const lignesPanier: LignePanier[] = lignes.map((ligne) => ({
+    id: ligne.id,
+    libelle: ligne.label,
+    detail:
+      ligne.genre === 'lot'
+        ? ligne.garmentDetails.length > 0
+          ? `${ligne.quantity} kg · ${ligne.garmentDetails
+              .map((detail) => `${detail.quantity} × ${LIBELLES_ARTICLES.get(detail.type) ?? detail.type}`)
+              .join(', ')}`
+          : 'Composition à préciser'
+        : ligne.serviceName,
+    quantite: ligne.quantity,
+    unite: ligne.genre === 'lot' ? 'KG' : 'PIECE',
+    prixUnitaire: ligne.unitPrice,
+    total: totalLigne(ligne),
+  }))
+
+  const prestationKiloCourante = prestationsKilo.find((service) => service.id === prestationKilo)
+
+  /** Crée le lot au kilo s'il n'existe pas encore, et renvoie son identifiant. */
+  const assurerLot = (service?: TenantServiceOffering): string => {
+    const existant = lignes.find((ligne) => ligne.genre === 'lot')
+    if (existant) return existant.id
+
+    const choisi = service ?? prestationKiloCourante ?? prestationsKilo[0]
+    const id = idLigne()
+    setLignes((current) => [
+      ...current,
+      {
+        id,
+        genre: 'lot',
+        type: null,
+        label: choisi?.serviceName ?? 'Lavage au kilo',
         quantity: 1,
-        unitPrice: 0,
+        unitPrice: choisi?.unitPrice ?? 0,
+        serviceName: choisi?.serviceName ?? null,
+        tenantServiceId: referenceServeur(choisi?.id),
+        activityNameSnapshot: choisi?.activityName ?? null,
         garmentDetails: [],
-      })
+      },
+    ])
+    return id
+  }
+
+  // En blanchisserie, le lot au kilo existe dès l'arrivée sur l'écran des
+  // articles : le comptoir voit tout de suite où saisir le poids et le tarif.
+  useEffect(() => {
+    if (etape !== 1 || parcours !== 'blanchisserie' || lotInitialise.current) return
+    lotInitialise.current = true
+    assurerLot()
+    // `assurerLot` ne dépend que de l'état courant ; l'effet ne doit se
+    // déclencher qu'une fois par entrée dans l'écran.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etape, parcours])
+
+  // Prix par défaut du lot quand le catalogue arrive après l'écran.
+  useEffect(() => {
+    if (parcours !== 'blanchisserie' || prestationKilo !== '') return
+    const premier = prestationsKilo[0]
+    if (!premier) return
+    setPrestationKilo(premier.id)
+    setLignes((current) =>
+      current.map((ligne) =>
+        ligne.genre === 'lot' && ligne.unitPrice === 0 && premier.unitPrice
+          ? { ...ligne, unitPrice: premier.unitPrice, serviceName: premier.serviceName, tenantServiceId: referenceServeur(premier.id), activityNameSnapshot: premier.activityName }
+          : ligne,
+      ),
+    )
+  }, [parcours, prestationKilo, prestationsKilo])
+
+  const ajouterArticle = (type: OrderGarmentType) => {
+    if (parcours === 'blanchisserie') {
+      assurerLot()
+      setLignes((current) =>
+        current.map((ligne) => {
+          if (ligne.genre !== 'lot') return ligne
+          const details = [...ligne.garmentDetails]
+          const index = details.findIndex((detail) => detail.type === type)
+          if (index >= 0) details[index] = { ...details[index]!, quantity: details[index]!.quantity + 1 }
+          else details.push({ type, quantity: 1 })
+          return { ...ligne, garmentDetails: details }
+        }),
+      )
       return
     }
-    const auKilo = offering.billingUnit === 'KG'
-    let label = item?.label ?? ''
-    if (auKilo) label = offering.serviceName
-    else if (item?.billingUnit === 'KG') label = ''
-    updateItem(index, {
-      selectedOfferingId: offering.id,
-      serviceName: offering.serviceName,
-      tenantServiceId: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(offering.id)
-        ? offering.id
-        : null,
-      activityNameSnapshot: offering.activityName,
-      label,
-      billingUnit: offering.billingUnit,
-      quantity: 1,
-      unitPrice: offering.unitPrice ?? 0,
-      garmentDetails: auKilo ? [{ type: '', quantity: 1 }] : [],
+
+    setLignes((current) => {
+      const existante = current.find((ligne) => ligne.genre === 'piece' && ligne.type === type)
+      if (existante) {
+        return current.map((ligne) =>
+          ligne.id === existante.id ? { ...ligne, quantity: ligne.quantity + 1 } : ligne,
+        )
+      }
+      const prestation = prestationsPiece.find((service) => service.id === prestationPiece)
+      return [
+        ...current,
+        {
+          id: idLigne(),
+          genre: 'piece',
+          type,
+          label: LIBELLES_ARTICLES.get(type) ?? type,
+          quantity: 1,
+          unitPrice: 0,
+          serviceName: prestation?.serviceName ?? null,
+          tenantServiceId: referenceServeur(prestation?.id),
+          activityNameSnapshot: prestation?.activityName ?? null,
+          garmentDetails: [],
+        },
+      ]
     })
   }
 
-  /**
-   * Contrôle l'étape en cours **sans jamais bloquer la navigation**.
-   *
-   * Choix assumé après un retour de terrain : le bouton « Suivant » d'un
-   * formulaire en trois étapes doit toujours produire quelque chose. Une
-   * validation qui refuse d'avancer laisse l'écran identique, ce qui se
-   * confond avec un bouton cassé. On signale donc les champs à corriger
-   * (message, toast, champ surligné) et on laisse l'utilisateur circuler ;
-   * l'enregistrement, lui, reste strict et ramène sur l'étape fautive.
-   */
+  const ajouterArticleLibre = () => {
+    const libelle = articleLibre.trim()
+    if (libelle.length < 2) {
+      toast.error('Donnez un nom à l’article (deux caractères minimum).')
+      return
+    }
+    const prestation = prestationsPiece.find((service) => service.id === prestationPiece)
+    setLignes((current) => [
+      ...current,
+      {
+        id: idLigne(),
+        genre: 'piece',
+        type: null,
+        label: libelle,
+        quantity: 1,
+        unitPrice: 0,
+        serviceName: prestation?.serviceName ?? null,
+        tenantServiceId: referenceServeur(prestation?.id),
+        activityNameSnapshot: prestation?.activityName ?? null,
+        garmentDetails: [],
+      },
+    ])
+    setArticleLibre('')
+  }
+
+  const modifierQuantite = (id: string, valeur: number) => {
+    setLignes((current) =>
+      current.map((ligne) => {
+        if (ligne.id !== id) return ligne
+        if (ligne.genre === 'lot') {
+          const poids = Number.isFinite(valeur) ? Number(Math.max(0, valeur).toFixed(3)) : 0
+          return { ...ligne, quantity: poids }
+        }
+        const quantite = Number.isFinite(valeur) ? Math.max(1, Math.floor(valeur)) : 1
+        return { ...ligne, quantity: quantite }
+      }),
+    )
+  }
+
+  const modifierPrix = (id: string, valeur: number) => {
+    setLignes((current) =>
+      current.map((ligne) =>
+        ligne.id === id
+          ? { ...ligne, unitPrice: Number.isFinite(valeur) ? Math.max(0, Math.floor(valeur)) : 0 }
+          : ligne,
+      ),
+    )
+  }
+
+  const supprimerLigne = (id: string) => {
+    setLignes((current) => current.filter((ligne) => ligne.id !== id))
+  }
+
+  const changerPrestationKilo = (serviceId: string) => {
+    setPrestationKilo(serviceId)
+    const service = prestationsKilo.find((entree) => entree.id === serviceId)
+    setLignes((current) =>
+      current.map((ligne) => {
+        if (ligne.genre !== 'lot') return ligne
+        if (!service) {
+          return {
+            ...ligne,
+            label: 'Lavage au kilo',
+            serviceName: null,
+            tenantServiceId: null,
+            activityNameSnapshot: null,
+          }
+        }
+        return {
+          ...ligne,
+          label: service.serviceName,
+          serviceName: service.serviceName,
+          tenantServiceId: referenceServeur(service.id),
+          activityNameSnapshot: service.activityName,
+          unitPrice: service.unitPrice ?? ligne.unitPrice,
+        }
+      }),
+    )
+  }
+
+  /** Lignes envoyées au moteur existant, au format `OrderItemInput`. */
+  const lignesEnregistrees = (): OrderItemInput[] =>
+    lignes.map((ligne) => {
+      const price = totalLigne(ligne)
+      if (ligne.genre === 'lot') {
+        return {
+          label: ligne.label,
+          price,
+          quantity: ligne.quantity,
+          unitPrice: ligne.unitPrice,
+          billingUnit: 'KG',
+          pricingMode: 'FIXED',
+          priceStatus: 'CONFIRMED',
+          ...(ligne.serviceName ? { serviceName: ligne.serviceName } : {}),
+          ...(ligne.tenantServiceId ? { tenantServiceId: ligne.tenantServiceId } : {}),
+          ...(ligne.activityNameSnapshot
+            ? { activityNameSnapshot: ligne.activityNameSnapshot }
+            : {}),
+          ...(ligne.garmentDetails.length > 0 ? { garmentDetails: ligne.garmentDetails } : {}),
+        } satisfies OrderItemInput
+      }
+      return {
+        label: ligne.label,
+        price,
+        quantity: ligne.quantity,
+        unitPrice: ligne.unitPrice,
+        billingUnit: 'PIECE',
+        pricingMode: 'FIXED',
+        priceStatus: 'CONFIRMED',
+        ...(ligne.serviceName ? { serviceName: ligne.serviceName } : {}),
+        ...(ligne.tenantServiceId ? { tenantServiceId: ligne.tenantServiceId } : {}),
+        ...(ligne.activityNameSnapshot ? { activityNameSnapshot: ligne.activityNameSnapshot } : {}),
+      } satisfies OrderItemInput
+    })
+
   /**
    * Motifs de refus tarifaires (prix unitaire à zéro, total incohérent).
    *
-   * PostgreSQL rejette ces lignes avec `guard_order_item_price` : on les arrête
-   * ici pour que le comptoir corrige au lieu de découvrir l'échec à l'envoi.
+   * ⚠️ Il n'existe plus de déclencheur `guard_order_item_price` côté serveur
+   * depuis la migration 020 : cette règle est appliquée **par le formulaire**,
+   * et la seule contrainte SQL restante est `price >= 0`. Ne pas compter sur la
+   * base pour rattraper une ligne à 0 FCFA.
    */
   const problemesTarifaires = (): string[] =>
-    items.flatMap((item) => {
+    lignes.flatMap((ligne) => {
       const probleme = problemeTarifaire({
-        label: item.label,
-        unitPrice: item.unitPrice,
-        price: item.price,
-        priceStatus: item.priceStatus,
+        label: ligne.label,
+        unitPrice: ligne.unitPrice,
+        price: totalLigne(ligne),
       })
       return probleme ? [probleme] : []
     })
 
-  const controlerEtape = (step: number): boolean => {
-    const parsed = step === 0
-      ? createOrderSchema.pick({ customerName: true, customerPhone: true, dueDate: true }).safeParse({
-          customerName,
-          customerPhone,
-          dueDate: dueDate || undefined,
-        })
-      : createOrderSchema.pick({ items: true }).safeParse({ items })
-
-    if (parsed.success) {
-      if (step === 1) {
-        const tarifs = problemesTarifaires()
-        if (tarifs.length > 0) {
-          setErrors(tarifs)
-          toast.error(tarifs[0]!)
-          return false
-        }
-      }
-      return true
-    }
-
-    const messages = zodMessages(parsed.error)
-    setErrors(messages)
-    setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
-    toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
-    return false
-  }
-
-  /**
-   * Amène l'utilisateur sur le premier champ fautif, sinon sur le bloc d'erreurs.
-   * Chaque étape rend son propre `StepErrors` (`role="alert"`) : la recherche se
-   * fait donc dans le document, sans référence liée à une étape précise.
-   */
-  const signalerBlocage = () => {
-    window.requestAnimationFrame(() => {
-      const premierChamp = document.querySelector<HTMLElement>('[aria-invalid="true"]')
-      const cible = premierChamp ?? document.querySelector<HTMLElement>('[role="alert"]')
-      if (!cible) return
-
-      if (premierChamp) premierChamp.focus()
-      cible.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+  const controlerArticles = (): boolean => {
+    const parsed = createOrderSchema.safeParse({
+      customerName,
+      customerPhone,
+      items: lignesEnregistrees(),
+      dueDate: dueDate || undefined,
     })
+    const problemes = [...(parsed.success ? [] : zodMessages(parsed.error)), ...problemesTarifaires()]
+    if (problemes.length > 0) {
+      setErrors(problemes)
+      toast.error(problemes[0] ?? 'Vérifiez les informations saisies.')
+      return false
+    }
+    setErrors([])
+    return true
   }
 
-  /**
-   * Change d'étape. Les onglets d'étape, « Suivant » et « Précédent » passent
-   * tous par ici : la navigation est **toujours** possible, dans les deux sens.
-   * Avancer déclenche seulement un contrôle d'affichage des champs de l'étape
-   * quittée (sans jamais retenir l'utilisateur). Un défaut réellement bloquant
-   * est arrêté au moment d'enregistrer.
-   */
-  const changerEtape = (cible: number) => {
-    if (submitting || cible === etape || cible < 0 || cible >= ETAPES.length) return
-
-    // En avant : on contrôle les étapes traversées. En arrière : on ne touche à
-    // rien, pour que le champ fautif reste surligné et son motif lisible.
-    if (cible > etape) {
-      let toutValide = true
-      for (let index = etape; index < cible; index += 1) {
-        if (!controlerEtape(index)) {
-          toutValide = false
-          break
-        }
-      }
-      if (toutValide) {
-        setErrors([])
-        setChampsInvalides([])
-      }
-    }
-
+  const changerEtape = (cible: Etape) => {
+    if (submitting || cible === etape) return
+    if (cible === 2) controlerArticles()
     setEtape(cible)
     window.scrollTo?.({ top: 0, behavior: 'smooth' })
   }
 
+  const choisirParcours = (choisi: ParcoursService) => {
+    if (submitting) return
+    setParcours(choisi)
+    setEtape(1)
+    lotInitialise.current = false
+    setLignes((current) => (choisi === 'pressing' ? current.filter((l) => l.genre === 'piece') : current))
+    setErrors([])
+    window.scrollTo?.({ top: 0, behavior: 'smooth' })
+  }
+
+  const aDesDonnees =
+    lignes.length > 0 || customerName.trim() !== '' || customerPhone.trim() !== ''
+
+  const quitter = () => {
+    if (aDesDonnees && !window.confirm('Abandonner cette commande ? Les informations saisies seront perdues.')) {
+      return
+    }
+    navigate('/commandes')
+  }
+
   const submit = async () => {
-    // Trace d'entrée : si aucun événement `clic_enregistrer` n'arrive alors que
-    // le comptoir clique, c'est que le clic n'atteint jamais ce gestionnaire
-    // (bouton inerte, élément superposé) — et non que le serveur refuse.
+    if (enregistrementEnCours.current) return
+    enregistrementEnCours.current = true
+
     void signalerSonde({
       evenement: 'clic_enregistrer',
       etape,
-      lignes: items.length,
+      lignes: lignes.length,
       total,
       peut_creer: canCreate,
       en_ligne: typeof navigator !== 'undefined' ? navigator.onLine : null,
+      parcours,
     })
 
     if (!canCreate) {
@@ -337,6 +580,7 @@ export default function OrderForm() {
       toast.error(message)
       void signalerIncidentCommande(message, { etape: 'droit', role: roleEffectif })
       window.scrollTo?.({ top: 0, behavior: 'smooth' })
+      enregistrementEnCours.current = false
       return
     }
 
@@ -346,22 +590,15 @@ export default function OrderForm() {
       const parsed = createOrderSchema.safeParse({
         customerName,
         customerPhone,
-        items,
+        items: lignesEnregistrees(),
         dueDate: dueDate || undefined,
       })
       if (!parsed.success) {
         const messages = zodMessages(parsed.error)
         setErrors(messages)
-        setChampsInvalides(parsed.error.issues.map((issue) => String(issue.path[0] ?? '')))
         toast.error(messages[0] ?? 'Vérifiez les informations saisies.')
-
-        // Retour sur l'étape qui contient la première erreur : au comptoir, un
-        // message affiché sur une autre étape n'est jamais lu.
-        const premiere = String(parsed.error.issues[0]?.path[0] ?? '')
-        setEtape(premiere === 'items' ? 1 : 0)
-        window.setTimeout(signalerBlocage, 0)
-        // Un refus de validation bloque l'enregistrement : il doit laisser une
-        // trace consultable, comme un refus du serveur.
+        // Nom, téléphone ou lignes : tout se corrige sur l'écran des articles.
+        setEtape(1)
         void signalerIncidentCommande(messages[0] ?? 'Validation refusée.', {
           etape: 'validation',
           erreurs: messages,
@@ -371,21 +608,16 @@ export default function OrderForm() {
 
       // 1. Écriture locale immédiate (le comptoir ne dépend pas du réseau).
       setEnregistrement('local')
-      // Le serveur refuse une ligne à 0 FCFA : autant le dire avant l'envoi.
       const tarifs = problemesTarifaires()
       if (tarifs.length > 0) {
         setErrors(tarifs)
         setEtape(1)
         toast.error(tarifs[0]!)
-        window.setTimeout(signalerBlocage, 0)
         void signalerIncidentCommande(tarifs[0]!, { etape: 'tarif' })
         return
       }
 
-      // Garde-fou : une écriture locale bloquée (stockage saturé, transaction
-      // bloquée par un autre onglet) laisserait sinon le bouton tourner
-      // indéfiniment sans jamais rien dire.
-      void signalerSonde({ evenement: 'creation_locale_demarree', etape })
+      void signalerSonde({ evenement: 'creation_locale_demarree', etape, lignes: lignes.length })
       const { order } = await Promise.race([
         createOrder(parsed.data),
         new Promise<never>((_, rejeter) =>
@@ -401,13 +633,9 @@ export default function OrderForm() {
         ),
       ])
 
-      // 2. Envoi immédiat vers Supabase, sans attendre la boucle de fond :
-      //    la commande et ses lignes arrivent en base dans la seconde, et un
-      //    échec est signalé tout de suite avec son motif.
+      // 2. Envoi immédiat vers Supabase, sans attendre la boucle de fond.
       void signalerSonde({ evenement: 'commande_creee_localement', commande: order.id })
       setEnregistrement('serveur')
-      // L'envoi ne doit jamais interrompre le parcours : quoi qu'il arrive, la
-      // commande existe sur l'appareil et le comptoir repart avec un message.
       let envoi: { statut: string; message?: string }
       try {
         envoi = await syncOrderNow(order.id)
@@ -429,43 +657,45 @@ export default function OrderForm() {
       if (envoi.statut === 'synced') {
         toast.success('Commande enregistrée et synchronisée.', { icon: '✅' })
       } else {
-        toast(
-          `Commande enregistrée sur cet appareil. ${envoi.message ?? ''}`.trim(),
-          { icon: '📥', duration: 6000 },
-        )
+        toast(`Commande enregistrée sur cet appareil. ${envoi.message ?? ''}`.trim(), {
+          icon: '📥',
+          duration: 6000,
+        })
       }
 
-      // La fiche s'ouvre toujours : elle montre l'état de synchronisation et
-      // permet de relancer l'envoi si besoin.
-      navigate(paiement === 'especes'
-        ? `/commandes/${order.id}?regler=1`
-        : `/commandes/${order.id}`)
+      navigate(
+        paiement === 'especes' ? `/commandes/${order.id}?regler=1` : `/commandes/${order.id}`,
+      )
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Impossible d'enregistrer la commande."
       setErrors([message])
       toast.error(message)
-      // Trace côté serveur : un blocage au clic ne doit pas rester invisible.
       void signalerIncidentCommande(message, { etape: 'creation_locale' })
       window.scrollTo?.({ top: 0, behavior: 'smooth' })
     } finally {
+      enregistrementEnCours.current = false
       setSubmitting(false)
       setEnregistrement(null)
     }
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <header>
         <button
           type="button"
-          onClick={() => navigate('/commandes')}
+          onClick={quitter}
           className="mb-3 min-h-10 text-sm font-semibold text-slate-600 hover:text-brand-navy"
         >
           ← Retour aux commandes
         </button>
         <h1 className="text-2xl font-bold text-brand-navy">Nouvelle commande</h1>
-        <p className="mt-1 text-sm text-slate-500">Les informations sont enregistrées localement avant synchronisation.</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {parcours
+            ? `${PRESENTATION_PARCOURS[parcours].titre} — les informations sont enregistrées localement avant synchronisation.`
+            : 'Choisissez le type de service pour commencer la commande.'}
+        </p>
       </header>
 
       <ol className="grid grid-cols-3 gap-2" aria-label="Étapes de création de commande">
@@ -476,14 +706,22 @@ export default function OrderForm() {
             <li key={titre}>
               <button
                 type="button"
-                onClick={() => changerEtape(index)}
+                onClick={() => changerEtape(index as Etape)}
                 aria-current={active ? 'step' : undefined}
                 aria-label={`Étape ${index + 1} : ${titre}`}
-                disabled={submitting}
-                className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold transition-colors disabled:opacity-60 ${active ? 'border-brand-teal bg-brand-teal/5 text-brand-navy' : complete ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-200 bg-white text-slate-500 hover:border-brand-teal hover:text-brand-navy'}`}
+                disabled={submitting || (index > 0 && !parcours)}
+                className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border px-2 text-sm font-semibold transition-colors disabled:opacity-60 ${
+                  active
+                    ? 'border-brand-teal bg-brand-teal/5 text-brand-navy'
+                    : complete
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-brand-teal hover:text-brand-navy'
+                }`}
               >
                 {complete ? <Check size={17} aria-hidden /> : <Icon size={17} aria-hidden />}
-                <span>{index + 1}. {titre}</span>
+                <span className="truncate">
+                  {index + 1}. {titre}
+                </span>
               </button>
             </li>
           )
@@ -504,234 +742,390 @@ export default function OrderForm() {
         </div>
       )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        {etape === 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">Informations client</h2>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-semibold text-slate-700">Nom du client</span>
-              <input
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-                placeholder="Ex. Mme Awa Koné"
-                autoComplete="name"
-                aria-invalid={champsInvalides.includes('customerName') || undefined}
-                className={`min-h-12 w-full rounded-xl border px-3 text-base outline-none focus:border-brand-teal ${champsInvalides.includes('customerName') ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}
+      {/* ---------------------------------------------------------------- */}
+      {/* Écran 1 — choix du service                                        */}
+      {/* ---------------------------------------------------------------- */}
+      {etape === 0 && (
+        <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">Quel type de service ?</h2>
+            <p className="text-sm text-slate-500">
+              Le choix détermine la grille d’articles et le mode de facturation.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(['pressing', 'blanchisserie'] as const).map((choix) => (
+              <ServiceChoiceCard
+                key={choix}
+                parcours={choix}
+                actif={parcours === choix}
+                nombrePrestations={servicesDuParcours(prestations, choix).length}
+                onChoisir={choisirParcours}
               />
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">
+            {prestations.length === 0
+              ? 'Aucune prestation n’est configurée pour ce pressing : les prix se saisissent au comptoir, article par article (Paramètres → Services & activités pour les configurer).'
+              : `${prestations.length} prestation${prestations.length > 1 ? 's' : ''} configurée${prestations.length > 1 ? 's' : ''} pour ce pressing.`}
+          </p>
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={quitter}
+              className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Annuler
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Écran 2 — client, articles et panier                              */}
+      {/* ---------------------------------------------------------------- */}
+      {etape === 1 && parcours && (
+        <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-slate-800">
+              {PRESENTATION_PARCOURS[parcours].titre} — client et articles
+            </h2>
+            <button
+              type="button"
+              onClick={() => setEtape(0)}
+              disabled={submitting}
+              className="min-h-10 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Changer de service
+            </button>
+          </div>
+
+          {/* Client */}
+          <div className="space-y-3 rounded-xl border border-slate-200 p-3 sm:p-4">
+            <h3 className="text-sm font-bold text-slate-700">Client</h3>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-semibold text-slate-600">
+                Rechercher un client déjà venu
+              </span>
+              <span className="relative block">
+                <Search
+                  size={16}
+                  aria-hidden
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="search"
+                  value={rechercheClient}
+                  onChange={(evenement) => setRechercheClient(evenement.target.value)}
+                  placeholder="Nom ou téléphone…"
+                  aria-label="Rechercher un client"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-base outline-none focus:border-brand-teal"
+                />
+              </span>
             </label>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-semibold text-slate-700">Téléphone</span>
-              <input
-                value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
-                placeholder="07 00 00 00 00"
-                inputMode="tel"
-                autoComplete="tel"
-                aria-invalid={champsInvalides.includes('customerPhone') || undefined}
-                className={`min-h-12 w-full rounded-xl border px-3 text-base outline-none focus:border-brand-teal ${champsInvalides.includes('customerPhone') ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'}`}
-              />
-              {customerPhone && (
-                <>
-                  {suggestedName && previousOrderCount > 0 && (
-                    <span className="block text-xs text-slate-500">
-                      {suggestedName} — {previousOrderCount} commande{previousOrderCount > 1 ? 's' : ''} précédente{previousOrderCount > 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {suggestedName && !customerName && previousOrderCount > 0 && (
+            {resultatsClient.length > 0 && (
+              <ul className="space-y-1">
+                {resultatsClient.map((client) => (
+                  <li key={`${client.phone}-${client.name}`}>
                     <button
                       type="button"
-                      onClick={() => setCustomerName(suggestedName)}
-                      className="text-xs text-brand-teal underline underline-offset-4 hover:text-brand-teal-dark"
+                      onClick={() => {
+                        setCustomerName(client.name)
+                        setCustomerPhone(client.phone)
+                        setRechercheClient('')
+                      }}
+                      aria-label={`Choisir le client ${client.name}`}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:border-brand-teal hover:bg-teal-50"
                     >
-                      Utiliser ce nom
+                      <span className="font-semibold text-slate-800">{client.name}</span>
+                      <span className="text-xs text-slate-500">
+                        {client.phone} · {client.commandes} commande{client.commandes > 1 ? 's' : ''}
+                      </span>
                     </button>
-                  )}
-                  {!suggestedName && suggestCustomersByPhone(localOrders ?? [], customerPhone).length > 0 && (
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-slate-600">Nom du client</span>
+                <input
+                  value={customerName}
+                  onChange={(evenement) => setCustomerName(evenement.target.value)}
+                  placeholder="Ex. Mme Awa Koné"
+                  autoComplete="name"
+                  aria-invalid={errors.length > 0 && customerName.trim().length < 2 ? true : undefined}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-slate-600">Téléphone</span>
+                <input
+                  value={customerPhone}
+                  onChange={(evenement) => setCustomerPhone(evenement.target.value)}
+                  placeholder="07 00 00 00 00"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+                />
+                {customerPhone && previousOrderCount > 0 && (
+                  <span className="block text-xs text-slate-500">
+                    {suggestedName || 'Client connu'} — {previousOrderCount} commande
+                    {previousOrderCount > 1 ? 's' : ''} précédente
+                    {previousOrderCount > 1 ? 's' : ''}
+                  </span>
+                )}
+                {customerPhone &&
+                  previousOrderCount === 0 &&
+                  suggestCustomersByPhone(localOrders ?? [], customerPhone).length > 0 && (
                     <span className="block text-xs text-slate-500">
                       Un client connu utilise déjà ce numéro.
                     </span>
                   )}
-                </>
-              )}
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-semibold text-slate-700">Livraison promise <span className="font-normal text-slate-500">(facultatif)</span></span>
-              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal" />
-            </label>
-            <StepErrors errors={errors} />
-            <div className="flex justify-between gap-3 pt-2">
-              <button type="button" onClick={() => navigate('/commandes')} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Annuler</button>
-              <button type="button" onClick={() => changerEtape(etape + 1)} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">Suivant</button>
+              </label>
+              <label className="block space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-semibold text-slate-600">
+                  Livraison promise <span className="font-normal text-slate-500">(facultatif)</span>
+                </span>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(evenement) => setDueDate(evenement.target.value)}
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 text-base outline-none focus:border-brand-teal"
+                />
+              </label>
             </div>
           </div>
-        )}
 
-        {etape === 1 && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-800">Vêtements et prestations</h2>
-                <p className="text-sm text-slate-500">Pour une prestation au kilo, énumérez les vêtements, pesez le lot et confirmez le tarif par kilo.</p>
-              </div>
-              <button type="button" onClick={() => setItems((current) => [...current, createEmptyItem()])} disabled={submitting} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"><Plus size={17} aria-hidden /> Ajouter une ligne</button>
+          {/* Prestation appliquée */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {parcours === 'blanchisserie' ? (
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
+                <select
+                  value={prestationKilo}
+                  onChange={(evenement) => changerPrestationKilo(evenement.target.value)}
+                  aria-label="Prestation au kilo"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                >
+                  <option value="">Lavage au kilo (saisie libre)</option>
+                  {prestationsKilo.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.serviceName}
+                      {service.unitPrice ? ` — ${formatFcfa(service.unitPrice)}/kg` : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="block text-xs text-slate-500">
+                  Le tarif configuré est proposé ; celui saisi dans le panier fait foi.
+                </span>
+              </label>
+            ) : (
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-slate-600">
+                  Prestation appliquée <span className="font-normal text-slate-500">(facultatif)</span>
+                </span>
+                <select
+                  value={prestationPiece}
+                  onChange={(evenement) => setPrestationPiece(evenement.target.value)}
+                  aria-label="Prestation appliquée aux articles"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base outline-none focus:border-brand-teal"
+                >
+                  <option value="">Aucune prestation</option>
+                  {prestationsPiece.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.serviceName} — {service.activityName}
+                    </option>
+                  ))}
+                </select>
+                <span className="block text-xs text-slate-500">
+                  S’applique aux articles ajoutés ensuite ; les prix restent saisissables.
+                </span>
+              </label>
+            )}
+          </div>
+
+          {/* Grille + panier */}
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="space-y-4">
+              <OrderItemGrid
+                articles={articles}
+                quantites={quantitesGrille}
+                onAjouter={ajouterArticle}
+                legende={
+                  parcours === 'blanchisserie'
+                    ? 'Touchez le linge déposé : il s’ajoute à la composition du lot pesé.'
+                    : 'Touchez un article pour l’ajouter. Les quantités se corrigent dans le panier.'
+                }
+              />
+
+              {parcours === 'pressing' && (
+                <div className="rounded-xl border border-slate-200 p-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Article libre
+                  </h3>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={articleLibre}
+                      onChange={(evenement) => setArticleLibre(evenement.target.value)}
+                      onKeyDown={(evenement) => {
+                        if (evenement.key === 'Enter') {
+                          evenement.preventDefault()
+                          ajouterArticleLibre()
+                        }
+                      }}
+                      placeholder="Ex. Rideau, couverture…"
+                      aria-label="Libellé de l’article libre"
+                      className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal"
+                    />
+                    <button
+                      type="button"
+                      onClick={ajouterArticleLibre}
+                      className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50"
+                    >
+                      <Plus size={16} aria-hidden /> Ajouter
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-3">
-              {items.map((item, index) => (
-                <fieldset key={index} className="rounded-xl border border-slate-200 p-3 sm:p-4">
-                  <legend className="px-1 text-sm font-semibold text-slate-600">Ligne {index + 1}</legend>
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_170px_44px]">
-                    {item.billingUnit === 'KG' ? (
-                      <div className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Prestation au kilo</span>
-                        <p className="min-h-11 rounded-lg bg-slate-50 px-3 py-2.5 font-semibold text-slate-800">{item.serviceName || 'Lavage au kilo'}</p>
-                      </div>
-                    ) : (
-                      <label className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Article / vêtement</span>
-                        <input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="Ex. Chemise" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                      </label>
-                    )}
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Poids total (kg)' : 'Quantité'}</span>
-                      <input type="number" min={item.billingUnit === 'KG' ? '0.001' : '1'} step={item.billingUnit === 'KG' ? '0.001' : '1'} value={item.quantity || ''} onChange={(event) => updateItem(index, { quantity: item.billingUnit === 'KG' ? Math.max(0, Number(event.target.value) || 0) : Math.max(1, Number(event.target.value) || 1) })} aria-label={item.billingUnit === 'KG' ? `Poids total (kg) ligne ${index + 1}` : `Quantité ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">{item.billingUnit === 'KG' ? 'Tarif/kg (FCFA)' : 'Prix unitaire (FCFA)'}</span>
-                      <input type="number" min="1" step="1" value={item.unitPrice || ''} onChange={(event) => updateItem(index, { unitPrice: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} aria-label={item.billingUnit === 'KG' ? `Tarif au kilo ligne ${index + 1} (FCFA)` : `Prix unitaire ligne ${index + 1} (FCFA)`} className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                    <button type="button" onClick={() => setItems((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))} disabled={items.length === 1 || submitting} aria-label={`Supprimer la ligne ${index + 1}`} className="mt-5 flex min-h-11 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={18} aria-hidden /></button>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Activité <span className="font-normal">(facultatif)</span></span>
-                      <select value={item.selectedActivityId} onChange={(event) => choisirActivite(index, event.target.value)} aria-label={`Activité de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
-                        <option value="">Choisir une activité</option>
-                        {activitesDisponibles.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Prestation <span className="font-normal">(facultatif)</span></span>
-                      <select value={item.selectedOfferingId} onChange={(event) => choisirPrestation(index, event.target.value)} aria-label={`Prestation de la ligne ${index + 1}`} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-base outline-none focus:border-brand-teal">
-                        <option value="">Choisir une prestation</option>
-                        <option value="__free__">Saisir une prestation libre</option>
-                        {prestations.filter((service) => service.activityId === item.selectedActivityId).map((service) => <option key={service.id} value={service.id}>{service.serviceName}{service.billingUnit === 'KG' ? ' — au kilo' : ''}</option>)}
-                      </select>
-                      {item.selectedOfferingId === '__free__' && (
-                        <input value={item.serviceName ?? ''} onChange={(event) => updateItem(index, { serviceName: event.target.value })} placeholder="Ex. Lavage et repassage" aria-label={`Libellé de la prestation libre ${index + 1}`} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                      )}
-                    </label>
-                    {item.billingUnit !== 'KG' && (
-                      <label className="space-y-1">
-                        <span className="text-xs font-semibold text-slate-600">Type de tissu <span className="font-normal">(facultatif)</span></span>
-                        <input value={item.fabricType ?? ''} onChange={(event) => updateItem(index, { fabricType: event.target.value })} placeholder="Ex. Bazin, Wax" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                      </label>
-                    )}
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-600">Instructions <span className="font-normal">(facultatif)</span></span>
-                      <input value={item.specialInstructions ?? ''} onChange={(event) => updateItem(index, { specialInstructions: event.target.value })} placeholder="Ex. Empèsage fort" className="min-h-11 w-full rounded-lg border border-slate-300 px-2 text-base outline-none focus:border-brand-teal" />
-                    </label>
-                  </div>
-                  {item.billingUnit === 'KG' && (
-                    <div className="mt-4 rounded-xl border border-brand-teal/20 bg-teal-50/40 p-3">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-800">Vêtements dans le lot</h3>
-                          <p className="text-xs text-slate-500">Le tarif est calculé sur le poids total; ce détail sert au suivi du linge.</p>
-                        </div>
-                        <button type="button" onClick={() => updateItem(index, { garmentDetails: [...item.garmentDetails, { type: '', quantity: 1 }] })} className="min-h-9 rounded-lg border border-brand-teal/40 px-3 text-xs font-bold text-brand-navy hover:bg-white">+ Ajouter un type</button>
-                      </div>
-                      {item.garmentDetails.map((garment, garmentIndex) => (
-                        <div key={`${index}-garment-${garmentIndex}`} className="mb-2 grid grid-cols-[minmax(0,1fr)_90px_40px] gap-2 last:mb-0">
-                          <label className="space-y-1">
-                            <span className="sr-only">Type de vêtement {garmentIndex + 1}</span>
-                            <select value={garment.type} onChange={(event) => {
-                              const garmentDetails = [...item.garmentDetails]
-                              garmentDetails[garmentIndex] = { ...garment, type: event.target.value as OrderGarmentType | '' }
-                              updateItem(index, { garmentDetails })
-                            }} aria-label={`Type de vêtement ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-brand-teal">
-                              <option value="">Sélectionner un type</option>
-                              {GARMENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-                            </select>
-                          </label>
-                          <label className="space-y-1">
-                            <span className="sr-only">Nombre d’articles {garmentIndex + 1}</span>
-                            <input type="number" min="1" max="1000" step="1" value={garment.quantity} onChange={(event) => {
-                              const garmentDetails = [...item.garmentDetails]
-                              garmentDetails[garmentIndex] = { ...garment, quantity: Math.min(1000, Math.max(1, Math.floor(Number(event.target.value) || 1))) }
-                              updateItem(index, { garmentDetails })
-                            }} aria-label={`Nombre d’articles ${garmentIndex + 1} ligne ${index + 1}`} className="min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm outline-none focus:border-brand-teal" />
-                          </label>
-                          <button type="button" onClick={() => updateItem(index, { garmentDetails: item.garmentDetails.filter((_, detailIndex) => detailIndex !== garmentIndex) })} aria-label={`Supprimer le type de vêtement ${garmentIndex + 1}`} className="flex min-h-10 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={16} aria-hidden /></button>
-                        </div>
-                      ))}
-                      {formatDraftComposition(item.garmentDetails) && (
-                        <p className="mt-2 text-xs font-medium text-slate-700">Composition : {formatDraftComposition(item.garmentDetails)}</p>
-                      )}
-                    </div>
-                  )}
-                  <p className="mt-3 text-right text-sm font-semibold text-slate-700">Total de la ligne : {formatFcfa(item.price)}</p>
-                </fieldset>
+            <OrderBasket
+              lignes={lignesPanier}
+              total={total}
+              onQuantite={modifierQuantite}
+              onPrix={modifierPrix}
+              onSupprimer={supprimerLigne}
+              onVider={() => setLignes([])}
+            />
+          </div>
+
+          {errors.length > 0 && (
+            <div role="alert" className="space-y-1 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">
+              {errors.map((erreur, index) => (
+                <p key={`${index}-${erreur}`}>{erreur}</p>
               ))}
             </div>
-            {prestations.length === 0 && (
-              <p className="text-xs text-slate-500">Aucune prestation n’est encore configurée. Vous pouvez laisser la ligne sans prestation ou en saisir une librement.</p>
-            )}
+          )}
 
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-600">Total de la commande</p>
-              <p className="text-xl font-bold text-brand-navy">{formatFcfa(total)}</p>
-            </div>
-            <StepErrors errors={errors} />
-            <div className="flex justify-between gap-3 pt-2">
-              <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
-              <button type="button" onClick={() => changerEtape(etape + 1)} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">Suivant</button>
-            </div>
+          <div className="flex justify-between gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setEtape(0)}
+              disabled={submitting}
+              className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Précédent
+            </button>
+            <button
+              type="button"
+              onClick={() => changerEtape(2)}
+              disabled={submitting}
+              className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50"
+            >
+              Suivant
+            </button>
           </div>
-        )}
+        </section>
+      )}
 
-        {etape === 2 && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-800">Règlement</h2>
-              <p className="text-sm text-slate-500">Le paiement immédiat ouvre le panneau d’encaissement après l’enregistrement.</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+      {/* ---------------------------------------------------------------- */}
+      {/* Écran 3 — récapitulatif et enregistrement                         */}
+      {/* ---------------------------------------------------------------- */}
+      {etape === 2 && parcours && (
+        <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <OrderSummary
+            parcours={parcours}
+            clientName={customerName}
+            clientPhone={customerPhone}
+            dueDate={dueDate}
+            lignes={lignesPanier}
+            total={total}
+            erreurs={errors}
+          />
+
+          <div>
+            <h3 className="text-sm font-bold text-slate-700">Règlement</h3>
+            <p className="text-sm text-slate-500">
+              Le paiement immédiat ouvre le panneau d’encaissement après l’enregistrement.
+            </p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
               {(['plus-tard', 'especes'] as const).map((mode) => {
                 const selected = paiement === mode
                 return (
-                  <button key={mode} type="button" onClick={() => setPaiement(mode)} aria-pressed={selected} className={`min-h-24 rounded-xl border p-4 text-left ${selected ? 'border-brand-teal bg-brand-teal/5' : 'border-slate-300 hover:border-brand-teal'}`}>
-                    <span className="block font-semibold text-slate-800">{mode === 'plus-tard' ? 'Régler plus tard' : 'Encaisser des espèces maintenant'}</span>
-                    <span className="mt-1 block text-sm text-slate-500">{mode === 'plus-tard' ? 'Le solde restera dû sur la fiche.' : 'La commande sera créée, puis le panneau espèces s’ouvrira pour confirmer le montant reçu.'}</span>
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setPaiement(mode)}
+                    aria-pressed={selected}
+                    className={`min-h-20 rounded-xl border p-3 text-left ${
+                      selected ? 'border-brand-teal bg-brand-teal/5' : 'border-slate-300 hover:border-brand-teal'
+                    }`}
+                  >
+                    <span className="block font-semibold text-slate-800">
+                      {mode === 'plus-tard' ? 'Régler plus tard' : 'Encaisser des espèces maintenant'}
+                    </span>
+                    <span className="mt-1 block text-sm text-slate-500">
+                      {mode === 'plus-tard'
+                        ? 'Le solde restera dû sur la fiche.'
+                        : 'La commande sera créée, puis le panneau espèces s’ouvrira.'}
+                    </span>
                   </button>
                 )
               })}
             </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-600">À régler</p>
-              <p className="text-xl font-bold text-brand-navy">{formatFcfa(total)}</p>
-            </div>
-            <StepErrors errors={errors} />
-            <div className="flex justify-between gap-3 pt-2">
-              <button type="button" onClick={() => changerEtape(etape - 1)} disabled={submitting} className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Précédent</button>
-              <button type="button" onClick={submit} disabled={submitting} className="min-h-12 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50">{enregistrement === 'serveur'
+          </div>
+
+          <div className="flex flex-wrap justify-between gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setEtape(1)}
+              disabled={submitting}
+              className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Modifier les articles
+            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={quitter}
+                disabled={submitting}
+                className="min-h-12 rounded-xl border border-slate-300 px-4 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                // Volontairement actif même sans droit : le clic doit produire
+                // une explication (et une trace), jamais un silence.
+                disabled={submitting}
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-teal px-5 font-semibold text-white hover:bg-brand-teal/90 disabled:opacity-50"
+              >
+                <Wallet size={18} aria-hidden />
+                {enregistrement === 'serveur'
                   ? 'Envoi au serveur…'
                   : submitting
                     ? 'Enregistrement…'
-                    : 'Enregistrer la commande'}</button>
+                    : 'Enregistrer la commande'}
+              </button>
             </div>
           </div>
-        )}
-      </section>
-    </div>
-  )
-}
+        </section>
+      )}
 
-function StepErrors({ errors }: { errors: string[] }) {
-  if (errors.length === 0) return null
-  return (
-    <div role="alert" className="space-y-1 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">
-      {errors.map((error, index) => <p key={`${index}-${error}`}>{error}</p>)}
+      {/* Rappel du total, utile sur téléphone où le panier est plus bas. */}
+      {(etape === 1 || etape === 2) && (
+        <p className="text-right text-sm font-semibold text-slate-600">
+          Total de la commande : <span className="text-brand-navy">{formatFcfa(total)}</span>
+        </p>
+      )}
+
+      <p className="sr-only" aria-live="polite">
+        {activites.length} activité(s) configurée(s), {lignes.length} ligne(s) au panier.
+      </p>
     </div>
   )
 }

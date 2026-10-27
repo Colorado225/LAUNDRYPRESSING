@@ -3,7 +3,7 @@ import {
   type LocalTenantActivity,
   type LocalTenantService,
 } from '@/db/localDb'
-import type { TenantServiceBillingUnit } from '@/types/database'
+import type { TenantActivityCode, TenantServiceBillingUnit } from '@/types/database'
 import { isSupabaseConfigured } from '@/lib/env'
 import { labelActivite } from '@/lib/tenantActivities'
 import { getSupabaseClient } from '@/lib/supabaseClient'
@@ -13,6 +13,12 @@ export interface TenantActivity {
   tenantId: string
   name: string
   sortOrder: number
+  /**
+   * Code du référentiel d'origine (`pressing`, `blanchisserie`…), `null` pour
+   * une activité créée librement par le pressing. Lecture seule : il sert au
+   * choix du parcours de commande, jamais à filtrer les données du serveur.
+   */
+  legacyCode: TenantActivityCode | null
 }
 
 export interface TenantServiceOffering {
@@ -20,6 +26,8 @@ export interface TenantServiceOffering {
   tenantId: string
   activityId: string
   activityName: string
+  /** Code d'activité porté par la prestation, `null` s'il n'a pas été renseigné. */
+  activityCode: TenantActivityCode | null
   serviceName: string
   billingUnit: TenantServiceBillingUnit
   unitPrice: number | null
@@ -32,7 +40,13 @@ export interface TenantServiceConfiguration {
 }
 
 function fromLocalActivity(row: LocalTenantActivity): TenantActivity {
-  return { ...row }
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    name: row.name,
+    sortOrder: row.sortOrder,
+    legacyCode: row.legacyCode ?? null,
+  }
 }
 
 function fromLocalService(row: LocalTenantService): TenantServiceOffering {
@@ -42,6 +56,7 @@ function fromLocalService(row: LocalTenantService): TenantServiceOffering {
     tenantId: row.tenantId,
     activityId: row.activityId || `legacy:${code ?? 'unknown'}`,
     activityName: row.activityName || (code ? labelActivite(code) : 'Activité'),
+    activityCode: code ?? null,
     serviceName: row.serviceName,
     billingUnit: row.billingUnit ?? 'PIECE',
     unitPrice: row.unitPrice ?? null,
@@ -88,6 +103,7 @@ function localConfiguration(tenantId: string): Promise<TenantServiceConfiguratio
         tenantId,
         name: normalized.activityName,
         sortOrder: normalized.sortOrder,
+        legacyCode: normalized.activityCode,
       })
     }
     return {
@@ -117,7 +133,7 @@ export async function fetchTenantServiceConfiguration(
   const [activitiesResult, servicesResult] = await Promise.all([
     supabase
       .from('tenant_activities')
-      .select('id, tenant_id, name, sort_order')
+      .select('id, tenant_id, name, legacy_code, sort_order')
       .eq('tenant_id', tenantId)
       .order('sort_order'),
     supabase
@@ -135,6 +151,7 @@ export async function fetchTenantServiceConfiguration(
     tenantId: row.tenant_id,
     name: row.name,
     sortOrder: row.sort_order,
+    legacyCode: row.legacy_code ?? null,
   }))
   const activityNames = new Map(activities.map((activity) => [activity.id, activity.name]))
   const services: TenantServiceOffering[] = (servicesResult.data ?? []).map((row) => ({
@@ -142,6 +159,7 @@ export async function fetchTenantServiceConfiguration(
     tenantId: row.tenant_id,
     activityId: row.activity_id,
     activityName: activityNames.get(row.activity_id) ?? 'Activité',
+    activityCode: row.activity_code ?? null,
     serviceName: row.service_name,
     billingUnit: row.billing_unit,
     unitPrice: row.unit_price,
@@ -199,7 +217,7 @@ export async function createTenantActivity(tenantId: string, name: string): Prom
     throw new Error('Cette activité existe déjà.')
   }
   await db.tenantActivities.add({
-    id: localId(), tenantId, name: clean, sortOrder: activities.length,
+    id: localId(), tenantId, name: clean, sortOrder: activities.length, legacyCode: null,
   })
 }
 
@@ -299,7 +317,8 @@ export async function createTenantService(
   if (!activity || activity.tenantId !== tenantId) throw new Error('Activité introuvable.')
   await db.tenantServices.add({
     id: localId(), tenantId, activityId, activityName: activity.name,
-    activityCode: null, serviceName: clean, ...pricing, sortOrder: services.length,
+    activityCode: activity.legacyCode ?? null, serviceName: clean, ...pricing,
+    sortOrder: services.length,
   })
 }
 
